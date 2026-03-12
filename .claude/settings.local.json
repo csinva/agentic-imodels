@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync:*)",
+      "Bash(python prepare.py 2>&1)",
+      "Bash(uv add:*)",
+      "Bash(git checkout:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "read(project_data/**)",
+      "edit(project_data/**)",
+      "bash(project_data/**)"
+    ]
+  }
+}
