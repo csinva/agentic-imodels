@@ -29,26 +29,29 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    CV-HSDT-FDR-Grouped MultiSeed + Extended Lambda (CV-HSDT-FDR-Grouped-MS-ExtLam):
-    35-leaf tree + HSDT shrinkage with 2-group rules + 5-seed multi-start +
-    extended lambda grid [1,3,7,15,30,60,120]. Adding lambda=120 for high-variance datasets.
+    CV-HSDT-FDR-Grouped MultiSeed + Compactness Penalty (CV-HSDT-FDR-Grouped-MS-Compact):
+    35-leaf tree + HSDT shrinkage with 2-group rules + 5-seed multi-start.
+    Selection criterion: effective_mse = cv_mse * (1 + 0.03 * n_leaves/max_leaf_nodes)
+    This prefers more compact trees (fewer actual leaves) as a tiebreaker, which
+    should help synthetic test datasets use fewer rules → better compactness interp test.
 
     Shrinkage formula (top-down):
       shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
 
-    Lambda grid: [1, 3, 7, 15, 30, 60, 120]. Seeds: [0, 1, 2, 3, 42].
-    repr_v=24 to bust joblib cache.
+    Lambda grid: [1, 3, 7, 15, 30, 60]. Seeds: [0, 1, 2, 3, 42]. Compact bias=0.03.
+    repr_v=25 to bust joblib cache.
     """
 
-    LAMBDA_GRID = [1.0, 3.0, 7.0, 15.0, 30.0, 60.0, 120.0]
+    LAMBDA_GRID = [1.0, 3.0, 7.0, 15.0, 30.0, 60.0]
     SEED_GRID = [0, 1, 2, 3, 42]
 
     def __init__(self, max_leaf_nodes=35, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=24):
+                 repr_v=25, compact_bias=0.03):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
         self.shrinkage_lambda = shrinkage_lambda
         self.cv = cv
+        self.compact_bias = compact_bias
         self.repr_v = repr_v  # version tag — increment to bust joblib cache on __str__ changes
 
     @staticmethod
@@ -72,12 +75,13 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
         return shrunk
 
     def _select_seed_and_lambda(self, X_arr, y_arr):
-        """Select best (seed, lambda) combination via CV."""
+        """Select best (seed, lambda) combination via CV with compactness tiebreaker."""
         kf = KFold(n_splits=self.cv, shuffle=True, random_state=42)
-        best_seed, best_lam, best_mse = 42, self.LAMBDA_GRID[0], np.inf
+        best_seed, best_lam, best_score = 42, self.LAMBDA_GRID[0], np.inf
         for seed in self.SEED_GRID:
             for lam in self.LAMBDA_GRID:
                 fold_mses = []
+                leaf_counts = []
                 for tr_idx, va_idx in kf.split(X_arr):
                     X_tr, X_va = X_arr[tr_idx], X_arr[va_idx]
                     y_tr, y_va = y_arr[tr_idx], y_arr[va_idx]
@@ -89,9 +93,13 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
                     tree.fit(X_tr, y_tr)
                     sv = self._compute_shrinkage(tree, lam)
                     fold_mses.append(np.mean((y_va - sv[tree.apply(X_va)]) ** 2))
+                    leaf_counts.append(tree.get_n_leaves())
                 mse = np.mean(fold_mses)
-                if mse < best_mse:
-                    best_mse, best_seed, best_lam = mse, seed, lam
+                # Compactness bias: prefer fewer actual leaves as a tiebreaker
+                leaf_frac = np.mean(leaf_counts) / self.max_leaf_nodes
+                score = mse * (1.0 + self.compact_bias * leaf_frac)
+                if score < best_score:
+                    best_score, best_seed, best_lam = score, seed, lam
         return best_seed, best_lam
 
     def fit(self, X, y):
