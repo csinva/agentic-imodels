@@ -29,25 +29,23 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    CV-HSDT-FDR-Grouped with Multi-Seed Tree Selection (CV-HSDT-FDR-Grouped-MultiSeed):
-    35-leaf tree + HSDT shrinkage with 2-group rules. Uses 5-seed multi-start:
-    CV jointly selects the best (random_seed, lambda) combination across 5 seeds,
-    potentially finding a better tree structure than the default seed=42.
-
-    For datasets with tie-breaking in splits, different seeds can give better trees.
+    CV-HSDT-FDR-Grouped with 10-Seed Tree Selection (CV-HSDT-FDR-Grouped-10Seed):
+    35-leaf tree + HSDT shrinkage with 2-group rules. Uses 10-seed multi-start:
+    CV jointly selects the best (random_seed, lambda) combination across 10 seeds,
+    expanding the search space over 5-seed version for potentially better RMSE and interp.
 
     Shrinkage formula (top-down):
       shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
 
-    Lambda grid: [1, 3, 7, 15, 30, 60]. Seeds: [0, 1, 2, 3, 42].
-    repr_v=21 to bust joblib cache.
+    Lambda grid: [1, 3, 7, 15, 30, 60]. Seeds: [0, 1, 2, 3, 4, 5, 7, 11, 17, 42].
+    repr_v=22 to bust joblib cache.
     """
 
     LAMBDA_GRID = [1.0, 3.0, 7.0, 15.0, 30.0, 60.0]
-    SEED_GRID = [0, 1, 2, 3, 42]
+    SEED_GRID = [0, 1, 2, 3, 4, 5, 7, 11, 17, 42]
 
     def __init__(self, max_leaf_nodes=35, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=21):
+                 repr_v=22):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
         self.shrinkage_lambda = shrinkage_lambda
