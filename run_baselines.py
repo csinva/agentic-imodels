@@ -39,9 +39,8 @@ REGRESSOR_DEFS = [
     ("DT_mini",    DecisionTreeRegressor(max_leaf_nodes=8,  random_state=42)),
     ("DT_large",   DecisionTreeRegressor(max_leaf_nodes=20, random_state=42)),
     ("OLS",        LinearRegression()),
-    ("LASSO",      Lasso(alpha=0.1)),
-    ("LassoCV",    LassoCV(cv=5)),
-    ("RidgeCV",    RidgeCV()),
+    ("LassoCV",    LassoCV(cv=3)),
+    ("RidgeCV",    RidgeCV(cv=3)),
     ("RF",         RandomForestRegressor(n_estimators=50, max_depth=5, random_state=42)),
     ("GBM",        GradientBoostingRegressor(n_estimators=100, max_depth=3, random_state=42)),
     ("MLP",        MLPRegressor(hidden_layer_sizes=(32, 16), max_iter=1000,
@@ -57,7 +56,7 @@ except ImportError:
 try:
     from imodels import (
         FIGSRegressor,
-        HSTreeRegressor,
+        HSTreeRegressorCV,
         RuleFitRegressor,
         TreeGAMRegressor,
     )
@@ -65,8 +64,8 @@ try:
         ("FIGS_mini",    FIGSRegressor(max_rules=8,  random_state=42)),
         ("FIGS_large",   FIGSRegressor(max_rules=20, random_state=42)),
         ("RuleFit",      RuleFitRegressor(max_rules=20, random_state=42)),
-        ("HSTree_mini",  HSTreeRegressor(max_leaf_nodes=8,  random_state=42)),
-        ("HSTree_large", HSTreeRegressor(max_leaf_nodes=20, random_state=42)),
+        ("HSTree_mini",  HSTreeRegressorCV(max_leaf_nodes=8,  random_state=42)),
+        ("HSTree_large", HSTreeRegressorCV(max_leaf_nodes=20, random_state=42)),
         ("TreeGAM",      TreeGAMRegressor(n_boosting_rounds=5, max_leaf_nodes=4, random_state=42)),
     ]
 except ImportError:
