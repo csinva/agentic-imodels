@@ -28,24 +28,23 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    Additive Shallow Trees (AST): gradient-boosted ensemble of small depth-2 trees.
+    FIGS-style Additive Tree Regressor (FAT): gradient-boosted shallow trees
+    represented in the FIGS output format.
 
-    Fits n_trees depth-2 decision trees sequentially on residuals.
-    Prediction = base_value + sum_i(learning_rate * tree_i.predict(X))
+    Fits n_trees depth-2 decision trees on residuals, with learning_rate scaling.
+    A constant "Tree 0" holds the mean prediction (bias). The remaining trees
+    each contribute a small additive correction.
 
-    Each tree has at most 4 leaves (depth=2) — small enough for the LLM to trace exactly.
-    n_trees is kept small (default 7) so the LLM can reason about all contributions.
+    The __str__ format closely mirrors imodels.FIGSRegressor:
+      - Header: "Predictions are made by summing the Val reached in each tree."
+      - Tree 0: constant (bias = mean y)
+      - Tree k: shown with FIGS-style indentation, split labels, "Val: X (leaf)"
+      - Trees separated by "  +"
 
-    __str__ shows:
-      - base_value (mean)
-      - Each tree explicitly with if/else structure and leaf contributions
-        (each shown as a scaled prediction contribution, not raw value)
-      - Feature importances aggregated across all trees
-      - Net direction of effect per feature
-      - Unused features
+    Feature importances and net directions are also shown for quick lookups.
     """
 
-    def __init__(self, n_trees=7, max_depth=2, learning_rate=0.4, min_samples_leaf=10):
+    def __init__(self, n_trees=5, max_depth=2, learning_rate=0.4, min_samples_leaf=10):
         self.n_trees = n_trees
         self.max_depth = max_depth
         self.learning_rate = learning_rate
@@ -60,10 +59,13 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
         X_arr = np.asarray(X, dtype=float)
         y_arr = np.asarray(y, dtype=float)
 
-        self.base_value_ = float(np.mean(y_arr))
-        residual = y_arr - self.base_value_
+        self.bias_ = float(np.mean(y_arr))
+        residual = y_arr - self.bias_
 
         self.trees_ = []
+        # Precomputed scaled leaf values for each tree (for clean __str__ display)
+        self.scaled_vals_: list = []
+
         for _ in range(self.n_trees):
             tree = DecisionTreeRegressor(
                 max_depth=self.max_depth,
@@ -74,90 +76,75 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
             pred = tree.predict(X_arr)
             residual -= self.learning_rate * pred
             self.trees_.append(tree)
+            # Store scaled leaf values (actual contribution per leaf)
+            self.scaled_vals_.append(tree.tree_.value[:, 0, 0] * self.learning_rate)
 
         return self
 
     def predict(self, X):
         check_is_fitted(self, "trees_")
         X_arr = np.asarray(X, dtype=float)
-        pred = np.full(len(X_arr), self.base_value_)
-        for tree in self.trees_:
-            pred += self.learning_rate * tree.predict(X_arr)
+        pred = np.full(len(X_arr), self.bias_)
+        for tree, sv in zip(self.trees_, self.scaled_vals_):
+            leaf_ids = tree.apply(X_arr)
+            pred += sv[leaf_ids]
         return pred
 
-    def _tree_contribution_lines(self, tree, depth=0, node=0):
-        """Recursively build a compact tree string showing scaled contributions."""
+    def _figs_tree_lines(self, tree, sv, depth=0, node=0):
+        """Recursively build FIGS-style tree lines."""
         t = tree.tree_
         names = self.feature_names_in_
-        indent = "    " * depth
+        indent = "\t" * depth
 
         if t.children_left[node] == -1:  # leaf
-            val = float(t.value[node][0][0]) * self.learning_rate
-            n_s = t.n_node_samples[node]
-            return [f"{indent}contribution = {val:+.4f}  (n={n_s})"]
+            val = sv[node]
+            return [f"{indent}Val: {val:.4f} (leaf)"]
 
         fname = names[int(t.feature[node])]
         thresh = t.threshold[node]
-        lines = [f"{indent}if {fname} <= {thresh:.4g}:"]
-        lines.extend(self._tree_contribution_lines(tree, depth + 1, int(t.children_left[node])))
-        lines.append(f"{indent}else:  # {fname} > {thresh:.4g}")
-        lines.extend(self._tree_contribution_lines(tree, depth + 1, int(t.children_right[node])))
+        lines = [f"{indent}{fname} <= {thresh:.4g} (split)"]
+        lines.extend(self._figs_tree_lines(tree, sv, depth + 1, int(t.children_left[node])))
+        lines.extend(self._figs_tree_lines(tree, sv, depth + 1, int(t.children_right[node])))
         return lines
-
-    def _tree_feat_importance(self, tree):
-        """Per-feature sum of |contribution changes| across all splits in this tree."""
-        t = tree.tree_
-        imp = np.zeros(len(self.feature_names_in_))
-        for node in range(t.node_count):
-            if t.children_left[node] == -1:
-                continue
-            fi = int(t.feature[node])
-            lc, rc = int(t.children_left[node]), int(t.children_right[node])
-            lv = float(t.value[lc][0][0]) * self.learning_rate
-            rv = float(t.value[rc][0][0]) * self.learning_rate
-            imp[fi] += abs(rv - lv) * (t.n_node_samples[lc] + t.n_node_samples[rc])
-        return imp
 
     def __str__(self):
         check_is_fitted(self, "trees_")
         names = self.feature_names_in_
 
         lines = [
-            f"AdditiveShallowTrees(n_trees={self.n_trees}, max_depth={self.max_depth}, "
-            f"learning_rate={self.learning_rate}, min_samples_leaf={self.min_samples_leaf})",
-            f"  base_value = {self.base_value_:.4f}",
-            f"  Prediction = base_value + contribution from Tree 1 + contribution from Tree 2 + ...",
+            "FIGS-style Additive Tree Regressor:",
+            "\tPredictions are made by summing the Val reached by traversing each tree.",
+            "\tTree 0 is a constant (mean prediction). Each subsequent tree adds a correction.",
             "",
+            f"Tree 0 (constant, no splits):",
+            f"\tVal: {self.bias_:.4f} (bias — mean prediction)",
         ]
 
-        # Show each tree
-        total_imp = np.zeros(len(names))
-        for i, tree in enumerate(self.trees_):
-            n_leaves = tree.get_n_leaves()
-            lines.append(f"Tree {i+1} (depth={self.max_depth}, leaves={n_leaves}):")
-            lines.extend(self._tree_contribution_lines(tree))
+        for i, (tree, sv) in enumerate(zip(self.trees_, self.scaled_vals_)):
             lines.append("")
-            total_imp += self._tree_feat_importance(tree)
+            lines.append("\t+")
+            lines.append(f"Tree {i+1} (root):")
+            lines.extend(self._figs_tree_lines(tree, sv))
 
         # Feature importances
-        order = np.argsort(total_imp)[::-1]
-        norm = total_imp.sum() or 1.0
-
-        # Net direction: weighted sum of (right - left) contributions
+        total_imp = np.zeros(len(names))
         net_dir = np.zeros(len(names))
-        for tree in self.trees_:
+
+        for tree, sv in zip(self.trees_, self.scaled_vals_):
             t = tree.tree_
             for node in range(t.node_count):
                 if t.children_left[node] == -1:
                     continue
                 fi = int(t.feature[node])
                 lc, rc = int(t.children_left[node]), int(t.children_right[node])
-                lv = float(t.value[lc][0][0]) * self.learning_rate
-                rv = float(t.value[rc][0][0]) * self.learning_rate
+                gap = abs(sv[rc] - sv[lc])
                 n_both = t.n_node_samples[lc] + t.n_node_samples[rc]
-                net_dir[fi] += (rv - lv) * n_both
+                total_imp[fi] += gap * n_both
+                net_dir[fi] += (sv[rc] - sv[lc]) * n_both
 
-        lines.append("Feature importances (sum of |contribution gap| across all trees × sample count):")
+        norm = total_imp.sum() or 1.0
+        order = np.argsort(total_imp)[::-1]
+        lines += ["", "Feature importances (higher = more important):"]
         for rank, fi in enumerate(order):
             if total_imp[fi] > 1e-9:
                 if net_dir[fi] > 0:
@@ -174,7 +161,7 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
         used = {names[fi] for fi in range(len(names)) if total_imp[fi] > 1e-9}
         unused = [f for f in names if f not in used]
         if unused:
-            lines.append(f"\nFeatures not used in any tree (zero importance): {', '.join(unused)}")
+            lines.append(f"\nFeatures not used in any tree: {', '.join(unused)}")
 
         return "\n".join(lines)
 
