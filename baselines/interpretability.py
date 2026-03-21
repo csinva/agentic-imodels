@@ -1136,19 +1136,18 @@ if __name__ == "__main__":
         (MLPRegressor(hidden_layer_sizes=(32, 16), max_iter=1000,
                       random_state=42, learning_rate_init=0.01), "MLP"),
     ]
-    if _HAS_PYGAM:
-        from pygam import LinearGAM
-        insight_models.insert(0, (LinearGAM(n_splines=10), "GAM"))
+    
+    from pygam import LinearGAM
+    insight_models.insert(0, (LinearGAM(n_splines=10), "GAM"))
 
-    if _HAS_IMODELS:
-        from imodels import FIGSRegressor, RuleFitRegressor, HSTreeRegressor, TreeGAMRegressor
-        imodels_models = [
-            (FIGSRegressor(max_rules=12), "FIGS"),
-            (RuleFitRegressor(max_rules=20, random_state=42), "RuleFit"),
-            (HSTreeRegressor(max_leaf_nodes=16, random_state=42), "HSTree"),
-            (TreeGAMRegressor(n_boosting_rounds=5, max_leaf_nodes=4, random_state=42), "TreeGAM"),
-        ]
-        insight_models.extend(imodels_models)
+    from imodels import FIGSRegressor, RuleFitRegressor, HSTreeRegressor, TreeGAMRegressor
+    imodels_models = [
+        (FIGSRegressor(max_rules=12), "FIGS"),
+        (RuleFitRegressor(max_rules=20, random_state=42), "RuleFit"),
+        (HSTreeRegressor(max_leaf_nodes=16, random_state=42), "HSTree"),
+        (TreeGAMRegressor(n_boosting_rounds=5, max_leaf_nodes=4, random_state=42), "TreeGAM"),
+    ]
+    insight_models.extend(imodels_models)
 
     def print_summary(results, title):
         model_names = list(dict.fromkeys(r["model"] for r in results))

@@ -15,19 +15,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
-from sklearn.linear_model import LinearRegression, Lasso, LassoCV, RidgeCV
-from sklearn.neural_network import MLPRegressor
-from sklearn.tree import DecisionTreeRegressor
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from joblib import Memory
 
 import imodelsx.llm
-from interpretability import (
-    ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, _HAS_IMODELS,
-)
+from interpretability import ALL_TESTS, HARD_TESTS, INSIGHT_TESTS
+from models import REGRESSOR_DEFS as MODEL_DEFS, MODEL_GROUPS, GROUP_COLORS
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), "results")
 _memory = Memory(location=os.path.join(RESULTS_DIR, "cache"), verbose=0)
@@ -54,43 +49,6 @@ def _run_one_test(model_name, test_fn_name, model):
     result["model"] = model_name
     result.setdefault("test", test_fn_name)
     return result
-
-# ---------------------------------------------------------------------------
-# Model registry: (name, regressor)
-# ---------------------------------------------------------------------------
-
-MODEL_DEFS = []
-
-from pygam import LinearGAM
-MODEL_DEFS.append(("GAM", LinearGAM(n_splines=10)))
-
-MODEL_DEFS += [
-    ("DT_mini",    DecisionTreeRegressor(max_leaf_nodes=8,  random_state=42)),
-    ("DT_large",   DecisionTreeRegressor(max_leaf_nodes=20, random_state=42)),
-    ("OLS",        LinearRegression()),
-    ("LASSO",      Lasso(alpha=0.1)),
-    ("LassoCV",    LassoCV(cv=5)),
-    ("RidgeCV",    RidgeCV()),
-    ("RF",         RandomForestRegressor(n_estimators=50, max_depth=5, random_state=42)),
-    ("GBM",        GradientBoostingRegressor(n_estimators=100, max_depth=3, random_state=42)),
-    ("MLP",        MLPRegressor(hidden_layer_sizes=(32, 16), max_iter=1000,
-                                random_state=42, learning_rate_init=0.01)),
-]
-
-from imodels import (
-    FIGSRegressor,
-    HSTreeRegressor,
-    RuleFitRegressor,
-    TreeGAMRegressor,
-)
-MODEL_DEFS += [
-    ("FIGS_mini",   FIGSRegressor(max_rules=8,  random_state=42)),
-    ("FIGS_large",  FIGSRegressor(max_rules=20, random_state=42)),
-    ("RuleFit",     RuleFitRegressor(max_rules=20, random_state=42)),
-    ("HSTree_mini",  HSTreeRegressor(max_leaf_nodes=8,  random_state=42)),
-    ("HSTree_large", HSTreeRegressor(max_leaf_nodes=20, random_state=42)),
-    ("TreeGAM",     TreeGAMRegressor(n_boosting_rounds=5, max_leaf_nodes=4, random_state=42)),
-]
 
 
 # ---------------------------------------------------------------------------
@@ -129,21 +87,6 @@ def run_all_interp_tests(model_defs):
 # Plot
 # ---------------------------------------------------------------------------
 
-MODEL_GROUPS = {
-    "black-box": {"RF", "GBM", "MLP"},
-    "imodels":   {"FIGS_mini", "FIGS_large", "RuleFit", "HSTree_mini", "HSTree_large", "TreeGAM"},
-    "linear":    {"OLS", "LASSO", "LassoCV", "RidgeCV"},
-    "tree":      {"DT_mini", "DT_large"},
-    "gam":       {"GAM"},
-}
-GROUP_COLORS = {
-    "black-box": "#e74c3c",
-    "imodels":   "#27ae60",
-    "linear":    "#2980b9",
-    "tree":      "#e67e22",
-    "gam":       "#8e44ad",
-}
-
 
 def _model_color(name):
     for group, members in MODEL_GROUPS.items():
@@ -152,41 +95,34 @@ def _model_color(name):
     return "#7f8c8d"
 
 
-def plot_interp_vs_test_rank(interp_results, out_path):
-    """Scatter: x=mean per-test rank (lower=better), y=total tests passed, with SEM error bars.
+def plot_interp_vs_tabarena(interp_results, tabarena_csv_path, out_path):
+    """Scatter: x=TabArena mean AUC (±1 SEM across datasets), y=interpretability tests passed.
 
-    For each of the 18 tests, models are ranked 1..N by pass/fail (average rank for ties).
-    The x-axis shows each model's mean rank across all tests; error bars show ±1 SEM.
+    Reads per-dataset AUC from tabarena_csv_path to compute mean and SEM per model.
+    Only plots models present in both interp_results and tabarena_csv_path.
     """
-    from scipy.stats import rankdata
     from adjustText import adjust_text
 
+    # --- Load TabArena per-dataset AUC ---
+    tabarena_aucs = {}   # model -> list of AUC values across datasets
+    with open(tabarena_csv_path, newline="") as f:
+        for row in csv.DictReader(f):
+            if row["auc"]:
+                tabarena_aucs.setdefault(row["model"], []).append(float(row["auc"]))
+
+    mean_auc = {m: float(np.mean(v)) for m, v in tabarena_aucs.items()}
+    sem_auc  = {m: float(np.std(v) / np.sqrt(len(v))) for m, v in tabarena_aucs.items()}
+
+    # --- Interpretability: tests passed per model ---
     model_names = list(dict.fromkeys(r["model"] for r in interp_results))
-    all_tests   = list(dict.fromkeys(r["test"]  for r in interp_results))
+    n_passed = {n: sum(r["passed"] for r in interp_results if r["model"] == n)
+                for n in model_names}
 
-    # per_test_ranks[model] = list of ranks (one per test)
-    per_test_ranks = {name: [] for name in model_names}
-    for test_name in all_tests:
-        scores = {r["model"]: float(r["passed"])
-                  for r in interp_results if r["test"] == test_name}
-        if not scores:
-            continue
-        names_in_test = list(scores.keys())
-        vals = np.array([scores[n] for n in names_in_test])
-        # Rank descending (higher score = better = lower rank number)
-        ranks = rankdata(-vals, method="average")
-        for name, rank in zip(names_in_test, ranks):
-            per_test_ranks[name].append(rank)
-
-    mean_rank = {n: float(np.mean(v)) for n, v in per_test_ranks.items() if v}
-    sem_rank  = {n: float(np.std(v) / np.sqrt(len(v))) for n, v in per_test_ranks.items() if v}
-    n_passed  = {n: sum(r["passed"] for r in interp_results if r["model"] == n)
-                 for n in model_names}
-
-    names  = [n for n in model_names if n in mean_rank]
-    x      = np.array([mean_rank[n] for n in names])
-    x_err  = np.array([sem_rank[n]  for n in names])
-    y      = np.array([n_passed[n]  for n in names])
+    # Only plot models present in both sources
+    names  = [n for n in model_names if n in mean_auc]
+    x      = np.array([mean_auc[n] for n in names])
+    x_err  = np.array([sem_auc[n]  for n in names])
+    y      = np.array([n_passed[n] for n in names])
     colors = [_model_color(n) for n in names]
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -201,10 +137,9 @@ def plot_interp_vs_test_rank(interp_results, out_path):
     adjust_text(texts, x=x, y=y, ax=ax,
                 arrowprops=dict(arrowstyle="-", color="grey", lw=0.6))
 
-    ax.set_xlabel("Mean Per-Test Rank (lower = better, ±1 SEM)", fontsize=10)
-    ax.set_ylabel("Total Tests Passed (out of 18)", fontsize=10)
-    ax.set_title("Interpretability: Tests Passed vs. Mean Test Rank", fontsize=12, fontweight="bold")
-    ax.invert_xaxis()  # leftmost = best rank
+    ax.set_xlabel("TabArena Mean AUC (±1 SEM across datasets)", fontsize=10)
+    ax.set_ylabel("Interpretability Tests Passed (out of 18)", fontsize=10)
+    ax.set_title("Interpretability vs. TabArena Performance", fontsize=12, fontweight="bold")
     ax.grid(True, alpha=0.3)
 
     from matplotlib.lines import Line2D
@@ -214,7 +149,7 @@ def plot_interp_vs_test_rank(interp_results, out_path):
                label=g.replace("-", " ").title())
         for g in GROUP_COLORS if any(n in MODEL_GROUPS[g] for n in names)
     ]
-    ax.legend(handles=legend_handles, fontsize=9, loc="lower left")
+    ax.legend(handles=legend_handles, fontsize=9, loc="upper left")
 
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
@@ -255,7 +190,7 @@ if __name__ == "__main__":
     print(f"\nScores saved → {scores_path}")
 
     # Save per-test per-model results to CSV
-    csv_path = os.path.join(RESULTS_DIR, "per_test_results.csv")
+    csv_path = os.path.join(RESULTS_DIR, "interpretability_per_test_results.csv")
     csv_cols = ["model", "test", "suite", "passed", "ground_truth", "response"]
     def _suite(test_name):
         if test_name.startswith("insight_"): return "insight"
@@ -268,7 +203,8 @@ if __name__ == "__main__":
             writer.writerow({**r, "suite": _suite(r["test"])})
     print(f"Per-test results saved → {csv_path}")
 
+    tabarena_csv = os.path.join(RESULTS_DIR, "tabarena_results.csv")
     plot_path = os.path.join(RESULTS_DIR, "interpretability_vs_performance.png")
-    plot_interp_vs_test_rank(interp_results, plot_path)
+    plot_interp_vs_tabarena(interp_results, tabarena_csv, plot_path)
 
     print(f"\nTotal time: {time.time() - t0:.1f}s")
