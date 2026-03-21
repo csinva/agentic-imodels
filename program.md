@@ -85,7 +85,7 @@ LOOP FOREVER:
 5. Read results: `tail -n 5 run.log` and `grep InterpretableRegressor results/overall_results.csv`
 6. If the run crashed, check `tail -n 50 run.log` for the stack trace and attempt a fix
 7. Record results in `results/overall_results.csv` (do not commit this file)
-8. If either metric improved without the other getting significantly worse, keep the commit
+8. If either metric improved without the other getting significantly worse, keep the commit and save the current version of `interpretable_regressor.py` as a new file (e.g. `interpretable_regressor_<commit_hash>.py`) for future use. Then `git checkout master` and merge the commit from the experiment branch with a descriptive message about the improvement.
 9. Otherwise, `git reset --hard` back to the previous commit
 
 **NEVER STOP**: Once the experiment loop has begun, do NOT pause to ask the human if you should continue. Run until manually stopped.
@@ -95,4 +95,4 @@ LOOP FOREVER:
 - Try new regularization techniques
 - Try novel splitting criteria
 
-Do not simply import a known interpretable model and change its hyperparameters — build your own from scratch using basic building blocks or substantially modify an existing one. The goal is to discover new models, not just find the best hyperparameters for known models.
+Do not simply import a known interpretable model and change its hyperparameters — build your own from scratch using basic building blocks or substantially modify an existing one. The goal is to discover new models, not just find the best hyperparameters for known models. Make sure the model trains and tests very quickly.

@@ -4,10 +4,9 @@ set of regressors, then produce a combined performance plot.
 
 Usage: uv run run_baselines.py
 Outputs (all under results/):
-  all_scores.json                    — interpretability fraction per model
-  interpretability_per_test_results.csv
-  tabarena_scores.json               — avg rank + mean RMSE per model
+  interpretability_results.csv
   tabarena_results.csv               — per-dataset per-model RMSE
+  overall_results.csv                — summary of overall scores (for leaderboard)
   interpretability_vs_performance.png
 """
 
@@ -188,10 +187,7 @@ if __name__ == "__main__":
         print(f"  {name:<15}: {n:2d}/{len(subset)} ({score:.2%})  "
               f"[std {std}/8  hard {hard}/5  insight {ins}/5]")
 
-    with open(os.path.join(RESULTS_DIR, "all_scores.json"), "w") as f:
-        json.dump({"interpretability": interp_scores}, f, indent=2)
-
-    csv_path = os.path.join(RESULTS_DIR, "interpretability_per_test_results.csv")
+    csv_path = os.path.join(RESULTS_DIR, "interpretability_results.csv")
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["model", "test", "suite", "passed",
                                                "ground_truth", "response"],
@@ -211,10 +207,6 @@ if __name__ == "__main__":
     print("\n\nTabArena summary (sorted by avg rank):")
     for name, rank in sorted(avg_rank.items(), key=lambda x: x[1]):
         print(f"  {name:<15}: avg_rank={rank:.2f}  mean_rmse={avg_rmse.get(name, float('nan')):.4f}")
-
-    with open(os.path.join(RESULTS_DIR, "tabarena_scores.json"), "w") as f:
-        json.dump({"tabarena_avg_rank": avg_rank, "tabarena_mean_rmse": avg_rmse,
-                   "tabarena_per_dataset": dataset_rmses}, f, indent=2)
 
     tabarena_csv = os.path.join(RESULTS_DIR, "tabarena_results.csv")
     with open(tabarena_csv, "w", newline="") as f:

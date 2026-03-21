@@ -37,7 +37,7 @@ uv run run_baselines.py
 uv run interpretable_regressor.py
 ```
 
-If the above commands all work, your setup is working and you can go into autonomous research mode.
+If the above commands all work, your setup is working and you can go into autonomous research mode. Then, ask claude to do the following: ```Read the tests in interp_eval.py and the results in results/interpretability_per_test_results.csv. Write a table in results where each row is a test, column gives a short description, next column gives a detailed description, next column gives pass rate, and final columns show which models passed.```
 
 ## Running the agent
 
