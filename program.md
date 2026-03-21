@@ -10,7 +10,7 @@ To set up a new experiment, work with the user to:
 2. **Create the branch**: `git checkout -b autoresearch/<tag>` from current master.
 3. **Read the in-scope files**: The repo is small. Read these files for full context:
    - `readme.md` — repository context.
-   - `run_baselines.py` — the fixed baseline evaluation harness. This is NOT modified by the agent.
+   - `run_baselines.py` — the fixed baseline evaluation harness. This is NOT modified by the agent and has already been run for you.
    - `model.py` — the file you modify. Regressor definition and evaluation loop.
    - `results/overall_results.csv` — current scores for all models including baselines.
 4. **Confirm and go**: Confirm setup looks good.
@@ -94,11 +94,6 @@ LOOP FOREVER:
 **NEVER STOP**: Once the experiment loop has begun, do NOT pause to ask the human if you should continue. Run until manually stopped.
 
 **Ideas to try** (not exhaustive — be creative):
-- Tune depth, leaf size, splitting criteria
-- Try sparse linear models (LASSO, ElasticNet) with feature selection
-- Try rule-based models (OneR, RIPPER, RuleFit)
-- Try Generalized Additive Models (pygam)
-- Try imodels: FIGS, HSTree, TreeGAM
-- Feature preprocessing: binning, interaction terms, polynomial features
-- Per-dataset hyperparameter tuning via cross-validation
-- Combining simple models in an interpretable ensemble
+- Try novel splitting criteria
+- Try novel ways to induce sparsity or perform elaborate feature selection
+- Try new regularization techniques
