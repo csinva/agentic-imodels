@@ -29,28 +29,26 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    Depth-Adaptive HSDT with Flat Decision Rules (DA-HSDT-FDR):
-    Builds on CV-HSDT-FDR v2 (commit 60f9c64, interp=0.84, RMSE=0.624) by
-    using a depth-adaptive shrinkage formula:
+    CV-HSDT-FDR with max_leaf_nodes=28 (CV-HSDT-FDR-28):
+    Incremental improvement over v2 (commit 60f9c64: max_leaf_nodes=25, interp=0.84, RMSE=0.624).
+    Increases max_leaf_nodes from 25 to 28 for marginally better RMSE capacity.
 
-      eff_lam(node) = lam * (depth + 1)
-      shrunk[node] = orig[node] + eff_lam * (parent - orig[node]) / (n_samples + eff_lam)
+    Hypothesis: 28 leaves is within the LLM's ability to scan (similar to 25),
+    so interpretability should stay at 0.84. RMSE may improve slightly over 25 leaves
+    while staying better than 35 leaves (which caused simulatability failure).
 
-    Rationale: deeper nodes have fewer samples → their raw predictions are
-    less reliable → they should be shrunk more toward their ancestors.
-    Depth-scaling makes the effective lambda grow with depth, applying
-    progressively more regularization as we go deeper in the tree.
+    repr_v=8 to bust joblib cache.
 
-    Same flat decision rules __str__ format as v2.
-    CV selects the base lambda on [1, 3, 7, 15, 30, 60].
+    Shrinkage formula (top-down):
+      shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
 
-    max_leaf_nodes=25 (same tree complexity as v2, interp should stay ~0.84).
+    Lambda grid: [1, 3, 7, 15, 30, 60]
     """
 
     LAMBDA_GRID = [1.0, 3.0, 7.0, 15.0, 30.0, 60.0]
 
-    def __init__(self, max_leaf_nodes=25, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=7):
+    def __init__(self, max_leaf_nodes=28, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
+                 repr_v=8):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
         self.shrinkage_lambda = shrinkage_lambda
@@ -59,25 +57,22 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
 
     @staticmethod
     def _compute_shrinkage(tree, lam):
-        """Depth-adaptive shrinkage: eff_lam = lam * (depth+1), so deeper nodes
-        receive more regularization toward their ancestors."""
         t = tree.tree_
         orig = t.value[:, 0, 0].copy()
         shrunk = np.copy(orig)
 
-        def shrink(node, parent_shrunk, depth):
+        def shrink(node, parent_shrunk):
             if node == 0:
                 shrunk[node] = orig[node]
             else:
                 n_s = t.n_node_samples[node]
-                eff_lam = lam * (depth + 1)
-                shrunk[node] = orig[node] + eff_lam * (parent_shrunk - orig[node]) / (n_s + eff_lam)
+                shrunk[node] = orig[node] + lam * (parent_shrunk - orig[node]) / (n_s + lam)
             left = t.children_left[node]
             if left != -1:
-                shrink(int(left), shrunk[node], depth + 1)
-                shrink(int(t.children_right[node]), shrunk[node], depth + 1)
+                shrink(int(left), shrunk[node])
+                shrink(int(t.children_right[node]), shrunk[node])
 
-        shrink(0, orig[0], 0)
+        shrink(0, orig[0])
         return shrunk
 
     def _select_lambda(self, X_arr, y_arr):
