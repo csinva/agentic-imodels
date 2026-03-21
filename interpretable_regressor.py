@@ -15,7 +15,7 @@ import time
 import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.model_selection import KFold
-from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.utils.validation import check_is_fitted
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "eval"))
@@ -29,26 +29,32 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    ExtraTree-HSDT with Flat Decision Rules (ET-HSDT-FDR):
-    Replaces the CART DT with an ExtraTreeRegressor (uses random splits at each
-    node instead of optimal splits). Random splits act as implicit regularization,
-    potentially improving generalization while HSDT handles leaf-value shrinkage.
+    CV-HSDT with Flat Decision Rules (CV-HSDT-FDR):
+    Same model as CV-HSDT (hierarchical shrinkage DT with CV-selected lambda),
+    but the __str__ representation is enhanced with an explicit flat "decision
+    rules" section that lists every leaf as a complete IF-THEN path.
+
+    This makes it trivial for an LLM to:
+      1. Simulate predictions: scan rules and find the matching condition set.
+      2. Answer counterfactual questions: find rules with prediction >= target
+         and read off the required feature conditions.
+      3. Identify decision boundaries: locate which rules involve each feature.
+
+    The model math is identical to CV-HSDT (commit 250ebbd), so RMSE is
+    expected to be unchanged (~0.624). The __str__ improvements target the
+    6 failing interpretability tests (simulatability, counterfactual target,
+    decision region, and related discrim tests).
 
     Shrinkage formula (top-down):
-      shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_s + lam)
+      shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
 
-    Lambda CV grid: [1, 3, 7, 15, 30, 60] — same as CV-HSDT for comparability.
-
-    __str__ adds a max-depth line to help the LLM understand how compact the
-    model is for making a single prediction (at most max_depth conditions).
-
-    repr_v=12 to bust joblib cache.
+    Lambda grid: [1, 3, 7, 15, 30, 60] — same as CV-HSDT for comparability.
     """
 
     LAMBDA_GRID = [1.0, 3.0, 7.0, 15.0, 30.0, 60.0]
 
     def __init__(self, max_leaf_nodes=25, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=12):
+                 repr_v=13):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
         self.shrinkage_lambda = shrinkage_lambda
@@ -83,7 +89,7 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
             for tr_idx, va_idx in kf.split(X_arr):
                 X_tr, X_va = X_arr[tr_idx], X_arr[va_idx]
                 y_tr, y_va = y_arr[tr_idx], y_arr[va_idx]
-                tree = ExtraTreeRegressor(
+                tree = DecisionTreeRegressor(
                     max_leaf_nodes=self.max_leaf_nodes,
                     min_samples_leaf=self.min_samples_leaf,
                     random_state=42,
@@ -110,7 +116,7 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
         else:
             self.lambda_ = float(self.shrinkage_lambda)
 
-        self.tree_ = ExtraTreeRegressor(
+        self.tree_ = DecisionTreeRegressor(
             max_leaf_nodes=self.max_leaf_nodes,
             min_samples_leaf=self.min_samples_leaf,
             random_state=42,
@@ -190,10 +196,10 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
 
         max_depth = self.tree_.get_depth()
         lines = [
-            f"ET_HSDT_FDR(max_leaf_nodes={self.max_leaf_nodes}, "
+            f"CV_HSDT_FDR(max_leaf_nodes={self.max_leaf_nodes}, "
             f"selected_lambda={self.lambda_:.1f}, cv={self.cv})",
             f"  nodes={t.node_count}, leaves={n_leaves}, max_depth={max_depth}",
-            f"  (to predict: follow at most {max_depth} conditions from root to leaf)",
+            f"  (predict: follow at most {max_depth} conditions top-down; one path from root to leaf)",
             "",
             "Tree structure (follow from root; leaf values are shrunk predictions):",
         ]
