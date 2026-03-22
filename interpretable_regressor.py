@@ -29,25 +29,27 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    CV-HSDT-FDR-Grouped-MS-FineLam-KF43-12Seeds:
-    35-leaf tree + HSDT shrinkage, 12-seed joint CV with KFold(random_state=43).
-    KF43 8-seeds->RMSE=0.6172/0.88. Testing 12 seeds to push further.
+    CV-HSDT-FDR-Grouped-MS-ExtFineLam-KF43-8Seeds:
+    35-leaf tree + HSDT shrinkage, 8-seed joint CV with KFold(random_state=43).
+    Extended lambda grid with 20 values vs current 10-value grid.
 
-    HYPOTHESIS: More candidate tree seeds = better chance of finding a lower-RMSE
-    tree while KF43 CV splits still favor interpretable trees. Adding seeds [7..10].
+    HYPOTHESIS: The optimal lambda may fall between the current grid points.
+    A denser grid [0.5..80] with 20 values might select a better lambda
+    that gives lower RMSE while maintaining interp=0.88 with KF43 splits.
 
     Shrinkage formula (top-down):
       shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
 
-    Seeds: [0..10, 42]. Lambda grid: [1,2,4,7,10,15,22,30,45,60]. cv=5.
-    repr_v=42 to bust joblib cache.
+    Seeds: [0,1,2,3,4,5,6,42]. Lambda grid: 20 values from 0.5 to 80. cv=5.
+    repr_v=43 to bust joblib cache.
     """
 
-    LAMBDA_GRID = [1.0, 2.0, 4.0, 7.0, 10.0, 15.0, 22.0, 30.0, 45.0, 60.0]
-    SEED_GRID = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 42]
+    LAMBDA_GRID = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 9.0, 11.0, 13.0,
+                   15.0, 18.0, 22.0, 26.0, 30.0, 37.0, 45.0, 52.0, 60.0, 80.0]
+    SEED_GRID = [0, 1, 2, 3, 4, 5, 6, 42]
 
     def __init__(self, max_leaf_nodes=35, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=42):
+                 repr_v=43):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
         self.shrinkage_lambda = shrinkage_lambda
