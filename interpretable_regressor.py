@@ -29,29 +29,28 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    CV-HSDT-FDR-Grouped-MS-PerSeedKF:
+    CV-HSDT-FDR-Grouped-MS-PerSeedKF2:
     35-leaf tree + HSDT shrinkage with 2-group rules. Multi-seed joint CV (5 seeds)
     with per-seed KFold: each seed uses KFold(random_state=seed) instead of fixed
     random_state=42. This allows different seeds to explore different CV splits,
     potentially finding better (seed, lambda) combinations.
 
-    IMPORTANT: repr_v=29 (same as fc3a061) so interp test cache hits.
-    Algorithm change: per-seed KFold only. Same criterion="squared_error", same format.
-    Previous exp (9777417) showed RMSE=0.6165 with this approach (better than 0.6177)
-    but interp dropped due to cache miss. With repr_v=29, interp should cache at 0.88.
+    repr_v=35 to bust BOTH RMSE and interp caches (joblib caches both on unfitted model).
+    Previous exp (9777417) showed RMSE=0.6165 with per-seed KFold but interp dropped
+    to 0.80. This exp re-evaluates both metrics fresh with the same algorithm.
 
     Shrinkage formula (top-down):
       shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
 
     Seeds: [0, 1, 2, 3, 42]. Lambda grid: [1,2,4,7,10,15,22,30,45,60]. cv=5.
-    repr_v=29 — same as fc3a061 for interp test cache continuity.
+    repr_v=35 to bust joblib cache.
     """
 
     LAMBDA_GRID = [1.0, 2.0, 4.0, 7.0, 10.0, 15.0, 22.0, 30.0, 45.0, 60.0]
     SEED_GRID = [0, 1, 2, 3, 42]
 
     def __init__(self, max_leaf_nodes=35, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=29):
+                 repr_v=35):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
         self.shrinkage_lambda = shrinkage_lambda
