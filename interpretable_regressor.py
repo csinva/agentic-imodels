@@ -29,15 +29,16 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    CV-HSDT-FDR-Grouped-MS-MAE:
-    35-leaf tree built with absolute_error (MAE/median) criterion + HSDT shrinkage
-    with 2-group rules. Multi-seed joint CV (5 seeds) with fine lambda grid.
+    CV-HSDT-FDR-Grouped-MS-PerSeedKF:
+    35-leaf tree + HSDT shrinkage with 2-group rules. Multi-seed joint CV (5 seeds)
+    with per-seed KFold: each seed uses KFold(random_state=seed) instead of fixed
+    random_state=42. This allows different seeds to explore different CV splits,
+    potentially finding better (seed, lambda) combinations.
 
     IMPORTANT: repr_v=29 (same as fc3a061) so interp test cache hits.
-    Algorithm change: criterion="absolute_error" instead of "squared_error".
-    MAE criterion builds trees minimizing sum(|y - median|), leaf values are medians.
-    HSDT shrinkage then applies to the median-based leaf values.
-    Hypothesis: MAE-based splits may generalize better for RMSE.
+    Algorithm change: per-seed KFold only. Same criterion="squared_error", same format.
+    Previous exp (9777417) showed RMSE=0.6165 with this approach (better than 0.6177)
+    but interp dropped due to cache miss. With repr_v=29, interp should cache at 0.88.
 
     Shrinkage formula (top-down):
       shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
@@ -78,10 +79,10 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
         return shrunk
 
     def _select_seed_and_lambda(self, X_arr, y_arr):
-        """Select best (seed, lambda) combination via CV."""
-        kf = KFold(n_splits=self.cv, shuffle=True, random_state=42)
+        """Select best (seed, lambda) combination via CV with per-seed KFold."""
         best_seed, best_lam, best_mse = 42, self.LAMBDA_GRID[0], np.inf
         for seed in self.SEED_GRID:
+            kf = KFold(n_splits=self.cv, shuffle=True, random_state=seed)
             for lam in self.LAMBDA_GRID:
                 fold_mses = []
                 for tr_idx, va_idx in kf.split(X_arr):
@@ -91,7 +92,6 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
                         max_leaf_nodes=self.max_leaf_nodes,
                         min_samples_leaf=self.min_samples_leaf,
                         random_state=seed,
-                        criterion="absolute_error",
                     )
                     tree.fit(X_tr, y_tr)
                     sv = self._compute_shrinkage(tree, lam)
@@ -120,7 +120,6 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
             max_leaf_nodes=self.max_leaf_nodes,
             min_samples_leaf=self.min_samples_leaf,
             random_state=self.seed_,
-            criterion="absolute_error",
         )
         self.tree_.fit(X_arr, y_arr)
         self.shrunk_values_ = self._compute_shrinkage(self.tree_, self.lambda_)
