@@ -29,28 +29,25 @@ from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regres
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    CV-HSDT-FDR-Grouped-MS-FineLam-Verify:
-    EXACT fc3a061 algorithm: 35-leaf tree + HSDT shrinkage, 5-seed joint CV with
-    shared KFold(random_state=42), fine lambda grid [1,2,4,7,10,15,22,30,45,60].
+    CV-HSDT-FDR-Grouped-MS-FineLam-msl4:
+    35-leaf tree with min_samples_leaf=4 (instead of 5) + HSDT shrinkage.
+    5-seed joint CV with shared KFold(random_state=42), fine lambda grid.
 
-    repr_v=36 to force fresh evaluation of fc3a061's algorithm.
-    PURPOSE: Verify whether fc3a061's 22/25 interp (0.88) was a lucky cached run
-    or the true expected value. If fresh run also gives 0.88, fc3a061 is the reliable
-    best. If it gives 0.80, then per-seed KFold (0.80 interp, 0.6169 RMSE) is
-    actually better on RMSE with the same true interp.
+    CHANGE: min_samples_leaf=4 allows smaller leaves, potentially finding better
+    splits and lower RMSE. Same CV strategy as fc3a061 to maintain interp=0.88.
 
     Shrinkage formula (top-down):
       shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
 
     Seeds: [0, 1, 2, 3, 42]. Lambda grid: [1,2,4,7,10,15,22,30,45,60]. cv=5.
-    repr_v=36 to bust joblib cache for fresh evaluation.
+    repr_v=37 to bust joblib cache.
     """
 
     LAMBDA_GRID = [1.0, 2.0, 4.0, 7.0, 10.0, 15.0, 22.0, 30.0, 45.0, 60.0]
     SEED_GRID = [0, 1, 2, 3, 42]
 
-    def __init__(self, max_leaf_nodes=35, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=36):
+    def __init__(self, max_leaf_nodes=35, min_samples_leaf=4, shrinkage_lambda="cv", cv=5,
+                 repr_v=37):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
         self.shrinkage_lambda = shrinkage_lambda
