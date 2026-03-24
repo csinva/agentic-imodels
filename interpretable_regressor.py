@@ -21,7 +21,7 @@ from sklearn.utils.validation import check_is_fitted
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "eval"))
 from interp_eval import run_all_interp_tests, ALL_TESTS, HARD_TESTS, INSIGHT_TESTS
-from performance import RESULTS_DIR, upsert_overall_results, evaluate_all_regressors
+from performance_eval import RESULTS_DIR, upsert_overall_results, evaluate_all_regressors
 
 # ---------------------------------------------------------------------------
 # Interpretable Regressor (edit this — everything below is fair game)

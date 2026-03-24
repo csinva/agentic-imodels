@@ -8,7 +8,7 @@ The idea: give an AI agent a training setup and let it experiment autonomously. 
 
 The repo has three files that matter:
 
-- **`run_baselines.py`** — evaluates a fixed set of baseline regressors across two metrics: (1) `frac_interpretability_tests_passed` — LLM-graded interpretability tests, and (2) `mean_rmse` — RMSE on subsampled TabArena regression datasets. Results saved to `results/overall_results.csv`. **Not modified by the agent.**
+- **`run_baselines.py`** — evaluates a fixed set of baseline regressors across two metrics: (1) `frac_interpretability_tests_passed` — LLM-graded interpretability tests, and (2) `mean_rmse` — RMSE on subsampled regression datasets. Results saved to `results/overall_results.csv`. **Not modified by the agent.**
 - **`interpretable_regressor.py`** — the single file the agent edits. Defines `InterpretableRegressor` (a scikit-learn compatible model) and an evaluation loop that runs the same metrics and updates `results/overall_results.csv`. **This file is edited and iterated on by the agent.**
 - **`program.md`** — instructions for the agent. Point your agent here and let it go. **This file is edited and iterated on by the human.**
 
@@ -16,7 +16,7 @@ The repo has three files that matter:
 
 Two metrics are tracked in `results/overall_results.csv`:
 
-- **`mean_rmse`** — mean RMSE across TabArena regression datasets (lower is better, evaluated on held-out test sets)
+- **`mean_rmse`** — mean RMSE across regression datasets (lower is better, evaluated on held-out test sets)
 - **`frac_interpretability_tests_passed`** — fraction of LLM-graded interpretability tests passed (higher is better)
 
 ## Quick start
@@ -30,14 +30,22 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # 2. Install dependencies
 uv sync
 
-# 3. Run baseline evaluation (interpretability tests + TabArena RMSE, ~2 min with caching)
+# 3. Run baseline evaluation (interpretability tests + regression datasets RMSE, ~2 min with caching)
 uv run run_baselines.py
 
 # 4. Manually run a single training experiment
 uv run interpretable_regressor.py
 ```
 
-If the above commands all work, your setup is working and you can go into autonomous research mode. Then, ask claude to do the following: ```Read the tests in interp_eval.py and the results in results/interpretability_per_test_results.csv. Write a table in results where each row is a test, column gives a short description, next column gives a detailed description, next column gives pass rate, and final columns show which models passed.```
+If the above commands all work, your setup is working and you can go into autonomous research mode. Then, ask claude to do the following:
+
+```bash
+Read the tests in interp_eval.py and the results in results/interpretability_results.csv. Write a concise report titled results/results_report.md. It should describe the interp_eval tests and show a detailed example of how a single test is conducted. Then, it should show a table where each row is a test, column gives a short description, next column gives a detailed description, next column gives pass rate, and final columns show which models passed.
+
+Next, read the eval/performance_eval.py, results/performance_results.csv, and the interpretability_vs_performance.png plot. Describe the performance evaluation then include the plot.
+
+Finally, the report should end with a string visualization of three different model types (e.g. decision tree, linear model, random forest) when fit to the synthetic data from the first interpretability test with some text discussion.
+```
 
 ## Running the agent
 
@@ -52,7 +60,7 @@ The `program.md` file is the lightweight "skill" that instructs the agent.
 ## Project structure
 
 ```
-run_baselines.py  — baseline evaluation: interpretability tests + TabArena RMSE (do not modify)
+run_baselines.py  — baseline evaluation: interpretability tests + regression datasets RMSE (do not modify)
 interpretable_regressor.py          — regressor definition (agent modifies this)
 program.md        — agent instructions
 pyproject.toml    — dependencies

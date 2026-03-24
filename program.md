@@ -37,7 +37,7 @@ This trains `InterpretableRegressor`, runs interpretability tests, and updates `
 
 Optimize both metrics in `results/overall_results.csv`:
 
-- **`mean_rmse`** — mean RMSE across TabArena regression datasets (lower is better)
+- **`mean_rmse`** — mean RMSE across regression datasets (lower is better)
 - **`frac_interpretability_tests_passed`** — fraction of LLM-graded interpretability tests passed (higher is better)
 
 Both metrics matter. A model that scores well on RMSE but poorly on interpretability tests, or vice versa, is not ideal. Look at the baseline scores in `overall_results.csv` to understand the trade-off space. We want pareto improvements over the baselines.

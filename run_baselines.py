@@ -1,11 +1,11 @@
 """
-Run interpretability tests and TabArena regression evaluation on a unified
+Run interpretability tests and performance regression evaluation on a unified
 set of regressors, then produce a combined performance plot.
 
 Usage: uv run run_baselines.py
 Outputs (all under results/):
   interpretability_results.csv
-  tabarena_results.csv               — per-dataset per-model RMSE
+  performance_results.csv               — per-dataset per-model RMSE
   overall_results.csv                — summary of overall scores (for leaderboard)
   interpretability_vs_performance.png
 """
@@ -28,7 +28,7 @@ from sklearn.tree import DecisionTreeRegressor
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "eval"))
 from interp_eval import ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, run_all_interp_tests
-from performance import evaluate_all_regressors, compute_rank_scores, RESULTS_DIR, upsert_overall_results
+from performance_eval import evaluate_all_regressors, compute_rank_scores, RESULTS_DIR, upsert_overall_results
 
 # ---------------------------------------------------------------------------
 # Model definitions
@@ -95,18 +95,18 @@ def _model_color(name):
     return "#7f8c8d"
 
 
-def plot_interp_vs_tabarena(interp_results, tabarena_csv_path, out_path):
-    """Scatter: x=TabArena mean RMSE (±1 SEM across datasets), y=interpretability tests passed."""
+def plot_interp_vs_performance(interp_results, performance_csv_path, out_path):
+    """Scatter: x=performance mean RMSE (±1 SEM across datasets), y=interpretability tests passed."""
     from adjustText import adjust_text
 
-    tabarena_rmses = {}
-    with open(tabarena_csv_path, newline="") as f:
+    performance_rmses = {}
+    with open(performance_csv_path, newline="") as f:
         for row in csv.DictReader(f):
             if row["rmse"]:
-                tabarena_rmses.setdefault(row["model"], []).append(float(row["rmse"]))
+                performance_rmses.setdefault(row["model"], []).append(float(row["rmse"]))
 
-    mean_rmse = {m: float(np.mean(v)) for m, v in tabarena_rmses.items()}
-    sem_rmse  = {m: float(np.std(v) / np.sqrt(len(v))) for m, v in tabarena_rmses.items()}
+    mean_rmse = {m: float(np.mean(v)) for m, v in performance_rmses.items()}
+    sem_rmse  = {m: float(np.std(v) / np.sqrt(len(v))) for m, v in performance_rmses.items()}
 
     model_names = list(dict.fromkeys(r["model"] for r in interp_results))
     n_passed = {n: sum(r["passed"] for r in interp_results if r["model"] == n)
@@ -131,9 +131,9 @@ def plot_interp_vs_tabarena(interp_results, tabarena_csv_path, out_path):
     adjust_text(texts, x=x, y=y, ax=ax,
                 arrowprops=dict(arrowstyle="-", color="grey", lw=0.6))
 
-    ax.set_xlabel("TabArena Mean RMSE", fontsize=10)
+    ax.set_xlabel("performance Mean RMSE", fontsize=10)
     ax.set_ylabel(f"Interpretability Tests Passed (out of {n_tests})", fontsize=10)
-    ax.set_title("Interpretability vs. TabArena Performance", fontsize=12, fontweight="bold")
+    ax.set_title("Interpretability vs. performance Performance", fontsize=12, fontweight="bold")
     
     ax.grid(True, alpha=0.3)
 
@@ -197,19 +197,19 @@ if __name__ == "__main__":
             writer.writerow({**r, "suite": _suite(r["test"])})
     print(f"Per-test results saved → {csv_path}")
 
-    # --- TabArena evaluation ---
+    # --- performance evaluation ---
     print("\n" + "="*60)
-    print("  TABARENA EVALUATION")
+    print("  performance EVALUATION")
     print("="*60)
     dataset_rmses = evaluate_all_regressors(REGRESSOR_DEFS)
     avg_rank, avg_rmse = compute_rank_scores(dataset_rmses)
 
-    print("\n\nTabArena summary (sorted by avg rank):")
+    print("\n\nperformance summary (sorted by avg rank):")
     for name, rank in sorted(avg_rank.items(), key=lambda x: x[1]):
         print(f"  {name:<15}: avg_rank={rank:.2f}  mean_rmse={avg_rmse.get(name, float('nan')):.4f}")
 
-    tabarena_csv = os.path.join(RESULTS_DIR, "tabarena_results.csv")
-    with open(tabarena_csv, "w", newline="") as f:
+    performance_csv = os.path.join(RESULTS_DIR, "performance_results.csv")
+    with open(performance_csv, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["dataset", "model", "rmse", "rank"])
         for ds_name, model_rmses in dataset_rmses.items():
@@ -219,7 +219,7 @@ if __name__ == "__main__":
             for name, rmse in model_rmses.items():
                 rank = rank_map.get(name, "")
                 writer.writerow([ds_name, name, "" if np.isnan(rmse) else f"{rmse:.6f}", rank])
-    print(f"Per-dataset results saved → {tabarena_csv}")
+    print(f"Per-dataset results saved → {performance_csv}")
 
     # --- Overall results CSV ---
     try:
@@ -237,8 +237,8 @@ if __name__ == "__main__":
     upsert_overall_results(overall_rows, RESULTS_DIR)
 
     # --- Plot ---
-    plot_interp_vs_tabarena(
-        interp_results, tabarena_csv,
+    plot_interp_vs_performance(
+        interp_results, performance_csv,
         os.path.join(RESULTS_DIR, "interpretability_vs_performance.png"),
     )
 
