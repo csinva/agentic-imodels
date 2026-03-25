@@ -37,7 +37,7 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
     Must implement: fit(X, y), predict(X), and __str__().
     """
 
-    def __init__(self, max_depth=4, min_samples_leaf=10):
+    def __init__(self, max_depth=4, min_samples_leaf=2):
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
 
@@ -56,7 +56,9 @@ class InterpretableRegressor(BaseEstimator, RegressorMixin):
 
     def __str__(self):
         check_is_fitted(self, "tree_")
-        return export_text(self.tree_)
+        feature_names = [f"x{i}" for i in range(self.tree_.n_features_in_)]
+        tree_text = export_text(self.tree_, feature_names=feature_names, max_depth=6)
+        return tree_text
 
 
 # Make class picklable when script is run as __main__ (required for joblib caching/parallel)
@@ -78,9 +80,6 @@ if __name__ == "__main__":
     interp_results = run_all_interp_tests(model_defs)
     n_passed = sum(r["passed"] for r in interp_results)
     total = len(interp_results)
-    std  = sum(r["passed"] for r in interp_results if r["test"] in {t.__name__ for t in ALL_TESTS})
-    hard = sum(r["passed"] for r in interp_results if r["test"] in {t.__name__ for t in HARD_TESTS})
-    ins  = sum(r["passed"] for r in interp_results if r["test"] in {t.__name__ for t in INSIGHT_TESTS})
 
     # prediction performance (RMSE)
     dataset_rmses = evaluate_all_regressors(model_defs)
@@ -104,7 +103,6 @@ if __name__ == "__main__":
 
     print()
     print("---")
-    print(f"tests_passed:  {n_passed}/{total} ({n_passed/total:.2%})  "
-          f"[std {std}/8  hard {hard}/5  insight {ins}/5]")
+    print(f"tests_passed:  {n_passed}/{total} ({n_passed/total:.2%})")
     print(f"mean_rmse:     {mean_rmse:.4f}")
     print(f"total_seconds: {time.time() - t0:.1f}s")
