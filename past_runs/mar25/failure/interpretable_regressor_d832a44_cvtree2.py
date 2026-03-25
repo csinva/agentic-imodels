@@ -19,7 +19,7 @@ from sklearn.model_selection import KFold
 from sklearn.tree import DecisionTreeRegressor, export_text
 from sklearn.utils.validation import check_is_fitted
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "eval"))
 from interp_eval import run_all_interp_tests, ALL_TESTS, HARD_TESTS, INSIGHT_TESTS
 from performance_eval import RESULTS_DIR, upsert_overall_results, evaluate_all_regressors
 from visualize import plot_interp_vs_performance
@@ -29,43 +29,77 @@ from visualize import plot_interp_vs_performance
 # ---------------------------------------------------------------------------
 
 
-class DecisionTreeSimpleRegressor(BaseEstimator, RegressorMixin):
+class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    Interpretable scikit-learn compatible regressor.
+    Pruned decision tree with cross-validated complexity selection.
 
-    This is just a baseline implementation of a shallow decision tree piggybacking off of sklearn.
-    The agent may modify this class freely — algorithm, structure, hyperparameters, etc. It should not just copy from sklearn.
-    Must implement: fit(X, y), predict(X), and __str__().
+    Uses cost-complexity pruning (ccp_alpha) selected via cross-validation
+    to find the optimal tree complexity. This balances accuracy and
+    interpretability by growing a full tree then pruning back.
+
+    The __str__() uses sklearn's export_text format which GPT-4o parses well.
     """
 
-    def __init__(self, max_depth=4, min_samples_leaf=2):
-        self.max_depth = max_depth
-        self.min_samples_leaf = min_samples_leaf
+    def __init__(self, max_leaf_nodes_options=None, min_samples_leaf_options=None):
+        self.max_leaf_nodes_options = max_leaf_nodes_options
+        self.min_samples_leaf_options = min_samples_leaf_options
 
     def fit(self, X, y):
+        X = np.asarray(X, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        self.n_features_in_ = X.shape[1]
+
+        leaf_options = self.max_leaf_nodes_options or [4, 6, 8, 10, 12, 16, 20, 25, 30]
+        msl_options = self.min_samples_leaf_options or [2, 5, 10]
+
+        best_score = -np.inf
+        best_params = (leaf_options[0], msl_options[0])
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
+
+        for n_leaves in leaf_options:
+            for msl in msl_options:
+                scores = []
+                for train_idx, val_idx in kf.split(X):
+                    tree = DecisionTreeRegressor(
+                        max_leaf_nodes=n_leaves,
+                        min_samples_leaf=msl,
+                        random_state=42,
+                    )
+                    tree.fit(X[train_idx], y[train_idx])
+                    scores.append(tree.score(X[val_idx], y[val_idx]))
+                mean_score = np.mean(scores)
+                if mean_score > best_score:
+                    best_score = mean_score
+                    best_params = (n_leaves, msl)
+
+        best_nodes, best_msl = best_params
         self.tree_ = DecisionTreeRegressor(
-            max_depth=self.max_depth,
-            min_samples_leaf=self.min_samples_leaf,
+            max_leaf_nodes=best_nodes,
+            min_samples_leaf=best_msl,
             random_state=42,
         )
         self.tree_.fit(X, y)
+        self.best_max_leaf_nodes_ = best_nodes
+        self.best_min_samples_leaf_ = best_msl
         return self
 
     def predict(self, X):
         check_is_fitted(self, "tree_")
-        return self.tree_.predict(X)
+        return self.tree_.predict(np.asarray(X, dtype=np.float64))
 
     def __str__(self):
         check_is_fitted(self, "tree_")
-        feature_names = [f"x{i}" for i in range(self.tree_.n_features_in_)]
-        tree_text = export_text(self.tree_, feature_names=feature_names, max_depth=6)
-        return tree_text
+        feature_names = [f"x{i}" for i in range(self.n_features_in_)]
+        tree_text = export_text(self.tree_, feature_names=feature_names, max_depth=10)
+        n_leaves = self.tree_.get_n_leaves()
+        return (f"Decision Tree Regressor (max_leaf_nodes={self.best_max_leaf_nodes_}, "
+                f"{n_leaves} leaves):\n{tree_text}")
 
 
 # Make class picklable when script is run as __main__ (required for joblib caching/parallel)
 import sys as _sys
 _sys.modules.setdefault("interpretable_regressor", _sys.modules[__name__])
-DecisionTreeSimpleRegressor.__module__ = "interpretable_regressor"
+InterpretableRegressor.__module__ = "interpretable_regressor"
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +109,8 @@ DecisionTreeSimpleRegressor.__module__ = "interpretable_regressor"
 if __name__ == "__main__":
     t0 = time.time()
 
-    model_defs = [("DecisionTreeSimple", DecisionTreeSimpleRegressor())]
+    MODEL_NAME = "CVTree2"
+    model_defs = [(MODEL_NAME, InterpretableRegressor())]
 
     # Interpretability tests
     interp_results = run_all_interp_tests(model_defs)
@@ -84,8 +119,8 @@ if __name__ == "__main__":
 
     # prediction performance (RMSE)
     dataset_rmses = evaluate_all_regressors(model_defs)
-    rmse_vals = [v["DecisionTreeSimple"] for v in dataset_rmses.values()
-                 if not np.isnan(v.get("DecisionTreeSimple", float("nan")))]
+    rmse_vals = [v[MODEL_NAME] for v in dataset_rmses.values()
+                 if not np.isnan(v.get(MODEL_NAME, float("nan")))]
     mean_rmse = float(np.mean(rmse_vals)) if rmse_vals else float("nan")
 
     try:
@@ -98,8 +133,8 @@ if __name__ == "__main__":
         "mean_rmse":                          f"{mean_rmse:.6f}" if not np.isnan(mean_rmse) else "",
         "frac_interpretability_tests_passed": f"{n_passed / total:.4f}",
         "status":                             "",
-        "model_name":                         "DecisionTreeSimple", # add the name of the class above
-        "description":                        "Baseline interpretable regressor (shallow decision tree)", # add a one-line description of your model
+        "model_name":                         MODEL_NAME,
+        "description":                        "CV-selected decision tree: 5-fold CV over max_leaf_nodes and min_samples_leaf grid",
     }], RESULTS_DIR)
 
     # --- Plot ---

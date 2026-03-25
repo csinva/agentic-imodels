@@ -40,9 +40,9 @@ uv run interpretable_regressor.py
 If the above commands all work, your setup is working and you can go into autonomous research mode. Then, ask claude to do the following:
 
 ```bash
-Read the tests in interp_eval.py and the results in results/interpretability_results.csv. Write a concise report titled results/results_report.md. It should describe the interp_eval tests and show a detailed example of how a single test is conducted. Then, it should show a table where each row is a test, column gives a short description, next column gives a detailed description, next column gives pass rate, and final columns show which models passed.
+First, read the src/performance_eval.py, past_runs/mar25/performance_results.csv, and the past_runs/mar25/interpretability_vs_performance.png plot. Include the plot then discuss how different variations effected performance/interpretability and why.
 
-Next, read the eval/performance_eval.py, results/performance_results.csv, and the interpretability_vs_performance.png plot. Describe the performance evaluation then include the plot.
+Next, read the tests in src/interp_eval.py and the results in past_runs/mar25/interpretability_results.csv. Write a concise report titled past_runs/mar25/results_report.md. It should describe the interp_eval tests and show a detailed example of how a single test is conducted. Then, it should show a table where each row is a test, column gives a short description, next column gives a detailed description, next column gives pass rate, and final columns show which models passed.
 
 Finally, the report should end with a string visualization of three different model types (e.g. decision tree, linear model, random forest) when fit to the synthetic data from the first interpretability test with some text discussion.
 ```
@@ -66,7 +66,7 @@ program.md        — agent instructions
 pyproject.toml    — dependencies
 results/          — output plots, CSVs, and scores
   overall_results.csv — mean_rmse + frac_interpretability_tests_passed per model
-eval/             — supporting modules (interpretability tests, performance eval)
+src/             — supporting modules (interpretability tests, performance eval)
 ```
 
 ## Design choices

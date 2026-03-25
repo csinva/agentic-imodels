@@ -22,7 +22,7 @@ from sklearn.linear_model import Lasso, LassoCV, LinearRegression, RidgeCV
 from sklearn.neural_network import MLPRegressor
 from sklearn.tree import DecisionTreeRegressor
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "eval"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from interp_eval import ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, run_all_interp_tests
 from performance_eval import evaluate_all_regressors, compute_rank_scores, RESULTS_DIR, upsert_overall_results
 from visualize import plot_interp_vs_performance

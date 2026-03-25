@@ -19,7 +19,7 @@ from sklearn.model_selection import KFold
 from sklearn.tree import DecisionTreeRegressor, export_text
 from sklearn.utils.validation import check_is_fitted
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "eval"))
 from interp_eval import run_all_interp_tests, ALL_TESTS, HARD_TESTS, INSIGHT_TESTS
 from performance_eval import RESULTS_DIR, upsert_overall_results, evaluate_all_regressors
 from visualize import plot_interp_vs_performance
@@ -29,43 +29,93 @@ from visualize import plot_interp_vs_performance
 # ---------------------------------------------------------------------------
 
 
-class DecisionTreeSimpleRegressor(BaseEstimator, RegressorMixin):
+class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    Interpretable scikit-learn compatible regressor.
+    Pruned decision tree with cross-validated complexity selection.
 
-    This is just a baseline implementation of a shallow decision tree piggybacking off of sklearn.
-    The agent may modify this class freely — algorithm, structure, hyperparameters, etc. It should not just copy from sklearn.
-    Must implement: fit(X, y), predict(X), and __str__().
+    Uses cost-complexity pruning (ccp_alpha) selected via cross-validation
+    to find the optimal tree complexity. This balances accuracy and
+    interpretability by growing a full tree then pruning back.
+
+    The __str__() uses sklearn's export_text format which GPT-4o parses well.
     """
 
-    def __init__(self, max_depth=4, min_samples_leaf=2):
-        self.max_depth = max_depth
+    def __init__(self, max_leaf_nodes=16, min_samples_leaf=5):
+        self.max_leaf_nodes = max_leaf_nodes
         self.min_samples_leaf = min_samples_leaf
 
     def fit(self, X, y):
+        X = np.asarray(X, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        self.n_features_in_ = X.shape[1]
+
+        # Grow a tree with max_leaf_nodes constraint, then prune via CV
+        base_tree = DecisionTreeRegressor(
+            max_leaf_nodes=self.max_leaf_nodes,
+            min_samples_leaf=self.min_samples_leaf,
+            random_state=42,
+        )
+        # Get cost complexity pruning path
+        full_tree = DecisionTreeRegressor(
+            min_samples_leaf=self.min_samples_leaf,
+            random_state=42,
+        )
+        full_tree.fit(X, y)
+        path = full_tree.cost_complexity_pruning_path(X, y)
+        ccp_alphas = path.ccp_alphas
+
+        # Cross-validate to find best alpha
+        if len(ccp_alphas) > 20:
+            # Subsample alphas for speed
+            indices = np.linspace(0, len(ccp_alphas) - 1, 20, dtype=int)
+            ccp_alphas = ccp_alphas[indices]
+
+        best_alpha = 0.0
+        best_score = -np.inf
+        kf = KFold(n_splits=3, shuffle=True, random_state=42)
+
+        for alpha in ccp_alphas:
+            scores = []
+            for train_idx, val_idx in kf.split(X):
+                tree = DecisionTreeRegressor(
+                    ccp_alpha=alpha,
+                    min_samples_leaf=self.min_samples_leaf,
+                    random_state=42,
+                )
+                tree.fit(X[train_idx], y[train_idx])
+                scores.append(tree.score(X[val_idx], y[val_idx]))
+            mean_score = np.mean(scores)
+            if mean_score > best_score:
+                best_score = mean_score
+                best_alpha = alpha
+
+        # Fit final tree with best alpha
         self.tree_ = DecisionTreeRegressor(
-            max_depth=self.max_depth,
+            ccp_alpha=best_alpha,
             min_samples_leaf=self.min_samples_leaf,
             random_state=42,
         )
         self.tree_.fit(X, y)
+        self.ccp_alpha_ = best_alpha
         return self
 
     def predict(self, X):
         check_is_fitted(self, "tree_")
-        return self.tree_.predict(X)
+        return self.tree_.predict(np.asarray(X, dtype=np.float64))
 
     def __str__(self):
         check_is_fitted(self, "tree_")
-        feature_names = [f"x{i}" for i in range(self.tree_.n_features_in_)]
-        tree_text = export_text(self.tree_, feature_names=feature_names, max_depth=6)
-        return tree_text
+        feature_names = [f"x{i}" for i in range(self.n_features_in_)]
+        tree_text = export_text(self.tree_, feature_names=feature_names, max_depth=10)
+        n_leaves = self.tree_.get_n_leaves()
+        return (f"Decision Tree Regressor (pruned, {n_leaves} leaves, "
+                f"ccp_alpha={self.ccp_alpha_:.6f}):\n{tree_text}")
 
 
 # Make class picklable when script is run as __main__ (required for joblib caching/parallel)
 import sys as _sys
 _sys.modules.setdefault("interpretable_regressor", _sys.modules[__name__])
-DecisionTreeSimpleRegressor.__module__ = "interpretable_regressor"
+InterpretableRegressor.__module__ = "interpretable_regressor"
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +125,8 @@ DecisionTreeSimpleRegressor.__module__ = "interpretable_regressor"
 if __name__ == "__main__":
     t0 = time.time()
 
-    model_defs = [("DecisionTreeSimple", DecisionTreeSimpleRegressor())]
+    MODEL_NAME = "PrunedTree"
+    model_defs = [(MODEL_NAME, InterpretableRegressor())]
 
     # Interpretability tests
     interp_results = run_all_interp_tests(model_defs)
@@ -84,8 +135,8 @@ if __name__ == "__main__":
 
     # prediction performance (RMSE)
     dataset_rmses = evaluate_all_regressors(model_defs)
-    rmse_vals = [v["DecisionTreeSimple"] for v in dataset_rmses.values()
-                 if not np.isnan(v.get("DecisionTreeSimple", float("nan")))]
+    rmse_vals = [v[MODEL_NAME] for v in dataset_rmses.values()
+                 if not np.isnan(v.get(MODEL_NAME, float("nan")))]
     mean_rmse = float(np.mean(rmse_vals)) if rmse_vals else float("nan")
 
     try:
@@ -98,8 +149,8 @@ if __name__ == "__main__":
         "mean_rmse":                          f"{mean_rmse:.6f}" if not np.isnan(mean_rmse) else "",
         "frac_interpretability_tests_passed": f"{n_passed / total:.4f}",
         "status":                             "",
-        "model_name":                         "DecisionTreeSimple", # add the name of the class above
-        "description":                        "Baseline interpretable regressor (shallow decision tree)", # add a one-line description of your model
+        "model_name":                         MODEL_NAME,
+        "description":                        "CV-pruned decision tree with cost-complexity pruning",
     }], RESULTS_DIR)
 
     # --- Plot ---
