@@ -11,15 +11,11 @@ Outputs (all under results/):
 """
 
 import csv
-import json
 import os
 import subprocess
 import sys
 import time
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import Lasso, LassoCV, LinearRegression, RidgeCV
@@ -29,6 +25,7 @@ from sklearn.tree import DecisionTreeRegressor
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "eval"))
 from interp_eval import ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, run_all_interp_tests
 from performance_eval import evaluate_all_regressors, compute_rank_scores, RESULTS_DIR, upsert_overall_results
+from visualize import plot_interp_vs_performance
 
 # ---------------------------------------------------------------------------
 # Model definitions
@@ -47,7 +44,7 @@ REGRESSOR_DEFS = [
 
 try:
     from pygam import LinearGAM
-    REGRESSOR_DEFS = [("GAM", LinearGAM(n_splines=10))] + REGRESSOR_DEFS
+    REGRESSOR_DEFS = [("PyGAM", LinearGAM(n_splines=10))] + REGRESSOR_DEFS
 except ImportError:
     pass
 
@@ -64,93 +61,10 @@ try:
         ("RuleFit",      RuleFitRegressor(max_rules=20, random_state=42)),
         ("HSTree_mini",  HSTreeRegressorCV(max_leaf_nodes=8,  random_state=42)),
         ("HSTree_large", HSTreeRegressorCV(max_leaf_nodes=20, random_state=42)),
-        ("TreeGAM",      TreeGAMRegressor(n_boosting_rounds=5, max_leaf_nodes=4, random_state=42)),
+        ("TreeGAM",      TreeGAMRegressor(max_leaf_nodes=3, random_state=42)),
     ]
 except ImportError:
     pass
-
-MODEL_GROUPS = {
-    "black-box": {"RF", "GBM", "MLP"},
-    "imodels":   {"FIGS_mini", "FIGS_large", "RuleFit", "HSTree_mini", "HSTree_large", "TreeGAM"},
-    "linear":    {"OLS", "LASSO", "LassoCV", "RidgeCV"},
-    "tree":      {"DT_mini", "DT_large"},
-    "gam":       {"GAM"},
-}
-GROUP_COLORS = {
-    "black-box": "#e74c3c",
-    "imodels":   "#27ae60",
-    "linear":    "#2980b9",
-    "tree":      "#e67e22",
-    "gam":       "#8e44ad",
-}
-
-# ---------------------------------------------------------------------------
-# Plot
-# ---------------------------------------------------------------------------
-
-def _model_color(name):
-    for group, members in MODEL_GROUPS.items():
-        if name in members:
-            return GROUP_COLORS[group]
-    return "#7f8c8d"
-
-
-def plot_interp_vs_performance(interp_results, performance_csv_path, out_path):
-    """Scatter: x=performance mean RMSE (±1 SEM across datasets), y=interpretability tests passed."""
-    from adjustText import adjust_text
-
-    performance_rmses = {}
-    with open(performance_csv_path, newline="") as f:
-        for row in csv.DictReader(f):
-            if row["rmse"]:
-                performance_rmses.setdefault(row["model"], []).append(float(row["rmse"]))
-
-    mean_rmse = {m: float(np.mean(v)) for m, v in performance_rmses.items()}
-    sem_rmse  = {m: float(np.std(v) / np.sqrt(len(v))) for m, v in performance_rmses.items()}
-
-    model_names = list(dict.fromkeys(r["model"] for r in interp_results))
-    n_passed = {n: sum(r["passed"] for r in interp_results if r["model"] == n)
-                for n in model_names}
-    n_tests = len([r for r in interp_results if r["model"] == model_names[0]])
-
-    names  = [n for n in model_names if n in mean_rmse]
-    x      = np.array([mean_rmse[n] for n in names])
-    x_err  = np.array([sem_rmse[n]  for n in names])
-    y      = np.array([n_passed[n] for n in names])
-    colors = [_model_color(n) for n in names]
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    for xi, yi, xe, color in zip(x, y, x_err, colors):
-        ax.errorbar(xi, yi, xerr=xe, fmt="o", color=color,
-                    ecolor=color, elinewidth=1.2, capsize=4,
-                    markersize=8, markeredgecolor="white", markeredgewidth=0.6,
-                    zorder=5)
-
-    texts = [ax.text(xi, yi, name, fontsize=8.5) for xi, yi, name in zip(x, y, names)]
-    ax.set_xlim(left=min(x) - 0.05, right=1.1) 
-    adjust_text(texts, x=x, y=y, ax=ax,
-                arrowprops=dict(arrowstyle="-", color="grey", lw=0.6))
-
-    ax.set_xlabel("performance Mean RMSE", fontsize=10)
-    ax.set_ylabel(f"Interpretability Tests Passed (out of {n_tests})", fontsize=10)
-    ax.set_title("Interpretability vs. performance Performance", fontsize=12, fontweight="bold")
-    
-    ax.grid(True, alpha=0.3)
-
-    from matplotlib.lines import Line2D
-    legend_handles = [
-        Line2D([0], [0], marker="o", color="w",
-               markerfacecolor=GROUP_COLORS[g], markersize=9,
-               label=g.replace("-", " ").title())
-        for g in GROUP_COLORS if any(n in MODEL_GROUPS[g] for n in names)
-    ]
-    ax.legend(handles=legend_handles, fontsize=9) #, loc="upper left")
-    
-
-    # plt.tight_layout()
-    plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"\nPlot saved → {out_path}")
-
 
 # ---------------------------------------------------------------------------
 # Main
@@ -237,8 +151,9 @@ if __name__ == "__main__":
     upsert_overall_results(overall_rows, RESULTS_DIR)
 
     # --- Plot ---
+    overall_csv = os.path.join(RESULTS_DIR, "overall_results.csv")
     plot_interp_vs_performance(
-        interp_results, performance_csv,
+        overall_csv,
         os.path.join(RESULTS_DIR, "interpretability_vs_performance.png"),
     )
 

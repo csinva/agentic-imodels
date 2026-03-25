@@ -69,8 +69,9 @@ commit	mean_rmse	frac_interpretability_tests_passed	status	description
 1. git commit hash (short, 7 chars)
 2. mean_rmse achieved — use empty for crashes (note: interpretable_regressor.py does not compute mean_rmse; check overall_results.csv for the baseline value to compare against)
 3. frac_interpretability_tests_passed — from the script output
-4. status: `keep`, `discard`, or `crash`
-5. short text description of what this experiment tried - make sure to update this clearly
+4. status: `keep`, `discard`, or `crash` (original runs have status `baseline`)
+5. shorthand name of the model tried
+6. brief text description of what this experiment tried - make sure to update this clearly
 
 ## The experiment loop
 
@@ -85,7 +86,7 @@ LOOP FOREVER:
 5. Read results: `tail -n 5 run.log` and `grep InterpretableRegressor results/overall_results.csv`
 6. If the run crashed, check `tail -n 50 run.log` for the stack trace and attempt a fix
 7. Record results in `results/overall_results.csv` (do not commit this file)
-8. If either metric improved without the other getting significantly worse, keep the commit and save the current version of `interpretable_regressor.py` as a new file under the success folder (e.g. `interpretable_regressors_lib/success/interpretable_regressor_<commit_hash>_<simple_name>.py`) for future use. Otherwise save it under the failure folder (e.g. `interpretable_regressors_lib/failure/interpretable_regressor_<commit_hash>_<simple_name>.py`). If it was a success, then run `git checkout master` and merge the commit from the experiment branch with a descriptive message about the improvement.
+8. If either metric improved without the other getting significantly worse, keep the commit and save the current version of `interpretable_regressor.py` as a new file under the success folder (e.g. `interpretable_regressors_lib/success/interpretable_regressor_<commit_hash>_<simple_name>.py`) for future use. Otherwise save it under the failure folder (e.g. `interpretable_regressors_lib/failure/interpretable_regressor_<commit_hash>_<simple_name>.py`).
 
 **NEVER STOP**: Once the experiment loop has begun, do NOT pause to ask the human if you should continue. Run until manually stopped.
 
