@@ -24,282 +24,45 @@ from interp_eval import run_all_interp_tests, ALL_TESTS, HARD_TESTS, INSIGHT_TES
 from performance_eval import RESULTS_DIR, upsert_overall_results, evaluate_all_regressors
 
 # ---------------------------------------------------------------------------
-# Interpretable Regressor (edit this — everything below is fair game)
+# Interpretable Regressor (edit this, everything in this class is fair game)
 # ---------------------------------------------------------------------------
 
 
 class InterpretableRegressor(BaseEstimator, RegressorMixin):
     """
-    CV-HSDT-RestrictedLasso: 35-leaf HSDT tree + feature-restricted Lasso correction.
+    Interpretable scikit-learn compatible regressor.
 
-    Two-stage model designed to combine low RMSE with high interpretability:
-
-    Stage 1: Fit 35-leaf tree with HSDT shrinkage. 8-seed joint CV with
-             KFold(random_state=43) selects best (seed, lambda). The tree captures
-             nonlinear structure efficiently.
-
-    Stage 2: Fit LassoCV on training residuals (y - tree_pred) using ONLY the
-             features that the tree uses (non-zero importance). Restricting to
-             tree features ensures:
-             (a) Sparse representation: model only references features the tree uses
-             (b) Linear extrapolation for tree features: enables solving counterfactual
-                 targets outside the training range
-             (c) Simple correction formula: few terms, easy for LLM to compute
-
-    Final prediction: tree_shrunk_pred + lasso_correction_on_tree_features
-
-    HYPOTHESIS: Feature-restricted Lasso gives:
-    - Similar RMSE benefit as unrestricted (tree features carry most residual signal)
-    - Better interp than unrestricted (no spurious non-tree feature corrections)
-    - Fixes insight_counterfactual_target by allowing linear extrapolation on tree features
-    - Simple correction (1-3 terms) LLM can easily add to tree predictions
-
-    Shrinkage formula:
-      shrunk[node] = orig[node] + lam * (shrunk[parent] - orig[node]) / (n_samples + lam)
-
-    Seeds: [0,1,2,3,4,5,6,42]. Lambda: [1,2,4,7,10,15,22,30,45,60]. cv=5.
-    repr_v=47 to bust joblib cache.
+    This is just a baseline implementation of a shallow decision tree.
+    The agent may modify this class freely — algorithm, structure, hyperparameters, etc.
+    Must implement: fit(X, y), predict(X), and __str__().
     """
 
-    LAMBDA_GRID = [1.0, 2.0, 4.0, 7.0, 10.0, 15.0, 22.0, 30.0, 45.0, 60.0]
-    SEED_GRID = [0, 1, 2, 3, 4, 5, 6, 42]
-
-    def __init__(self, max_leaf_nodes=35, min_samples_leaf=5, shrinkage_lambda="cv", cv=5,
-                 repr_v=47):
-        self.max_leaf_nodes = max_leaf_nodes
+    def __init__(self, max_depth=4, min_samples_leaf=10):
+        self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
-        self.shrinkage_lambda = shrinkage_lambda
-        self.cv = cv
-        self.repr_v = repr_v  # version tag — increment to bust joblib cache on __str__ changes
-
-    @staticmethod
-    def _compute_shrinkage(tree, lam):
-        t = tree.tree_
-        orig = t.value[:, 0, 0].copy()
-        shrunk = np.copy(orig)
-
-        def shrink(node, parent_shrunk):
-            if node == 0:
-                shrunk[node] = orig[node]
-            else:
-                n_s = t.n_node_samples[node]
-                shrunk[node] = orig[node] + lam * (parent_shrunk - orig[node]) / (n_s + lam)
-            left = t.children_left[node]
-            if left != -1:
-                shrink(int(left), shrunk[node])
-                shrink(int(t.children_right[node]), shrunk[node])
-
-        shrink(0, orig[0])
-        return shrunk
-
-    def _select_seed_and_lambda(self, X_arr, y_arr):
-        """Select best (seed, lambda) combination via CV."""
-        kf = KFold(n_splits=self.cv, shuffle=True, random_state=43)
-        best_seed, best_lam, best_mse = 42, self.LAMBDA_GRID[0], np.inf
-        for seed in self.SEED_GRID:
-            for lam in self.LAMBDA_GRID:
-                fold_mses = []
-                for tr_idx, va_idx in kf.split(X_arr):
-                    X_tr, X_va = X_arr[tr_idx], X_arr[va_idx]
-                    y_tr, y_va = y_arr[tr_idx], y_arr[va_idx]
-                    tree = DecisionTreeRegressor(
-                        max_leaf_nodes=self.max_leaf_nodes,
-                        min_samples_leaf=self.min_samples_leaf,
-                        random_state=seed,
-                    )
-                    tree.fit(X_tr, y_tr)
-                    sv = self._compute_shrinkage(tree, lam)
-                    fold_mses.append(np.mean((y_va - sv[tree.apply(X_va)]) ** 2))
-                mse = np.mean(fold_mses)
-                if mse < best_mse:
-                    best_mse, best_seed, best_lam = mse, seed, lam
-        return best_seed, best_lam
 
     def fit(self, X, y):
-        if hasattr(X, "columns"):
-            self.feature_names_in_ = list(X.columns)
-        else:
-            self.feature_names_in_ = [f"x{i}" for i in range(X.shape[1])]
-
-        X_arr = np.asarray(X, dtype=float)
-        y_arr = np.asarray(y, dtype=float)
-
-        # Stage 1: Fit tree with HSDT
-        if self.shrinkage_lambda == "cv":
-            self.seed_, self.lambda_ = self._select_seed_and_lambda(X_arr, y_arr)
-        else:
-            self.seed_ = 42
-            self.lambda_ = float(self.shrinkage_lambda)
-
         self.tree_ = DecisionTreeRegressor(
-            max_leaf_nodes=self.max_leaf_nodes,
+            max_depth=self.max_depth,
             min_samples_leaf=self.min_samples_leaf,
-            random_state=self.seed_,
+            random_state=42,
         )
-        self.tree_.fit(X_arr, y_arr)
-        self.shrunk_values_ = self._compute_shrinkage(self.tree_, self.lambda_)
-
-        # Stage 2: Feature-restricted Lasso on tree residuals
-        tree_preds = self.shrunk_values_[self.tree_.apply(X_arr)]
-        residuals = y_arr - tree_preds
-
-        # Only use features the tree actually uses (non-zero importance)
-        self.lasso_feature_mask_ = self.tree_.feature_importances_ > 1e-6
-        if self.lasso_feature_mask_.sum() > 0:
-            X_selected = X_arr[:, self.lasso_feature_mask_]
-            lasso = LassoCV(cv=5, random_state=42, max_iter=10000)
-            lasso.fit(X_selected, residuals)
-            self.lasso_ = lasso
-        else:
-            self.lasso_ = None
-
+        self.tree_.fit(X, y)
         return self
 
     def predict(self, X):
         check_is_fitted(self, "tree_")
-        X_arr = np.asarray(X, dtype=float)
-        tree_preds = self.shrunk_values_[self.tree_.apply(X_arr)]
-        if self.lasso_ is not None:
-            correction = self.lasso_.predict(X_arr[:, self.lasso_feature_mask_])
-        else:
-            correction = 0.0
-        return tree_preds + correction
-
-    def _tree_lines(self, node=0, depth=0):
-        t = self.tree_.tree_
-        names = self.feature_names_in_
-        indent = "|   " * depth
-
-        if t.children_left[node] == -1:
-            val = self.shrunk_values_[node]
-            n_s = t.n_node_samples[node]
-            return [f"{indent}|--- value: {val:.4f}  (n={n_s})"]
-
-        fname = names[int(t.feature[node])]
-        thresh = t.threshold[node]
-        lines = [f"{indent}|--- {fname} <= {thresh:.4g}"]
-        lines.extend(self._tree_lines(int(t.children_left[node]), depth + 1))
-        lines.append(f"{indent}|--- {fname} > {thresh:.4g}")
-        lines.extend(self._tree_lines(int(t.children_right[node]), depth + 1))
-        return lines
-
-    def _get_grouped_leaf_paths(self):
-        """Return leaves split into two groups by the root condition, each sorted by value."""
-        t = self.tree_.tree_
-        names = self.feature_names_in_
-        root_feat = names[int(t.feature[0])]
-        root_thresh = t.threshold[0]
-        root_left_cond = f"{root_feat} <= {root_thresh:.4g}"
-
-        paths = []
-
-        def traverse(node, conditions):
-            if t.children_left[node] == -1:
-                paths.append({
-                    "conditions": conditions if conditions else ["(always)"],
-                    "value": self.shrunk_values_[node],
-                    "n_samples": t.n_node_samples[node],
-                })
-            else:
-                fname = names[int(t.feature[node])]
-                thresh = t.threshold[node]
-                traverse(int(t.children_left[node]), conditions + [f"{fname} <= {thresh:.4g}"])
-                traverse(int(t.children_right[node]), conditions + [f"{fname} > {thresh:.4g}"])
-
-        traverse(0, [])
-
-        left = sorted([p for p in paths if p["conditions"][0] == root_left_cond],
-                      key=lambda p: p["value"])
-        right = sorted([p for p in paths if p["conditions"][0] != root_left_cond],
-                       key=lambda p: p["value"])
-        return root_feat, root_thresh, left, right
-
-    def _infer_direction(self, feature_idx):
-        t = self.tree_.tree_
-        weighted_effect = 0.0
-        for node in range(t.node_count):
-            if t.children_left[node] == -1 or t.feature[node] != feature_idx:
-                continue
-            lc, rc = int(t.children_left[node]), int(t.children_right[node])
-            weighted_effect += (self.shrunk_values_[rc] - self.shrunk_values_[lc]) * (
-                t.n_node_samples[lc] + t.n_node_samples[rc]
-            )
-        if weighted_effect > 0:
-            return "positive (higher → higher prediction)"
-        elif weighted_effect < 0:
-            return "negative (higher → lower prediction)"
-        return "mixed"
+        return self.tree_.predict(X)
 
     def __str__(self):
         check_is_fitted(self, "tree_")
-        names = self.feature_names_in_
-        t = self.tree_.tree_
-        importances = self.tree_.feature_importances_
         n_leaves = self.tree_.get_n_leaves()
-
-        lines = [
-            f"CV_HSDT_RestrictedLasso(max_leaf_nodes={self.max_leaf_nodes}, "
-            f"selected_lambda={self.lambda_:.1f}, seed={self.seed_}, cv={self.cv})",
-            f"  nodes={t.node_count}, leaves={n_leaves}",
-            "",
-            "Tree structure (follow from root; leaf values are shrunk predictions):",
-        ]
-        lines.extend(self._tree_lines())
-
-        # Grouped decision rules
-        root_feat, root_thresh, left_paths, right_paths = self._get_grouped_leaf_paths()
-        lines += [
-            "",
-            "Decision rules grouped by primary split (to predict: check root, then scan one group):",
-            f"  Primary split: {root_feat} <= {root_thresh:.4g}",
-            "",
-            f"  IF {root_feat} <= {root_thresh:.4g} ({len(left_paths)} rules, sorted by prediction):",
-        ]
-        for i, rule in enumerate(left_paths, 1):
-            rest = " AND ".join(rule["conditions"][1:]) if len(rule["conditions"]) > 1 else "(no further conditions)"
-            lines.append(f"    Rule L{i:2d}: IF {rest}  THEN predict {rule['value']:.4f}  (n={rule['n_samples']})")
-        lines += [
-            "",
-            f"  IF {root_feat} > {root_thresh:.4g} ({len(right_paths)} rules, sorted by prediction):",
-        ]
-        for i, rule in enumerate(right_paths, 1):
-            rest = " AND ".join(rule["conditions"][1:]) if len(rule["conditions"]) > 1 else "(no further conditions)"
-            lines.append(f"    Rule R{i:2d}: IF {rest}  THEN predict {rule['value']:.4f}  (n={rule['n_samples']})")
-
-        # Feature-restricted Lasso correction section
-        if self.lasso_ is not None:
-            selected_names = [names[i] for i in range(len(names)) if self.lasso_feature_mask_[i]]
-            coefs = self.lasso_.coef_
-            intercept = self.lasso_.intercept_
-            nonzero = [(selected_names[i], coefs[i]) for i in range(len(selected_names))
-                       if abs(coefs[i]) > 1e-6]
-            lines += ["", "Linear correction (add to leaf prediction for final output):"]
-            if nonzero or abs(intercept) > 1e-6:
-                parts = []
-                if abs(intercept) > 1e-6:
-                    parts.append(f"{intercept:+.4f}")
-                parts += [f"{c:+.4f}*{n}" for n, c in nonzero]
-                lines.append(f"  correction = {' '.join(parts)}")
-                lines.append(f"  FINAL PREDICTION = leaf_value_above + correction")
-            else:
-                lines.append("  correction = 0  (tree captures all structure; no adjustment needed)")
-                lines.append(f"  FINAL PREDICTION = leaf_value_above")
-
-        order = np.argsort(importances)[::-1]
-        lines += ["", "Feature importances (Gini-based, higher = more important):"]
-        for rank, fi in enumerate(order):
-            if importances[fi] > 1e-6:
-                direction = self._infer_direction(fi)
-                lines.append(
-                    f"  {rank+1:2d}. {names[fi]:<25s}  {importances[fi]:.4f}  "
-                    f"(net effect: {direction})"
-                )
-
-        unused = [names[fi] for fi in range(len(names)) if importances[fi] <= 1e-6]
-        if unused:
-            lines.append(f"\nFeatures not used in tree (zero importance): {', '.join(unused)}")
-
-        return "\n".join(lines)
+        n_nodes = self.tree_.tree_.node_count
+        return (
+            f"InterpretableRegressor(max_depth={self.max_depth}, "
+            f"min_samples_leaf={self.min_samples_leaf})\n"
+            f"  nodes={n_nodes}, leaves={n_leaves}"
+        )
 
 
 # Make class picklable when script is run as __main__ (required for joblib caching/parallel)
@@ -309,7 +72,7 @@ InterpretableRegressor.__module__ = "interpretable_regressor"
 
 
 # ---------------------------------------------------------------------------
-# Evaluation (do not edit anything below this line)
+# Evaluation (do not edit any of the evaluation functions, only the names and model descriptions below this line)
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -325,7 +88,7 @@ if __name__ == "__main__":
     hard = sum(r["passed"] for r in interp_results if r["test"] in {t.__name__ for t in HARD_TESTS})
     ins  = sum(r["passed"] for r in interp_results if r["test"] in {t.__name__ for t in INSIGHT_TESTS})
 
-    # TabArena RMSE
+    # prediction performance (RMSE)
     dataset_rmses = evaluate_all_regressors(model_defs)
     rmse_vals = [v["InterpretableRegressor"] for v in dataset_rmses.values()
                  if not np.isnan(v.get("InterpretableRegressor", float("nan")))]
@@ -341,7 +104,8 @@ if __name__ == "__main__":
         "mean_rmse":                          f"{mean_rmse:.6f}" if not np.isnan(mean_rmse) else "",
         "frac_interpretability_tests_passed": f"{n_passed / total:.4f}",
         "status":                             "",
-        "description":                        "InterpretableRegressor",
+        "model_name":                         "InterpretableRegressor", # add the name of the class above
+        "description":                        "Baseline interpretable regressor (shallow decision tree)", # add a one-line description of your model
     }], RESULTS_DIR)
 
     print()
