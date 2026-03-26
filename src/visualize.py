@@ -35,14 +35,22 @@ GROUP_COLORS = {
 _blues_cmap = plt.cm.Blues
 
 
-def _model_colors(names: list[str]) -> list:
-    """Return a color for each name, using group colors for known models
-    and successive Blues cmap values for unknown ones."""
+def _is_known(name: str) -> bool:
+    """Return True if the model name belongs to any MODEL_GROUPS entry."""
+    return any(name in members for members in MODEL_GROUPS.values())
+
+
+def _model_colors_and_markers(names: list[str]) -> tuple[list, list[str]]:
+    """Return a color and marker for each name.
+
+    Known models get group colors and a circle ("o") marker.
+    Unknown models get Blues-cmap colors and a diamond ("D") marker.
+    """
     # Collect unknown names in order of first appearance
     seen = set()
     unknown_names = []
     for n in names:
-        if n not in seen and not any(n in members for members in MODEL_GROUPS.values()):
+        if n not in seen and not _is_known(n):
             unknown_names.append(n)
             seen.add(n)
     # Build color map for unknowns based on how many there are
@@ -51,18 +59,20 @@ def _model_colors(names: list[str]) -> list:
     for i, uname in enumerate(unknown_names):
         t = 0.3 + 0.6 * i / max(1, n_unknown - 1)
         unknown_color_map[uname] = _blues_cmap(t)
-    # Assign colors
+    # Assign colors and markers
     colors = []
+    markers = []
     for name in names:
-        matched = False
-        for group, members in MODEL_GROUPS.items():
-            if name in members:
-                colors.append(GROUP_COLORS[group])
-                matched = True
-                break
-        if not matched:
+        if _is_known(name):
+            for group, members in MODEL_GROUPS.items():
+                if name in members:
+                    colors.append(GROUP_COLORS[group])
+                    break
+            markers.append("X")
+        else:
             colors.append(unknown_color_map[name])
-    return colors
+            markers.append("o")
+    return colors, markers
 
 
 def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None = None) -> None:
@@ -73,6 +83,8 @@ def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None
     out_path = Path(out_path)
 
     df = pd.read_csv(csv_path)
+    df = df.iloc[::-1].reset_index(drop=True)
+
     required = {"mean_rank", "frac_interpretability_tests_passed", "model_name"}
     missing = required - set(df.columns)
     if missing:
@@ -85,7 +97,7 @@ def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None
     names  = df["model_name"].tolist()
     x      = df["frac_interpretability_tests_passed"].to_numpy()
     y      = df["mean_rank"].to_numpy()
-    colors = _model_colors(names)
+    colors, markers = _model_colors_and_markers(names)
 
     try:
         from adjustText import adjust_text
@@ -94,8 +106,8 @@ def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None
         use_adjust = False
 
     fig, ax = plt.subplots(figsize=(10, 10))
-    for xi, yi, color in zip(x, y, colors):
-        ax.scatter(xi, yi, color=color, s=60, zorder=5,
+    for xi, yi, color, marker in zip(x, y, colors, markers):
+        ax.scatter(xi, yi, color=color, marker=marker, s=60, zorder=5,
                    edgecolors="white", linewidths=0.6)
 
 
@@ -126,6 +138,12 @@ def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None
                label=g.replace("-", " ").title())
         for g in GROUP_COLORS if any(n in MODEL_GROUPS[g] for n in names)
     ]
+    if any(not _is_known(n) for n in names):
+        legend_handles.append(
+            Line2D([0], [0], marker="D", color="w",
+                   markerfacecolor="steelblue", markersize=8,
+                   label="Unknown")
+        )
     if legend_handles:
         ax.legend(handles=legend_handles, fontsize=9)
 
