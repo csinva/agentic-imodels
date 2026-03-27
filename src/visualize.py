@@ -111,8 +111,8 @@ def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None
                    edgecolors="white", linewidths=0.6)
 
 
-    texts = [ax.text(xi, yi, name, fontsize=8.5)
-             for xi, yi, name in zip(x, y, names)]
+    texts = [ax.text(xi, yi, name, fontsize=8.5, color=color)
+             for xi, yi, name, color in zip(x, y, names, colors)]
 
     # change ylim to ignore largest outlier
     # second_largest = np.partition(y, -2)[-2]
@@ -142,7 +142,7 @@ def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None
         legend_handles.append(
             Line2D([0], [0], marker="D", color="w",
                    markerfacecolor="steelblue", markersize=8,
-                   label="Unknown")
+                   label="Evolved")
         )
     if legend_handles:
         ax.legend(handles=legend_handles, fontsize=9)
