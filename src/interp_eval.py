@@ -290,6 +290,33 @@ def _sparse_ten_feature_data(n=600, seed=31):
     y = 5.0 * X[:, 0] + 3.0 * X[:, 1] + 0.3 * rng.randn(n)
     return X, y
 
+def _mixed_sign_six_feature_data(n=700, seed=40):
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 6)
+    y = 4.0 * X[:, 0] - 3.0 * X[:, 1] + 2.5 * X[:, 2] - 1.5 * X[:, 3] + 0.8 * X[:, 4] - 0.3 * X[:, 5] + rng.randn(n) * 0.4
+    return X, y
+
+def _double_threshold_data(n=600, seed=41):
+    """Two thresholds on x0: y jumps at x0=0 and again at x0=1.5."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 4)
+    y = np.where(X[:, 0] > 1.5, 4.0, np.where(X[:, 0] > 0.0, 2.0, 0.0)) + rng.randn(n) * 0.1
+    return X, y
+
+def _additive_nonlinear_data(n=800, seed=42):
+    """y = 3*max(0, x0) + 2*sin(x1) + x2, additive but nonlinear."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 5)
+    y = 3.0 * np.maximum(0.0, X[:, 0]) + 2.0 * np.sin(X[:, 1]) + X[:, 2] + rng.randn(n) * 0.3
+    return X, y
+
+def _interaction_data(n=700, seed=43):
+    """y = 3*x0 + 2*x1 + 1.5*x0*x1, includes a pairwise interaction."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 4)
+    y = 3.0 * X[:, 0] + 2.0 * X[:, 1] + 1.5 * X[:, 0] * X[:, 1] + rng.randn(n) * 0.4
+    return X, y
+
 
 # ---------------------------------------------------------------------------
 # Standard tests
@@ -821,6 +848,129 @@ def discrim_test_predict_below_threshold(model, llm):
                 ground_truth=pred_b, response=response)
 
 
+def discrim_test_simulate_mixed_sign(model, llm):
+    """Simulate prediction on 6 features with mixed positive/negative coefficients.
+
+    Requires tracing through more terms with sign changes; interpretable additive
+    models can still compute this from their representation while black-box models
+    cannot.
+    """
+    X, y = _mixed_sign_six_feature_data()
+    names = [f"x{i}" for i in range(6)]
+    m = _safe_clone(model)
+    m.fit(X, y)
+    assert r2_score(y, m.predict(X)) > 0.5, "Model failed to fit"
+    sample = np.array([[1.5, -1.0, 0.8, 2.0, -0.5, 1.2]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=1.5, x1=-1.0, x2=0.8, x3=2.0, x4=-0.5, x5=1.2? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.2, 1.5)
+    passed, llm_val = False, None
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            val = float(num_str)
+            if abs(val - true_pred) < tol:
+                llm_val = val; passed = True; break
+        except ValueError: pass
+    return dict(test="discrim_simulate_mixed_sign", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def discrim_test_simulate_double_threshold(model, llm):
+    """Simulate prediction on data with two step thresholds on x0.
+
+    y jumps at x0=0 and x0=1.5, creating three output levels. Interpretable
+    models (shallow trees, piecewise representations) expose these steps directly;
+    black-box models obscure them.
+    """
+    X, y = _double_threshold_data()
+    names = [f"x{i}" for i in range(4)]
+    m = _safe_clone(model)
+    m.fit(X, y)
+    assert r2_score(y, m.predict(X)) > 0.5, "Model failed to fit"
+    sample = np.array([[0.8, 0.0, 0.0, 0.0]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=0.8, x1=0.0, x2=0.0, x3=0.0? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.2, 0.6)
+    passed = False
+    nums = re.findall(r"-?\d+\.?\d*", response or "")
+    if nums:
+        try: passed = abs(float(nums[0]) - true_pred) < tol
+        except ValueError: pass
+    return dict(test="discrim_simulate_double_threshold", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def discrim_test_simulate_additive_nonlinear(model, llm):
+    """Simulate prediction on additive nonlinear data: y = 3*max(0,x0) + 2*sin(x1) + x2.
+
+    GAMs and piecewise-linear models can read partial effects directly.
+    Linear models approximate but may be inaccurate at the nonlinear regions.
+    Black-box models cannot trace through their representations.
+    """
+    X, y = _additive_nonlinear_data()
+    names = [f"x{i}" for i in range(5)]
+    m = _safe_clone(model)
+    m.fit(X, y)
+    assert r2_score(y, m.predict(X)) > 0.4, "Model failed to fit"
+    sample = np.array([[1.5, 1.0, -0.5, 0.0, 0.0]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=1.5, x1=1.0, x2=-0.5, x3=0.0, x4=0.0? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.2, 1.0)
+    passed, llm_val = False, None
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            val = float(num_str)
+            if abs(val - true_pred) < tol:
+                llm_val = val; passed = True; break
+        except ValueError: pass
+    return dict(test="discrim_simulate_additive_nonlinear", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def discrim_test_simulate_interaction(model, llm):
+    """Simulate prediction on data with a pairwise interaction: y = 3*x0 + 2*x1 + 1.5*x0*x1.
+
+    Models that capture interactions (trees, FIGS, GBDT) may represent this;
+    purely additive models (linear, GAM) will approximate but miss the interaction.
+    Tests whether the LLM can trace through the model's representation to get the
+    right answer on a sample where the interaction term matters.
+    """
+    X, y = _interaction_data()
+    names = [f"x{i}" for i in range(4)]
+    m = _safe_clone(model)
+    m.fit(X, y)
+    assert r2_score(y, m.predict(X)) > 0.4, "Model failed to fit"
+    sample = np.array([[2.0, 1.5, 0.0, 0.0]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=2.0, x1=1.5, x2=0.0, x3=0.0? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.2, 1.5)
+    passed, llm_val = False, None
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            val = float(num_str)
+            if abs(val - true_pred) < tol:
+                llm_val = val; passed = True; break
+        except ValueError: pass
+    return dict(test="discrim_simulate_interaction", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
 DISCRIM_TESTS = [
     discrim_test_simulate_all_active,
     discrim_test_compactness,
@@ -828,6 +978,10 @@ DISCRIM_TESTS = [
     discrim_test_unit_sensitivity,
     discrim_test_predict_above_threshold,
     discrim_test_predict_below_threshold,
+    discrim_test_simulate_mixed_sign,
+    discrim_test_simulate_double_threshold,
+    discrim_test_simulate_additive_nonlinear,
+    discrim_test_simulate_interaction,
 ]
 
 

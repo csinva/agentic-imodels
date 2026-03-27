@@ -126,21 +126,21 @@ def plot_interp_vs_performance(csv_path: str | Path, out_path: str | Path | None
                     # force_explode=(0.3, 0.5),
                     arrowprops=dict(arrowstyle="-", color="grey", lw=0.6))
 
-    ax.set_xlabel("Frac Interpretability Tests Passed", fontsize=10)
-    ax.set_ylabel("Mean Rank", fontsize=10)
+    ax.set_xlabel("Interpretability (Frac Interpretability Tests Passed)", fontsize=10)
+    ax.set_ylabel("Prediction performance (Rank, lower is better)", fontsize=10)
     ax.set_title("Interpretability vs. Performance", fontsize=12, fontweight="bold")
     ax.grid(True, alpha=0.3)
 
     from matplotlib.lines import Line2D
     legend_handles = [
-        Line2D([0], [0], marker="o", color="w",
+        Line2D([0], [0], marker="X", color="w",
                markerfacecolor=GROUP_COLORS[g], markersize=9,
                label=g.replace("-", " ").title())
         for g in GROUP_COLORS if any(n in MODEL_GROUPS[g] for n in names)
     ]
     if any(not _is_known(n) for n in names):
         legend_handles.append(
-            Line2D([0], [0], marker="D", color="w",
+            Line2D([0], [0], marker="o", color="w",
                    markerfacecolor="steelblue", markersize=8,
                    label="Evolved")
         )

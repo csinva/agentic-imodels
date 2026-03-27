@@ -31,11 +31,11 @@ import openml
 # Dataset loading
 # ---------------------------------------------------------------------------
 MAX_SAMPLES = 1000
-MAX_FEATURES = 40
+MAX_FEATURES = 50
 MIN_SAMPLES = 10
 MIN_FEATURES = 1
 SUBSAMPLE_SEED = 42
-MAX_PMLB_DATASETS = 40  # for now, to speed up evaluation (can remove this limit later)
+MAX_PMLB_DATASETS = 50  # for now, to speed up evaluation (can remove this limit later)
 
 
 OPENML_DATASET_NAMES = [

@@ -30,3 +30,5 @@ Example 2: After fitting on some complex data, try to simulate the model's predi
 
 
 # Prompt to get 
+
+Read and edit eval/interp_eval.py with the following changes: add more tests that test simulatability on models fit to more complex data.
