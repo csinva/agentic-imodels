@@ -12,10 +12,14 @@ Tests:
     mixed sign goes negative, two-feature perturbation
   Insight (6): simulatability, sparse feature set, nonlinear threshold,
     nonlinear direction, counterfactual target, decision region
-  Discrim (6): simulate complex sample, compactness, dominant feature for sample,
+  Discrim (10): simulate complex sample, compactness, dominant feature for sample,
     unit sensitivity, predict above threshold, predict below threshold — designed to separate interpretable
     models (sparse linear, GAM, shallow tree) from black-box models (MLP, GBDT)
     and reward finer degrees of interpretability
+  Simulatability (7): point predictions on increasingly complex data (8-feature
+    mixed-sign, 15-feature sparse, quadratic, triple interaction, Friedman #1,
+    cascading threshold, quadratic counterfactual) — simple models (linear, shallow
+    tree) remain traceable from their string; GBDTs and MLPs do not
 
 Notes:
     Each test should ask only one question.
@@ -24,7 +28,7 @@ Notes:
     The answer should not be able to be guessed easily (e.g. do not ask binary questions like increase/decrease or A vs B).
 
 Exports:
-  ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, DISCRIM_TESTS — lists of test functions
+  ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, DISCRIM_TESTS, SIMULATABILITY_TESTS — lists of test functions
   run_all_interp_tests(model_defs)       — cached runner, returns list of result dicts
 """
 
@@ -315,6 +319,64 @@ def _interaction_data(n=700, seed=43):
     rng = np.random.RandomState(seed)
     X = rng.randn(n, 4)
     y = 3.0 * X[:, 0] + 2.0 * X[:, 1] + 1.5 * X[:, 0] * X[:, 1] + rng.randn(n) * 0.4
+    return X, y
+
+
+def _eight_feature_mixed_data(n=600, seed=60):
+    """8 features with mixed positive/negative coefficients of varying magnitude."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 8)
+    coefs = np.array([6.0, -4.0, 3.0, -2.0, 1.5, -1.0, 0.5, 0.0])
+    y = X @ coefs + rng.randn(n) * 0.5
+    return X, y, coefs
+
+
+def _fifteen_feature_sparse_data(n=800, seed=61):
+    """15 features but only 3 are active — tests reading through a large model."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 15)
+    coefs = np.zeros(15)
+    coefs[0] = 8.0
+    coefs[5] = -4.0
+    coefs[12] = 3.0
+    y = X @ coefs + rng.randn(n) * 0.5
+    return X, y, coefs
+
+
+def _quadratic_data(n=800, seed=62):
+    """y = 3*x0^2 - 2*x1^2 + x2, quadratic nonlinearity."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 5)
+    y = 3.0 * X[:, 0]**2 - 2.0 * X[:, 1]**2 + X[:, 2] + rng.randn(n) * 0.3
+    return X, y
+
+
+def _triple_interaction_data(n=1000, seed=63):
+    """y = 2*x0*x1 + 3*x1*x2 + x0*x2*x3, multi-way interactions."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 6)
+    y = (2.0 * X[:, 0] * X[:, 1] + 3.0 * X[:, 1] * X[:, 2]
+         + X[:, 0] * X[:, 2] * X[:, 3] + rng.randn(n) * 0.4)
+    return X, y
+
+
+def _friedman1_data(n=1000, seed=64):
+    """Friedman #1: y = 10*sin(pi*x0*x1) + 20*(x2-0.5)^2 + 10*x3 + 5*x4, 10 features."""
+    rng = np.random.RandomState(seed)
+    X = rng.uniform(0, 1, size=(n, 10))
+    y = (10.0 * np.sin(np.pi * X[:, 0] * X[:, 1])
+         + 20.0 * (X[:, 2] - 0.5)**2
+         + 10.0 * X[:, 3]
+         + 5.0 * X[:, 4]
+         + rng.randn(n) * 0.5)
+    return X, y
+
+
+def _cascading_threshold_data(n=800, seed=65):
+    """y depends on a cascade: if x0>0 then y~3*x1 else y~-2*x2. 6 features, 3 irrelevant."""
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n, 6)
+    y = np.where(X[:, 0] > 0, 3.0 * X[:, 1], -2.0 * X[:, 2]) + rng.randn(n) * 0.3
     return X, y
 
 
@@ -971,6 +1033,225 @@ def discrim_test_simulate_interaction(model, llm):
                 ground_truth=round(true_pred, 3), response=response)
 
 
+# ---------------------------------------------------------------------------
+# Simulatability tests — increasingly complex data
+# ---------------------------------------------------------------------------
+
+def simulatability_eight_features(model, llm):
+    """Simulate on 8-feature linear data with mixed signs.
+
+    More terms to trace through than basic tests. Linear models / shallow trees
+    remain readable; GBDTs and MLPs do not.
+    """
+    X, y, _ = _eight_feature_mixed_data()
+    names = [f"x{i}" for i in range(8)]
+    m = _safe_clone(model); m.fit(X, y)
+    sample = np.array([[1.2, -0.8, 0.5, 1.0, -0.3, 0.7, -1.5, 0.2]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=1.2, x1=-0.8, x2=0.5, x3=1.0, "
+        "x4=-0.3, x5=0.7, x6=-1.5, x7=0.2? Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.15, 1.5)
+    passed = False
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            if abs(float(num_str) - true_pred) < tol:
+                passed = True; break
+        except ValueError: pass
+    return dict(test="simulatability_eight_features", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def simulatability_fifteen_features_sparse(model, llm):
+    """Simulate on 15 features where only 3 matter.
+
+    The model string is large (15 features), but an interpretable model reveals
+    which features are zeroed out, making simulation feasible. Black-box models
+    present all 15 features opaquely.
+    """
+    X, y, _ = _fifteen_feature_sparse_data()
+    names = [f"x{i}" for i in range(15)]
+    m = _safe_clone(model); m.fit(X, y)
+    sample = np.zeros((1, 15))
+    sample[0, 0] = 1.5    # active: coef 8.0
+    sample[0, 5] = -1.0   # active: coef -4.0
+    sample[0, 12] = 2.0   # active: coef 3.0
+    sample[0, 3] = 0.7    # noise feature
+    sample[0, 9] = -0.4   # noise feature
+    true_pred = float(m.predict(sample)[0])
+    feat_str = ", ".join(f"x{i}={sample[0,i]}" for i in range(15) if sample[0, i] != 0)
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        f"What does this model predict for the input where {feat_str} "
+        f"and all other features are 0? Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.15, 2.0)
+    passed = False
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            if abs(float(num_str) - true_pred) < tol:
+                passed = True; break
+        except ValueError: pass
+    return dict(test="simulatability_fifteen_features_sparse", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def simulatability_quadratic(model, llm):
+    """Simulate on quadratic data: y = 3*x0^2 - 2*x1^2 + x2.
+
+    Models that capture nonlinearity (trees, GAMs) will have piecewise
+    representations the LLM can trace. Linear models approximate poorly but
+    their string is still readable. GBDTs/MLPs are opaque.
+    """
+    X, y = _quadratic_data()
+    names = [f"x{i}" for i in range(5)]
+    m = _safe_clone(model); m.fit(X, y)
+    sample = np.array([[1.5, -1.0, 0.5, 0.0, 0.0]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=1.5, x1=-1.0, x2=0.5, x3=0.0, x4=0.0? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.2, 1.5)
+    passed = False
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            if abs(float(num_str) - true_pred) < tol:
+                passed = True; break
+        except ValueError: pass
+    return dict(test="simulatability_quadratic", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def simulatability_triple_interaction(model, llm):
+    """Simulate on data with multi-way interactions: 2*x0*x1 + 3*x1*x2 + x0*x2*x3.
+
+    Very hard for any model to represent readably. Shallow trees approximate
+    but remain traceable. GBDTs and MLPs are intractable to trace.
+    """
+    X, y = _triple_interaction_data()
+    names = [f"x{i}" for i in range(6)]
+    m = _safe_clone(model); m.fit(X, y)
+    sample = np.array([[1.0, -0.5, 1.5, 0.8, 0.0, 0.0]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=1.0, x1=-0.5, x2=1.5, x3=0.8, x4=0.0, x5=0.0? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.25, 1.5)
+    passed = False
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            if abs(float(num_str) - true_pred) < tol:
+                passed = True; break
+        except ValueError: pass
+    return dict(test="simulatability_triple_interaction", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def simulatability_friedman1(model, llm):
+    """Simulate on Friedman #1 data (10 features, sin/polynomial/linear mix).
+
+    This is a classic hard regression benchmark. The data-generating process is
+    highly nonlinear. Only models whose string representation allows step-by-step
+    tracing (shallow trees, GAMs with partial-effect tables) can be simulated.
+    GBDTs and MLPs have opaque representations at this complexity.
+    """
+    X, y = _friedman1_data()
+    names = [f"x{i}" for i in range(10)]
+    m = _safe_clone(model); m.fit(X, y)
+    sample = np.array([[0.7, 0.3, 0.8, 0.5, 0.6, 0.1, 0.9, 0.2, 0.4, 0.5]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=0.7, x1=0.3, x2=0.8, x3=0.5, x4=0.6, "
+        "x5=0.1, x6=0.9, x7=0.2, x8=0.4, x9=0.5? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.2, 2.0)
+    passed = False
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            if abs(float(num_str) - true_pred) < tol:
+                passed = True; break
+        except ValueError: pass
+    return dict(test="simulatability_friedman1", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def simulatability_cascading_threshold(model, llm):
+    """Simulate on cascading threshold data: if x0>0 then y~3*x1 else y~-2*x2.
+
+    Shallow decision trees naturally represent this branching structure and can
+    be traced. Linear models/GAMs approximate as additive effects (still readable).
+    GBDTs with many trees and MLPs are opaque.
+    """
+    X, y = _cascading_threshold_data()
+    names = [f"x{i}" for i in range(6)]
+    m = _safe_clone(model); m.fit(X, y)
+    # Test a sample in the x0>0 branch
+    sample = np.array([[1.2, 0.8, -0.5, 0.3, 0.0, 0.0]])
+    true_pred = float(m.predict(sample)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "What does this model predict for x0=1.2, x1=0.8, x2=-0.5, x3=0.3, x4=0.0, x5=0.0? "
+        "Answer with just a single number.",
+    )
+    tol = max(abs(true_pred) * 0.2, 1.0)
+    passed = False
+    for num_str in reversed(re.findall(r"-?\d+\.?\d*", response or "")):
+        try:
+            if abs(float(num_str) - true_pred) < tol:
+                passed = True; break
+        except ValueError: pass
+    return dict(test="simulatability_cascading_threshold", passed=passed,
+                ground_truth=round(true_pred, 3), response=response)
+
+
+def simulatability_quadratic_counterfactual(model, llm):
+    """Counterfactual on quadratic data: how does prediction change when x0 goes from 0 to 2?
+
+    On y=3*x0^2-2*x1^2+x2, the change from x0=0→2 is large and nonlinear.
+    Interpretable models expose this directly; black-box models cannot be traced.
+    """
+    X, y = _quadratic_data()
+    names = [f"x{i}" for i in range(5)]
+    m = _safe_clone(model); m.fit(X, y)
+    base = np.array([[0.0, 0.5, 1.0, 0.0, 0.0]])
+    changed = np.array([[2.0, 0.5, 1.0, 0.0, 0.0]])
+    delta = float(m.predict(changed)[0]) - float(m.predict(base)[0])
+    response = ask_llm(
+        llm, get_model_str(m, names),
+        "By how much does the prediction change when x0 goes from 0.0 to 2.0, "
+        "with x1=0.5, x2=1.0, x3=0.0, x4=0.0 held fixed? "
+        "Give just a number (positive if prediction increases).",
+    )
+    tol = max(abs(delta) * 0.2, 1.5)
+    passed = False
+    nums = re.findall(r"-?\d+\.?\d*", response or "")
+    if nums:
+        try:
+            passed = abs(float(nums[0]) - delta) < tol
+        except ValueError: pass
+    return dict(test="simulatability_quadratic_counterfactual", passed=passed,
+                ground_truth=round(delta, 3), response=response)
+
+
+SIMULATABILITY_TESTS = [
+    simulatability_eight_features,
+    simulatability_fifteen_features_sparse,
+    simulatability_quadratic,
+    simulatability_triple_interaction,
+    simulatability_friedman1,
+    simulatability_cascading_threshold,
+    simulatability_quadratic_counterfactual,
+]
+
+
 DISCRIM_TESTS = [
     discrim_test_simulate_all_active,
     discrim_test_compactness,
@@ -1017,7 +1298,7 @@ INSIGHT_TESTS = [
     insight_decision_region,
 ]
 
-_ALL_TEST_FNS = {fn.__name__: fn for fn in ALL_TESTS + HARD_TESTS + INSIGHT_TESTS + DISCRIM_TESTS}
+_ALL_TEST_FNS = {fn.__name__: fn for fn in ALL_TESTS + HARD_TESTS + INSIGHT_TESTS + DISCRIM_TESTS + SIMULATABILITY_TESTS}
 
 
 # ---------------------------------------------------------------------------
@@ -1049,7 +1330,7 @@ def run_all_interp_tests(model_defs):
     """
     from joblib import Parallel, delayed
 
-    all_test_fns = ALL_TESTS + HARD_TESTS + INSIGHT_TESTS + DISCRIM_TESTS
+    all_test_fns = ALL_TESTS + HARD_TESTS + INSIGHT_TESTS + DISCRIM_TESTS + SIMULATABILITY_TESTS
     tasks = [(name, reg, test_fn) for name, reg in model_defs for test_fn in all_test_fns]
 
     results = Parallel(n_jobs=-1, prefer="threads")(
@@ -1060,7 +1341,7 @@ def run_all_interp_tests(model_defs):
     # Print results grouped by model and suite
     for name, reg in model_defs:
         print(f"\n{'='*60}\n  Model: {name}\n{'='*60}")
-        for test_list, label in [(ALL_TESTS, "standard"), (HARD_TESTS, "hard"), (INSIGHT_TESTS, "insight"), (DISCRIM_TESTS, "discrim")]:
+        for test_list, label in [(ALL_TESTS, "standard"), (HARD_TESTS, "hard"), (INSIGHT_TESTS, "insight"), (DISCRIM_TESTS, "discrim"), (SIMULATABILITY_TESTS, "simulatability")]:
             print(f"\n  [{label}]")
             suite_results = [r for r in results if r["model"] == name and r["test"] in {t.__name__ for t in test_list}]
             for result in suite_results:

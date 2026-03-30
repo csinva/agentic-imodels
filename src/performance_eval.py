@@ -35,7 +35,7 @@ MAX_FEATURES = 50
 MIN_SAMPLES = 10
 MIN_FEATURES = 1
 SUBSAMPLE_SEED = 42
-MAX_PMLB_DATASETS = 50  # for now, to speed up evaluation (can remove this limit later)
+MAX_PMLB_DATASETS = -1  # for now, to speed up evaluation (can remove this limit later)
 
 
 OPENML_DATASET_NAMES = [
@@ -49,7 +49,12 @@ OPENML_DATASET_NAMES = [
 ]
 
 PMLB_DATASET_NAMES = sorted(list(regression_dataset_names))
-PMLB_DATASET_NAMES = PMLB_DATASET_NAMES[:MAX_PMLB_DATASETS]  # for now, to speed up evaluation (can remove this limit later)
+
+# filter our redundant pmlb friedman datasets
+PMLB_DATASET_NAMES = [n for n in PMLB_DATASET_NAMES
+                      if "_fri_" not in n]
+if MAX_PMLB_DATASETS > 0:
+    PMLB_DATASET_NAMES = PMLB_DATASET_NAMES[:MAX_PMLB_DATASETS]
 
 _CACHE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "imodels-evolve")
 _PMLB_CACHE_DIR = os.path.join(_CACHE_DIR, "pmlb")
@@ -279,3 +284,11 @@ def upsert_overall_results(rows, results_dir):
         writer.writeheader()
         writer.writerows(all_rows)
     print(f"Overall results saved → {path}")
+
+if __name__ == "__main__":
+    # test get all datasets and print length and size of each dataset
+    for name, X_train, X_test, y_train, y_test in get_all_datasets():
+        print(f"{name}: {X_train.shape[0]} train samples, {X_test.shape[0]} test samples, {X_train.shape[1]} features")
+
+
+    print('Total', len(list(get_all_datasets())), 'datasets')

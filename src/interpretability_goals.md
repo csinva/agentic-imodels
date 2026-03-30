@@ -32,3 +32,6 @@ Example 2: After fitting on some complex data, try to simulate the model's predi
 # Prompt to get 
 
 Read and edit eval/interp_eval.py with the following changes: add more tests that test simulatability on models fit to more complex data.
+
+# Prompt new
+Read and edit src/interp_eval.py with the following changes: add several more tests that test simulatability on models fit to different leves of complex data (some should be quite complex). We would expect them to fail for gradient-boosted machines and MLPs, but pass for simple decision trees and linear models.
