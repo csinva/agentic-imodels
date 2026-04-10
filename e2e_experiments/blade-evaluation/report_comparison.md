@@ -80,10 +80,27 @@ Custom tool explanations went beyond "significant/not" to describe how features 
 
 4. **Effect shape descriptions**: SmartAdditiveRegressor's nonlinear detection revealed thresholds and diminishing returns that enriched explanations.
 
+## Evaluation Methodology: BLADE Ground-Truth
+
+The evaluation checks each AI agent's analysis against **human expert annotations** from the [BLADE benchmark](https://github.com/behavioral-data/BLADE). The ground-truth annotations are loaded from `../example-blade-repo/blade_bench/datasets/{dataset}/annotations.csv` and include:
+
+- **Conceptual variable specifications**: Expert-identified variables and their roles (e.g., outcome, predictor, confounder)
+- **Model specifications**: Expert-chosen statistical models (OLS, GLM, Poisson, logistic, etc.) and their configurations
+- **Data transformation specifications**: Expert-specified preprocessing and transformations
+
+These annotations are summarized and passed to an **LLM-as-a-judge** (GPT-4o) alongside the agent's conclusion. The judge scores three dimensions (1-10 each) by comparing the agent's analysis against the human expert ground truth:
+
+1. **Correctness**: Is the conclusion well-supported and well-calibrated relative to what experts found?
+2. **Completeness**: Does the analysis go beyond basic tests to deeply understand the data, as experts did?
+3. **Clarity**: Does the explanation convey interpretable insight about feature effects and relationships?
+
+The judge prompt explicitly instructs scoring based on convergent evidence, effect calibration, and depth of understanding — not just whether the agent got the "right answer."
+
 ## Experimental Design
 
 - **Agent**: OpenAI Codex CLI (`@openai/codex` v0.118.0) with `gpt-5.3-codex`
 - **Azure deployment**: `dl-openai-3`, keyless Entra ID auth
+- **Ground truth**: BLADE human expert annotations (`annotations.csv` per dataset, loaded from `../example-blade-repo/blade_bench/datasets/`)
 - **Judge**: Azure OpenAI `gpt-4o` with 1-10 rubric scoring correctness (multi-model validation), completeness (depth of understanding), and clarity (interpretable insight)
 - **Repetitions**: 3 Codex runs × 3 judge evaluations = 9 evaluations per dataset per mode
 - **Total**: 6 Codex runs (78 dataset analyses), 18 judge evaluations (234 dataset scores)
