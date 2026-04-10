@@ -290,8 +290,28 @@ def upsert_overall_results(rows, results_dir):
 
 if __name__ == "__main__":
     # test get all datasets and print length and size of each dataset
-    for name, X_train, X_test, y_train, y_test in get_all_datasets():
-        print(f"{name}: {X_train.shape[0]} train samples, {X_test.shape[0]} test samples, {X_train.shape[1]} features")
+    # for name, X_train, X_test, y_train, y_test in get_all_datasets():
+        # print(f"{name}: {X_train.shape[0]} train samples, {X_test.shape[0]} test samples, {X_train.shape[1]} features")
 
 
-    print('Total', len(list(get_all_datasets())), 'datasets')
+    # print('Total', len(list(get_all_datasets())), 'datasets')
+    benchmark_suite = openml.study.get_suite(335)
+    suite_dataset_ids = set(benchmark_suite.data)
+    print('Total', len(suite_dataset_ids), 'datasets in openml suite 335')
+
+    # Resolve suite dataset IDs to names
+    openml.config.cache_directory = os.path.join(_CACHE_DIR, "openml")
+    datasets_list = openml.datasets.list_datasets(output_format="dataframe")
+    suite_id_to_name = {}
+    for did in suite_dataset_ids:
+        matches = datasets_list[datasets_list["did"] == did]
+        suite_id_to_name[did] = matches.iloc[0]["name"] if not matches.empty else "unknown"
+
+    # Check which suite datasets are not in our OpenML or PMLB lists (by name)
+    used_names = set(OPENML_DATASET_NAMES) | set(PMLB_DATASET_NAMES)
+    missing = {did: name for did, name in suite_id_to_name.items() if name not in used_names}
+    print(missing.keys())
+
+    print(f"\n{len(missing)} suite 335 datasets NOT in our OpenML or PMLB lists:")
+    for did in sorted(missing):
+        print(f"  ID {did}: {missing[did]}")

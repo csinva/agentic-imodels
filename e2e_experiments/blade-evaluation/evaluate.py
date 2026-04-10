@@ -43,7 +43,7 @@ DATASETS = [
     "teachingratings",
 ]
 
-JUDGE_PROMPT = """You are an expert data science evaluator. You are given:
+JUDGE_PROMPT_V1 = """You are an expert data science evaluator. You are given:
 1. A research question about a dataset
 2. A description of the dataset
 3. A summary of human expert annotations (ground truth model specifications)
@@ -75,6 +75,86 @@ Respond ONLY with a JSON object:
 - Likert Score (0=strong No, 100=strong Yes): {response}
 - Explanation: {agent_explanation}
 """
+
+JUDGE_PROMPT_V2 = """You are an expert data science evaluator. You are given:
+1. A research question about a dataset
+2. A description of the dataset
+3. A summary of human expert annotations (ground truth model specifications)
+4. An AI agent's conclusion (a 0-100 Likert score and explanation)
+
+Evaluate the AI agent's analysis on three dimensions. Use the FULL 1-10 scale — do not cluster scores around 7-8. A score of 5 means mediocre, 7 means good, 9-10 means excellent.
+
+**Correctness** (1-10): Does the agent reach a defensible conclusion about the research question?
+
+Focus on whether the agent's answer (the Likert score and reasoning) would be considered correct by a domain expert. The agent does NOT need to use the same specific statistical methods as the human experts — what matters is:
+- Does the Likert score go in the right direction? (If experts found a significant effect, does the agent say "Yes"? If not, does it say "No"?)
+- Does the agent correctly identify the key independent and dependent variables?
+- Does the agent appropriately weigh evidence from both simple and controlled analyses?
+- Is the statistical reasoning sound (not necessarily identical to experts)?
+
+Score 1-3: Wrong conclusion or fundamentally flawed reasoning
+Score 4-5: Partially correct but important errors
+Score 6-7: Mostly correct conclusion with minor issues
+Score 8-9: Correct conclusion with sound reasoning
+Score 10: Correct conclusion with expert-level nuance
+
+**Completeness** (1-10): Does the analysis go beyond basic tests to deeply understand the data?
+
+A complete analysis doesn't just test for significance — it explains HOW variables relate. Reward analyses that:
+- Include control variables and confounders in the analysis
+- Go beyond p-values to describe the shape of relationships (e.g., linear vs nonlinear, thresholds, diminishing effects)
+- Report feature importance or effect sizes to show WHICH variables matter most
+- Use interpretable models to reveal the direction and magnitude of each feature's effect
+- Identify whether effects are linear, have thresholds, or show nonlinear patterns
+- Compare findings across multiple modeling approaches for robustness
+
+The agent does NOT need to match every single expert annotation. What matters is depth of understanding.
+
+Score 1-3: Only basic bivariate tests, ignores confounders
+Score 4-5: Some controls but no deeper investigation of effect shapes or importance
+Score 6-7: Controls included, some investigation of effect sizes or feature importance
+Score 8-9: Thorough analysis with feature importance, effect shapes, and multiple approaches
+Score 10: Comprehensive — reports effect shapes, importance rankings, nonlinear patterns, and confounders
+
+**Clarity** (1-10): Is the explanation clear, well-structured, and insightful?
+
+Focus on whether a data scientist could read the explanation and understand both the conclusion AND the reasoning behind it. Reward:
+- Clear connection between statistical results and the conclusion
+- Reporting not just "significant/not" but the direction and magnitude of effects
+- Describing which features are most vs least important
+- Explaining how the relationship works (e.g., "the effect is positive and roughly linear" or "there is a threshold effect at X=30")
+- Logical flow from evidence to answer
+
+Penalize:
+- Contradictions between the Likert score and the evidence presented
+- Listing statistics without connecting them to the research question
+- Failing to state whether effects survive controlling for confounders
+
+Score 1-3: Confusing or contradictory
+Score 4-5: Understandable but shallow
+Score 6-7: Clear with some insight into the relationships
+Score 8-9: Well-structured with meaningful interpretation of effects
+Score 10: Exceptionally clear — explains both what the data shows and why, with insight into feature relationships
+
+Respond ONLY with a JSON object:
+{{"correctness": <int>, "completeness": <int>, "clarity": <int>, "explanation": "<brief justification>"}}
+
+---
+
+**Research Question:** {research_question}
+
+**Dataset Description:** {dataset_description}
+
+**Human Expert Annotations Summary:**
+{annotations_summary}
+
+**AI Agent Conclusion:**
+- Likert Score (0=strong No, 100=strong Yes): {response}
+- Explanation: {agent_explanation}
+"""
+
+# Default to v2 rubric
+JUDGE_PROMPT = JUDGE_PROMPT_V2
 
 
 def get_client() -> AzureOpenAI:
@@ -193,6 +273,7 @@ def judge_dataset(
     deployment: str,
     dataset: str,
     output_dir: str = None,
+    rubric: str = "v2",
 ) -> dict:
     """Use LLM-as-a-judge to evaluate a single dataset's Codex output."""
     if output_dir is None:
@@ -215,7 +296,8 @@ def judge_dataset(
     response_val = conclusion.get("response", "N/A")
     explanation = conclusion.get("explanation", "No explanation provided.")
 
-    prompt = JUDGE_PROMPT.format(
+    prompt_template = JUDGE_PROMPT_V1 if rubric == "v1" else JUDGE_PROMPT_V2
+    prompt = prompt_template.format(
         research_question=question,
         dataset_description=desc,
         annotations_summary=annotations,
@@ -255,6 +337,7 @@ def evaluate_all(
     datasets: list[str] | None = None,
     verbose: bool = False,
     mode: str = "standard",
+    rubric: str = "v2",
 ):
     """Run LLM-as-a-judge evaluation on all datasets."""
     client = get_client()
@@ -264,8 +347,8 @@ def evaluate_all(
 
     results = []
     for dataset in datasets:
-        print(f"Evaluating: {dataset} ({mode})...", end=" ", flush=True)
-        result = judge_dataset(client, deployment, dataset, output_dir)
+        print(f"Evaluating: {dataset} ({mode}, rubric={rubric})...", end=" ", flush=True)
+        result = judge_dataset(client, deployment, dataset, output_dir, rubric=rubric)
         results.append(result)
 
         if result["status"] == "ok":
@@ -312,7 +395,8 @@ def evaluate_all(
             f"{ok['clarity'].mean():>8.2f}"
         )
         overall = (ok["correctness"].mean() + ok["completeness"].mean() + ok["clarity"].mean()) / 3
-        print(f"\nOverall average score: {overall:.2f} / 5.00")
+        max_score = 10 if rubric == "v2" else 5
+        print(f"\nOverall average score: {overall:.2f} / {max_score:.2f}")
 
     # Save results
     results_path = os.path.join(SCRIPT_DIR, f"results_{mode}.csv")
@@ -326,9 +410,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate Blade Codex results with LLM-as-a-judge")
     parser.add_argument("--dataset", type=str, default=None, help="Single dataset to evaluate")
     parser.add_argument("--verbose", action="store_true", help="Show judge explanations")
-    parser.add_argument("--mode", type=str, choices=["standard", "custom"], default="standard",
-                        help="Which run to evaluate: 'standard' or 'custom'")
+    parser.add_argument("--mode", type=str, choices=["standard", "custom", "custom_v2"], default="standard",
+                        help="Which run to evaluate: 'standard', 'custom', or 'custom_v2'")
+    parser.add_argument("--rubric", type=str, choices=["v1", "v2"], default="v2",
+                        help="Rubric version: 'v1' (1-5 scale) or 'v2' (1-10 scale, conclusion-focused)")
     args = parser.parse_args()
 
     ds = [args.dataset] if args.dataset else None
-    evaluate_all(datasets=ds, verbose=args.verbose, mode=args.mode)
+    evaluate_all(datasets=ds, verbose=args.verbose, mode=args.mode, rubric=args.rubric)

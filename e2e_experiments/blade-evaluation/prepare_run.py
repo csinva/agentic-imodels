@@ -169,6 +169,120 @@ print(model2)
 - **Use the custom interpretability tools from `interp_models.py`** — they provide deeper insight into feature relationships than standard models.
 """
 
+AGENTS_MD_CUSTOM_V2 = """You are an expert data scientist. You MUST write and execute a Python script to analyze a dataset and answer a research question.
+
+## Instructions
+
+1. Read `info.json` to get the research question and dataset metadata.
+2. Load the dataset from `{dataset_name}.csv`.
+3. Write a Python script called `analysis.py` that follows the analysis strategy below.
+4. **Execute the script** by running: `python3 analysis.py`
+5. The script MUST write a file called `conclusion.txt` containing ONLY a JSON object:
+
+```json
+{{"response": <integer 0-100>, "explanation": "<your reasoning>"}}
+```
+
+Where `response` is a Likert scale score: 0 = strong "No", 100 = strong "Yes".
+
+## Analysis Strategy
+
+### Step 1: Understand the question and explore
+- Read the research question. Identify the dependent variable (DV) and independent variable (IV).
+- Print summary statistics, check distributions, compute bivariate correlations.
+
+### Step 2: Statistical tests with controls
+Run OLS (or logistic regression for binary DVs) with relevant control variables:
+
+```python
+import statsmodels.api as sm
+X = df[feature_columns]
+X = sm.add_constant(X)
+model = sm.OLS(df[dv_column], X).fit()
+print(model.summary())
+```
+
+### Step 3: Use custom interpretable models to understand HOW features affect the outcome
+
+This is where you go beyond p-values. The file `interp_models.py` provides two
+models that reveal the **shape, direction, and relative importance** of each feature.
+
+```python
+from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+
+# Include ALL numeric columns — pass the DataFrame directly for column names
+X = df[numeric_columns]
+y = df[dv_column]
+
+# SmartAdditiveRegressor: reveals nonlinear effects and thresholds
+smart = SmartAdditiveRegressor(n_rounds=200)
+smart.fit(X, y)   # Automatically uses column names from DataFrame
+print(smart)       # Shows per-feature effects: linear slopes AND nonlinear patterns
+                   # e.g., "age: nonlinear effect (importance=32.1%)"
+                   #        "age <= 25: -0.42"
+                   #        "age > 25: +0.31"  <-- threshold at 25!
+
+effects = smart.feature_effects()
+print(effects)
+# {{'age': {{'direction': 'nonlinear (increasing trend)', 'importance': 0.321, 'rank': 1}},
+#  'income': {{'direction': 'positive', 'importance': 0.198, 'rank': 2}},
+#  'gender': {{'direction': 'zero', 'importance': 0.0, 'rank': 0}}}}
+# -> age is the most important predictor, income is second, gender doesn't matter
+
+# HingeEBMRegressor: sparse linear model that zeroes out unimportant features
+hinge = HingeEBMRegressor(n_knots=3)
+hinge.fit(X, y)
+print(hinge)       # Shows clean equation: y = 0.52*income + -0.13*age + 1.23
+print(hinge.feature_effects())
+```
+
+### Step 4: Write a rich conclusion
+
+Your explanation should go BEYOND just "significant or not." Include:
+- **Direction**: Is the effect positive or negative?
+- **Magnitude**: How strong is it relative to other features? (use importance rankings)
+- **Shape**: Is it linear, or does it have thresholds/nonlinear patterns?
+- **Robustness**: Does the relationship hold across multiple models (OLS, SmartAdditive, HingeEBM)?
+- **Confounders**: Which other variables also matter, and do they change the story?
+
+Example good explanation: "Hours fishing has a significant positive effect on fish
+caught (OLS coef=0.34, p=0.002). The SmartAdditive model confirms this with hours
+ranked 2nd in importance (19.8%%), showing a roughly linear positive effect. The
+relationship is robust after controlling for livebait, persons, and camper. Livebait
+is actually the strongest predictor (importance=45.2%%), suggesting that bait choice
+matters more than time spent."
+
+### Scoring guidelines
+- Strong significant effect that persists across models -> 75-100
+- Moderate or partially significant effect -> 40-70
+- Weak, inconsistent, or marginal effect -> 15-40
+- No significant effect in any analysis -> 0-15
+- Weigh BOTH bivariate and controlled results. If the effect weakens but doesn't
+  vanish with controls, give a moderate score reflecting the partial effect.
+
+## Custom Interpretability Tools Reference
+
+**SmartAdditiveRegressor** — Learns additive per-feature shape functions:
+- Accepts DataFrames directly (column names in output automatically)
+- `str(model)`: Shows each feature's effect — linear coefficients for linear features,
+  piecewise-constant lookup tables for nonlinear features (with thresholds!)
+- `model.feature_effects()`: Returns dict with direction, importance (0-1), and rank
+- Best for: discovering nonlinear effects, thresholds, feature importance rankings
+
+**HingeEBMRegressor** — Sparse piecewise-linear model:
+- Accepts DataFrames directly
+- `str(model)`: Shows sparse equation with only important features (Lasso selection)
+- `model.feature_effects()`: Returns dict with direction, importance, and rank
+- Best for: identifying which features truly matter (others get zeroed out)
+
+## Important
+
+- You MUST actually run the script. The `conclusion.txt` file must exist.
+- Use the custom models from `interp_models.py` to understand feature relationships.
+- Report feature importance rankings and effect shapes in your explanation.
+- Available packages: numpy, pandas, scipy, statsmodels, sklearn, imodels, interpret, matplotlib, seaborn.
+"""
+
 
 def get_installed_packages():
     """Get list of installed Python packages for reference."""
@@ -209,12 +323,17 @@ def prepare_dataset(dataset_name: str, mode: str, output_dir: str):
         return False
 
     # Write AGENTS.md based on mode
-    template = AGENTS_MD_CUSTOM if mode == "custom" else AGENTS_MD_STANDARD
+    templates = {
+        "standard": AGENTS_MD_STANDARD,
+        "custom": AGENTS_MD_CUSTOM,
+        "custom_v2": AGENTS_MD_CUSTOM_V2,
+    }
+    template = templates[mode]
     with open(os.path.join(dst_dir, "AGENTS.md"), "w") as f:
         f.write(template.format(dataset_name=dataset_name))
 
-    # Copy interp_models.py for custom mode
-    if mode == "custom":
+    # Copy interp_models.py for custom modes
+    if mode in ("custom", "custom_v2"):
         shutil.copy2(
             os.path.join(SCRIPT_DIR, "interp_models.py"),
             os.path.join(dst_dir, "interp_models.py"),
@@ -239,9 +358,9 @@ def main():
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["standard", "custom"],
+        choices=["standard", "custom", "custom_v2"],
         default="standard",
-        help="Tool mode: 'standard' (sklearn/imodels) or 'custom' (+ interp_models.py)",
+        help="Tool mode: 'standard', 'custom' (v1), or 'custom_v2' (improved prompts + tools)",
     )
     args = parser.parse_args()
 
