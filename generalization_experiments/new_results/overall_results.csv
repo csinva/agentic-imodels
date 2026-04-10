@@ -1,0 +1,26 @@
+commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description
+,8.88,0.5366,,HingeEBM_big,HingeEBM with 3 bags 1000 rounds
+,18.69,0.7317,,SklearnGAM_hybrid,sklearn GBM depth-1 backbone + smoothing + hybrid predict R2>0.70 + adaptive display
+,13.62,0.6829,,SmoothGAM_RF,SmoothAdditiveGAM + RandomForest on residuals
+,8.25,0.5366,,HingeEBM_LinDisp,"Hinge+EBM with Ridge-style linear display (2 knots, effective coefficients)"
+,8.94,0.6585,,SmartAdditive_v5,SmartAdditive v2 with explicit zero-feature listing and display improvements
+,18.62,0.7317,,SmoothGAM_noES,"SmoothAdditiveGAM without early stopping (all data, no validation split)"
+,14.62,0.6585,,SmoothGAM_hybrid,"SmoothAdditiveGAM + early stopping + hybrid predict (linear for R2>0.90, piecewise for rest)"
+,8.75,0.6585,,SmartAddGAM_r90,SmartAdditiveGAM with R2 threshold 0.90 (stricter linearization)
+,14.31,0.6829,,SmoothGAM_RF100,SmoothGAM + RF 100 trees depth-3 on residuals
+,7.50,0.6098,,SmartAdditive_v1,"Greedy additive stumps with adaptive display: linear for linear features, piecewise for nonlinear"
+,8.44,0.5366,,HingeEBM_5bag,HingeEBM with 3 bags 1000 rounds
+,10.88,0.5366,,HingeEBM_smart,Hinge+EBM (conditional on >10% residual variance) with Ridge-style display
+,14.31,0.7317,,SmoothGAM_RF_sqrt,SmoothGAM + RF 100 trees depth-4 sqrt features on residuals
+,17.75,0.7317,,SmoothGAM_tinyGBM,"SmoothAdditiveGAM + tiny GBM (20 stumps, only when >20% residual var)"
+,8.50,0.5854,,FullPWC_LinDisp,Full piecewise-constant predict + Ridge-style display for linear features — best rank with decent interp
+,17.88,0.7317,,SmoothGAM_40s,SmoothAdditiveGAM + 40 stumps GBM when >20% var
+,13.38,0.5366,,HingeGBM_v1,"Lasso-hinge + GBM (not EBM) on residuals, effective coefficient display"
+,8.31,0.5854,,SklearnStumpGAM_v1,"sklearn GBM with depth-1 stumps, collapsed into per-feature shape functions with adaptive display"
+,18.50,0.7317,,SmoothGAM_50s,SmoothAdditiveGAM + 50 stumps GBM when >20% var
+,22.00,0.7317,,SmoothGAM_r70hyb,SmoothAdditiveGAM with R2=0.70 hybrid predict + early stopping + smoothing
+,14.75,0.5122,,DistilledGAM_v1,"Stump-discovered thresholds → hinge features → RidgeCV, shown as effective linear coefficients"
+,12.25,0.7073,,SmartAdditive_v2,"Greedy additive stumps with hybrid predict: linear for linear features, piecewise for nonlinear"
+,8.38,0.6585,,HingeEBM_v1,LassoCV on hinge basis (3 knots) + hidden EBM on residuals
+,13.25,0.5854,,SmoothGAM_v1,"SmartAdditiveGAM + Laplacian smoothing on shape functions (3 passes, 0.6/0.2/0.2)"
+,14.25,0.5854,,SmoothGAM_ES,"SmoothAdditiveGAM + early stopping (20% val holdout, patience=20)"

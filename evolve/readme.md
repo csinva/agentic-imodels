@@ -6,7 +6,7 @@ The idea: give an AI agent a training setup and let it experiment autonomously. 
 
 ## How it works
 
-The repo has three files that matter:
+The folder has three files that matter:
 
 - **`run_baselines.py`** — evaluates a fixed set of baseline regressors across two metrics: (1) `frac_interpretability_tests_passed` — LLM-graded interpretability tests, and (2) `mean_rank` — average rank of prediction performance on regression datasets. Results saved to `results/overall_results.csv`. **Not modified by the agent.**
 - **`interpretable_regressor.py`** — the single file the agent edits. Defines `InterpretableRegressor` (a scikit-learn compatible model) and an evaluation loop that runs the same metrics and updates `results/overall_results.csv`. **This file is edited and iterated on by the agent.**
