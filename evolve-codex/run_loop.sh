@@ -12,7 +12,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-MAX_ITERATIONS="${MAX_ITERATIONS:-50}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-150}"
 SLEEP_BETWEEN="${SLEEP_BETWEEN:-5}"  # seconds between iterations
 
 # Azure Entra ID token refresh (keyless auth)
