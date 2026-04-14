@@ -91,8 +91,8 @@ def _suite(test_name):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", default=None,
-                        help="LLM checkpoint for interpretability tests (default: gpt-4o)")
+    parser.add_argument("--checkpoint", default='gpt-5.4',
+                        help="LLM checkpoint for interpretability tests (default: gpt-5.4)")
     args = parser.parse_args()
 
     t0 = time.time()
