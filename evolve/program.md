@@ -88,7 +88,7 @@ LOOP FOREVER:
 4. Run the experiment: `uv run interpretable_regressor.py > run.log 2>&1`
 5. Read results: `tail -n 5 run.log` and `grep InterpretableRegressor results/overall_results.csv`
 6. If the run crashed, check `tail -n 50 run.log` for the stack trace and attempt a fix
-7. Record results in `results/overall_results.csv` (do not commit this file)
+7. Record results in `results/overall_results.csv` (do not commit this file). Record them even if results did not improve.
 8. Save the current version of `interpretable_regressor.py` as a new file. If either metric improved without the other getting significantly worse, save the file under the success folder (e.g. `interpretable_regressors_lib/success/interpretable_regressor_<commit_hash>_<simple_name>.py`) for future use. Otherwise save it under the failure folder (e.g. `interpretable_regressors_lib/failure/interpretable_regressor_<commit_hash>_<simple_name>.py`).
 
 **NEVER STOP**: Once the experiment loop has begun, do NOT pause to ask the human if you should continue. Run until manually stopped. Always keep going.
