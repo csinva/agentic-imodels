@@ -27,7 +27,7 @@ print(corrs.sort_values(ascending=False))
 
 # Group means: dark vs light skin
 print("\n--- Red card rate by skin tone quartile ---")
-df_skin['skin_quartile'] = pd.qcut(df_skin['skin_tone'], q=4, labels=['Q1_light','Q2','Q3','Q4_dark'])
+df_skin['skin_quartile'] = pd.qcut(df_skin['skin_tone'], q=4, duplicates='drop')
 print(df_skin.groupby('skin_quartile')['redCards'].mean())
 
 # OLS with controls
