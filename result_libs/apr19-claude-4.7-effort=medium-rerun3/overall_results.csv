@@ -1,0 +1,67 @@
+commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description
+baseline,21.85,0.4186,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
+baseline,41.18,0.6744,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
+baseline,42.77,0.5349,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
+baseline,29.78,0.7442,baseline,OLS,ordinary least squares linear regression
+baseline,37.92,0.5349,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
+baseline,35.08,0.7674,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
+baseline,24.42,0.2326,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
+baseline,22.25,0.5349,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
+baseline,46.37,0.1628,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
+baseline,37.25,0.3953,baseline,FIGS_mini,small FIGS with up to 8 max_rules
+baseline,37.11,0.5814,baseline,FIGS_large,large FIGS with up to 20 max_rules
+baseline,30.17,0.2791,baseline,RuleFit,RuleFit with up to 20 max_rules
+baseline,39.95,0.7674,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
+baseline,35.08,0.6744,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
+baseline,14.89,0.4651,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
+baseline,10.88,0.0698,baseline,TabPFN,TabPFN foundation model for tabular data
+baca1ec,39.23,0.6047,,DecisionTreeSimple,Baseline interpretable regressor (shallow decision tree)
+37e3531,25.95,0.7209,,OLSPlain_v1,Plain OLS on raw features; y = intercept + sum c_i * x_i
+b71c234,33.58,0.6512,,SparseOLSTop5_v1,"LassoCV selects top-5 features, refit OLS; clear sparse linear formula"
+a658f09,23.20,0.5116,,HingeLinear_v1,"Linear + ReLU hinges at median, Lasso-select top-10, OLS refit"
+2ef15f8,32.63,0.7209,,RidgeCVClean_v1,"RidgeCV on standardized X, report formula in original feature scale"
+2cc1dc5,30.15,0.6512,,SparseOLSTop8_v1,"LassoCV selects top-8 features, OLS refit in original scale"
+e0aabe0,35.71,0.6744,,TopCorrOLS_v1,"Top-6 features by |correlation with y|, OLS refit"
+cfc4e4d,20.32,0.4651,,QuartileGAM_v1,"Piecewise-linear GAM: {x, (x-q25)_+, (x-q50)_+, (x-q75)_+} per feature, Lasso-select 12, OLS refit"
+3e372ea,42.72,0.7209,,SparseOLSTop3_v1,"LassoCV selects top-3 features, refit OLS; very sparse linear formula"
+bfce155,27.78,0.6977,,ThresholdOLS_5pct_v1,"Full OLS, then prune features with |std-coef|<5% of max, refit OLS"
+08045be,33.66,0.6744,,ForwardOLS6_v1,"Greedy forward stepwise: pick 6 features minimizing RSS, OLS refit"
+f461af9,26.32,0.4186,,LinearResidualTree_v1,OLS base + depth-3 decision tree on residuals for correction
+85712e9,30.43,0.6744,,ThresholdOLS_1pct_v1,"OLS, prune std-coefs below 1% of max, refit OLS"
+cd88f20,43.74,0.2791,,BoostedStumps30_v1,"Stagewise boosting of 30 depth-1 stumps (lr=0.1), additive per-feature output"
+ccef19d,20.95,0.4651,,HingeGAM_v1,"GAM with per-feature {x, (x-med)_+, (med-x)_+} basis, Lasso-select 10, OLS refit; grouped per-feature output"
+57b4827,30.35,0.7442,,ElasticNetClean_v1,"ElasticNetCV on standardized X, report as linear formula in original scale"
+6c713b9,28.95,0.7442,,AdaptiveLinear_v1,OLS if n>5d else RidgeCV; clean linear formula output
+ab5e1a7,31.63,0.4651,,SqrtScaleOLS_v1,OLS on sign*sqrt(|x|)-transformed features; tames outliers
+687bde0,30.65,0.7209,,LassoOLSAll_v1,"LassoCV selects any nonzero features, OLS refit on full support"
+df5e6b3,30.75,0.6977,,CenteredOLS_v1,Plain centered OLS; clean y = intercept + sum c_i*x_i output
+9add850,43.03,0.6279,,HuberLinear_v1,Robust Huber regression; clean linear formula output
+0faf038,21.23,0.5581,,SquaredOLS_v1,"Per-feature {x, x^2} basis, Lasso-select 12, OLS refit; quadratic GAM"
+3b6b183,30.40,0.6977,,LassoCVClean_v1,LassoCV with clean linear formula in original scale
+5c958d3,31.75,0.6512,,OLSHighlight_v1,Plain OLS with coefficients sorted by |coef*std(x)| for clarity
+1c149c5,39.32,0.6744,,DTDepth3_v1,"Plain depth-3 decision tree, min_samples_leaf=8"
+b3ba277,43.20,0.6977,,LowDimOLS_v1,OLS after dropping features with var < 1% of max variance
+d011565,28.69,0.6744,,BayesianRidge_v1,BayesianRidge linear regression with standardized features
+4e2feb6,29.69,0.6744,,OMPClean_v1,OrthogonalMatchingPursuit CV; clean linear formula in original scale
+90516b9,30.69,0.6744,,SparseOLSTop10_v1,"LassoCV selects ≤10 features, OLS refit"
+f2c2a60,31.69,0.6744,,ElasticNetLow01_v1,"ElasticNetCV with low l1_ratio=0.05-0.5, mostly ridge regularization"
+fa6e001,32.69,0.6744,,TinyDTDepth2_v1,Depth-2 decision tree (4 leaves)
+a6d8d45,33.69,0.6744,,LARSOLS_v1,"LassoLarsIC (AIC) feature selection, OLS refit"
+4360d4b,30.14,0.6512,,LARSOLSBIC_v1,"LassoLarsIC (BIC) feature selection, OLS refit"
+5b91cb9,29.65,0.6512,,TStatOLS_v1,"OLS with t-stat>1.96 feature selection, OLS refit"
+5bc156f,30.65,0.6512,,ARDLinear_v1,ARD (automatic relevance determination) linear regression
+12d14ff,31.65,0.6512,,ClusteredOLS_v1,"OLS after clustering correlated features (|corr|>0.9), keep 1 per cluster"
+95bd63a,32.65,0.6512,,HingeLinearSmall_v1,"Per-feature {x, (x-med)_+} basis, Lasso-select 6, OLS refit"
+8509235,40.37,0.6977,,LARSPath_v1,"Lars with top-5 nonzero coefs, refit OLS in original feature scale"
+b71f2cc,32.63,0.7209,,RidgeCVClean_v1,"RidgeCV on standardized X, coefs back-transformed to original scale; dense linear formula"
+3fe0e8e,43.58,0.6512,,HuberClean_v1,HuberRegressor (outlier-robust) on standardized X; back-transformed to original scale
+403deb1,53.78,0.5116,,BinaryMedianOLS_v1,"Median-threshold each feature to 0/1 indicators, OLS on indicators"
+9a9491a,34.74,0.6279,,MinMaxOLS_v1,"OLS after min-max scaling each feature to [0,1]; coefs back-transformed to original scale"
+41dfc72,35.74,0.6279,,OLSRanked_v1,Plain OLS with enhanced __str__ that ranks features by |coef*sd(x)|
+9b2b183,34.34,0.5349,,WinsorOLS_v1,"OLS after winsorizing each feature to [5th, 95th] percentile"
+1174f6b,36.86,0.6744,,OLSPlain2_v1,"Plain OLS (duplicate of baseline idea, minimal clean formula print)"
+d972175,36.18,0.7674,,GreedyForwardOLS_v1,"Greedy forward feature selection (SSE-minimizing) up to 8, then OLS"
+46b36cf,41.03,0.7209,,GreedyForwardOLS5_v1,"Greedy forward feature selection (SSE-minimizing) up to 5, then OLS"
+72a6244,37.68,0.7674,,GreedyForwardOLS12_v1,"Greedy forward feature selection (SSE-minimizing) up to 12, then OLS"
+9a3a057,34.06,0.6744,,GreedyForwardOLS_CV_v1,"Greedy forward feature selection with 3-fold CV early-stopping (patience=2), OLS refit"
+5211c8b,40.14,0.7209,,GreedyForwardOLS6_v1,"Greedy forward feature selection up to 6, then OLS refit"
