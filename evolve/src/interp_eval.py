@@ -4,24 +4,24 @@ Interpretability tests for sklearn-style regressors, plus cached test runner.
 Uses an LLM (gpt-4o) to probe whether a model's string representation
 conveys meaningful, usable information about the model's behavior.
 
-Tests:
-  Standard (8): most important feature, point prediction, direction of change,
-    feature ranking, threshold identification, irrelevant features, sign of effect,
-    counterfactual prediction
-  Hard (5): all features active, pairwise anti-intuitive, quantitative sensitivity,
-    mixed sign goes negative, two-feature perturbation
-  Insight (6): simulatability, sparse feature set, nonlinear threshold,
-    nonlinear direction, counterfactual target, decision region
-  Discrim (10): simulate complex sample, compactness, dominant feature for sample,
-    unit sensitivity, predict above threshold, predict below threshold — designed to separate interpretable
-    models (sparse linear, GAM, shallow tree) from black-box models (MLP, GBDT)
-    and reward finer degrees of interpretability
-  Simulatability (14): point predictions on increasingly complex data (8-feature
-    mixed-sign, 15-feature sparse, quadratic, triple interaction, Friedman #1,
-    cascading threshold, quadratic counterfactual, exponential decay, piecewise
-    3-segment, 20-feature sparse, sinusoidal, abs-value, 12-feature all-active,
-    nested threshold) — simple models (linear, shallow tree) remain traceable
-    from their string; GBDTs and MLPs do not
+Tests (43 total), grouped by the cognitive operation they probe (Table A5 of the paper):
+  Feature attribution (6): most important feature, feature ranking, irrelevant
+    features, sparse feature set, dominant feature for sample, sign of effect.
+  Point simulation (17): point prediction, counterfactual prediction, all
+    features active, two-feature perturbation, mixed sign goes negative,
+    pairwise anti-intuitive, predict above threshold, predict below threshold,
+    simulate mixed sign, simulate all active, simulatability, eight features,
+    fifteen features sparse, twenty features sparse, twelve features all active,
+    quadratic, friedman1.
+  Sensitivity analysis (6): direction of change, quantitative sensitivity,
+    unit sensitivity, nonlinear direction, threshold identification,
+    nonlinear threshold.
+  Counterfactual reasoning (2): counterfactual target, quadratic counterfactual.
+  Structural understanding (2): compactness, decision region.
+  Complex fn. simulation (10): simulate double threshold, simulate additive
+    nonlinear, simulate interaction, triple interaction, cascading threshold,
+    exponential decay, piecewise three-segment, sinusoidal, abs value,
+    nested threshold.
 
 Notes:
     Each test should ask only one question.
@@ -30,7 +30,11 @@ Notes:
     The answer should not be able to be guessed easily (e.g. do not ask binary questions like increase/decrease or A vs B).
 
 Exports:
-  ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, DISCRIM_TESTS, SIMULATABILITY_TESTS — lists of test functions
+  FEATURE_ATTRIBUTION_TESTS, POINT_SIMULATION_TESTS, SENSITIVITY_TESTS,
+  COUNTERFACTUAL_TESTS, STRUCTURAL_TESTS, COMPLEX_FN_TESTS — lists of test
+    functions grouped by Table A5 category
+  ALL_TESTS, HARD_TESTS, INSIGHT_TESTS, DISCRIM_TESTS, SIMULATABILITY_TESTS —
+    legacy groupings kept for backward compatibility
   run_all_interp_tests(model_defs)       — cached runner, returns list of result dicts
 """
 
@@ -41,7 +45,8 @@ from copy import deepcopy
 
 import numpy as np
 from joblib import Memory
-from imodels import FIGSRegressor, FIGSRegressorCV, HSTreeRegressor, HSTreeRegressorCV, RuleFitRegressor, TreeGAMRegressor
+from imodels import FIGSRegressor, FIGSRegressorCV, HSTreeRegressor, HSTreeRegressorCV, RuleFitRegressor
+from interpret.glassbox import ExplainableBoostingRegressor
 from pygam import LinearGAM
 from sklearn.base import clone
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
@@ -182,8 +187,8 @@ def get_model_str(model, feature_names=None):
         return str(model)
     if isinstance(model, (FIGSRegressor, RuleFitRegressor, HSTreeRegressor)):
         return str(model)
-    if isinstance(model, TreeGAMRegressor):
-        return _tree_gam_str(model, feature_names)
+    if isinstance(model, ExplainableBoostingRegressor):
+        return _ebm_str(model, feature_names)
 
     if isinstance(model, LinearGAM):
         if feature_names is None and hasattr(model, "statistics_"):
@@ -222,28 +227,82 @@ def _gam_str(model, feature_names=None):
     return "\n".join(lines)
 
 
-def _tree_gam_str(model, feature_names=None):
-    n_features = len(model.estimators_)
-    names = feature_names or [f"x{i}" for i in range(n_features)]
+def _ebm_str(model, feature_names=None, max_terms=8, n_points=8):
+    """Format an ExplainableBoostingRegressor as an additive model with
+    per-term shape functions (first `max_terms` terms, subsampled to
+    `n_points` grid points each)."""
+    user_names = feature_names
+    in_names = list(getattr(model, "feature_names_in_", []))
+    def _fname(idx):
+        if user_names and idx < len(user_names):
+            return user_names[idx]
+        if idx < len(in_names):
+            return in_names[idx]
+        return f"x{idx}"
+
+    term_features = list(model.term_features_)
+
     lines = [
-        "TreeGAM Regressor (additive: one interpretable tree per feature):",
-        "  y = bias + tree_0(x0) + tree_1(x1) + ...  (each tree uses ONE feature)",
-        f"  bias: {model.bias_:.4f}",
+        "Explainable Boosting Machine (EBM) — additive model with shape functions:",
+        "  y = intercept + f_0(x_a) + f_1(x_b) + ... + f_k(x_i, x_j)",
+        "  Univariate terms are INDEPENDENT per-feature effects; pairwise terms "
+        "are learned interactions.",
+        f"  intercept: {float(np.ravel(model.intercept_)[0]):.4f}",
         "",
-        "Per-feature trees (each feature's independent contribution):",
+        f"First {min(max_terms, len(term_features))} terms "
+        f"(of {len(term_features)} total); shape functions subsampled to "
+        f"{n_points} grid points:",
     ]
-    for i, tree in enumerate(model.estimators_):
-        tree_obj = tree.tree_
-        feat_used = set()
-        for j in range(tree_obj.node_count):
-            if tree_obj.children_left[j] != -1:
-                feat_used.add(int(tree_obj.feature[j]))
-        feat_idx = next(iter(feat_used)) if len(feat_used) == 1 else i
-        fname = names[feat_idx] if feat_idx < len(names) else f"x{feat_idx}"
-        lines.append(f"\n  Tree for {fname} (feature {feat_idx}):")
-        tree_text = export_text(tree, feature_names=names, max_depth=4)
-        for line in tree_text.strip().split("\n"):
-            lines.append("    " + line)
+
+    shown = 0
+    for t_idx in range(len(term_features)):
+        if shown >= max_terms:
+            break
+        feats = term_features[t_idx]
+        try:
+            data = model.explain_global().data(int(t_idx))
+        except Exception:
+            continue
+
+        if len(feats) == 1:
+            name = _fname(feats[0])
+            xs = np.asarray(data.get("names", []), dtype=float)
+            ys = np.asarray(data.get("scores", []), dtype=float)
+            if xs.size == 0 or ys.size == 0:
+                continue
+            # EBM univariate: names are bin edges (len = len(scores)+1) OR
+            # aligned with scores depending on version. Align defensively.
+            if len(xs) == len(ys) + 1:
+                xs = 0.5 * (xs[:-1] + xs[1:])
+            k = min(n_points, len(ys))
+            idx = np.linspace(0, len(ys) - 1, k).round().astype(int)
+            lines.append(f"\n  Term {shown}: f({name})")
+            lines.append(f"    shape function (x → effect on y):")
+            for j in idx:
+                lines.append(f"      {name}={xs[j]:+.3f}  →  effect={ys[j]:+.3f}")
+            shown += 1
+        elif len(feats) == 2:
+            n0, n1 = _fname(feats[0]), _fname(feats[1])
+            xs0 = np.asarray(data.get("left_names", []), dtype=float)
+            xs1 = np.asarray(data.get("right_names", []), dtype=float)
+            Z = np.asarray(data.get("scores", []), dtype=float)
+            lines.append(f"\n  Term {shown}: f({n0}, {n1}) [pairwise]")
+            if Z.ndim == 2 and xs0.size and xs1.size:
+                # Sample up to 4x4 corners of the interaction surface.
+                ki = min(4, Z.shape[0]); kj = min(4, Z.shape[1])
+                ii = np.linspace(0, Z.shape[0] - 1, ki).round().astype(int)
+                jj = np.linspace(0, Z.shape[1] - 1, kj).round().astype(int)
+                for i in ii:
+                    for j in jj:
+                        xi = xs0[i] if i < len(xs0) else i
+                        xj = xs1[j] if j < len(xs1) else j
+                        lines.append(
+                            f"      {n0}={float(xi):+.3f}, {n1}={float(xj):+.3f}"
+                            f"  →  effect={float(Z[i, j]):+.3f}"
+                        )
+            else:
+                lines.append("    (interaction surface unavailable)")
+            shown += 1
     return "\n".join(lines)
 
 
@@ -1508,42 +1567,84 @@ def simulatability_nested_threshold(model, llm):
                 ground_truth=round(true_pred, 3), response=response)
 
 
-SIMULATABILITY_TESTS = [
-    simulatability_eight_features,
-    simulatability_fifteen_features_sparse,
-    simulatability_quadratic,
-    simulatability_triple_interaction,
-    simulatability_friedman1,
-    simulatability_cascading_threshold,
-    simulatability_quadratic_counterfactual,
-    simulatability_exponential_decay,
-    simulatability_piecewise_three_segment,
-    simulatability_twenty_features_sparse,
-    simulatability_sinusoidal,
-    simulatability_abs_value,
-    simulatability_twelve_features_all_active,
-    simulatability_nested_threshold,
+# ---------------------------------------------------------------------------
+# Test lists — grouped by Table A5 cognitive-operation category
+# ---------------------------------------------------------------------------
+
+FEATURE_ATTRIBUTION_TESTS = [
+    test_most_important_feature,
+    test_feature_ranking,
+    test_irrelevant_features,
+    insight_sparse_feature_set,
+    discrim_test_dominant_feature_sample,
+    test_sign_of_effect,
 ]
 
-
-DISCRIM_TESTS = [
-    discrim_test_simulate_all_active,
-    discrim_test_compactness,
-    discrim_test_dominant_feature_sample,
-    discrim_test_unit_sensitivity,
+POINT_SIMULATION_TESTS = [
+    test_point_prediction,
+    test_counterfactual_prediction,
+    hard_test_all_features_active,
+    hard_test_two_feature_perturbation,
+    hard_test_mixed_sign_goes_negative,
+    hard_test_pairwise_anti_intuitive,
     discrim_test_predict_above_threshold,
     discrim_test_predict_below_threshold,
     discrim_test_simulate_mixed_sign,
+    discrim_test_simulate_all_active,
+    insight_simulatability,
+    simulatability_eight_features,
+    simulatability_fifteen_features_sparse,
+    simulatability_twenty_features_sparse,
+    simulatability_twelve_features_all_active,
+    simulatability_quadratic,
+    simulatability_friedman1,
+]
+
+SENSITIVITY_TESTS = [
+    test_direction_of_change,
+    hard_test_quantitative_sensitivity,
+    discrim_test_unit_sensitivity,
+    insight_nonlinear_direction,
+    test_threshold_identification,
+    insight_nonlinear_threshold,
+]
+
+COUNTERFACTUAL_TESTS = [
+    insight_counterfactual_target,
+    simulatability_quadratic_counterfactual,
+]
+
+STRUCTURAL_TESTS = [
+    discrim_test_compactness,
+    insight_decision_region,
+]
+
+COMPLEX_FN_TESTS = [
     discrim_test_simulate_double_threshold,
     discrim_test_simulate_additive_nonlinear,
     discrim_test_simulate_interaction,
+    simulatability_triple_interaction,
+    simulatability_cascading_threshold,
+    simulatability_exponential_decay,
+    simulatability_piecewise_three_segment,
+    simulatability_sinusoidal,
+    simulatability_abs_value,
+    simulatability_nested_threshold,
+]
+
+CATEGORY_TESTS = [
+    ("feature_attribution", FEATURE_ATTRIBUTION_TESTS),
+    ("point_simulation",    POINT_SIMULATION_TESTS),
+    ("sensitivity",         SENSITIVITY_TESTS),
+    ("counterfactual",      COUNTERFACTUAL_TESTS),
+    ("structural",          STRUCTURAL_TESTS),
+    ("complex_fn",          COMPLEX_FN_TESTS),
 ]
 
 
-# ---------------------------------------------------------------------------
-# Test lists
-# ---------------------------------------------------------------------------
-
+# Legacy groupings — kept so existing callers (run_baselines.py, evolved
+# regressors in result_libs/) keep working. These are unions of the
+# category lists above; the tests themselves are unchanged.
 ALL_TESTS = [
     test_most_important_feature,
     test_point_prediction,
@@ -1572,7 +1673,38 @@ INSIGHT_TESTS = [
     insight_decision_region,
 ]
 
-_ALL_TEST_FNS = {fn.__name__: fn for fn in ALL_TESTS + HARD_TESTS + INSIGHT_TESTS + DISCRIM_TESTS + SIMULATABILITY_TESTS}
+DISCRIM_TESTS = [
+    discrim_test_simulate_all_active,
+    discrim_test_compactness,
+    discrim_test_dominant_feature_sample,
+    discrim_test_unit_sensitivity,
+    discrim_test_predict_above_threshold,
+    discrim_test_predict_below_threshold,
+    discrim_test_simulate_mixed_sign,
+    discrim_test_simulate_double_threshold,
+    discrim_test_simulate_additive_nonlinear,
+    discrim_test_simulate_interaction,
+]
+
+SIMULATABILITY_TESTS = [
+    simulatability_eight_features,
+    simulatability_fifteen_features_sparse,
+    simulatability_quadratic,
+    simulatability_triple_interaction,
+    simulatability_friedman1,
+    simulatability_cascading_threshold,
+    simulatability_quadratic_counterfactual,
+    simulatability_exponential_decay,
+    simulatability_piecewise_three_segment,
+    simulatability_twenty_features_sparse,
+    simulatability_sinusoidal,
+    simulatability_abs_value,
+    simulatability_twelve_features_all_active,
+    simulatability_nested_threshold,
+]
+
+_ALL_TEST_FNS = {fn.__name__: fn
+                 for _, lst in CATEGORY_TESTS for fn in lst}
 
 
 # ---------------------------------------------------------------------------
@@ -1605,7 +1737,7 @@ def run_all_interp_tests(model_defs, checkpoint=None):
     """
     from joblib import Parallel, delayed
 
-    all_test_fns = ALL_TESTS + HARD_TESTS + INSIGHT_TESTS + DISCRIM_TESTS + SIMULATABILITY_TESTS
+    all_test_fns = [fn for _, lst in CATEGORY_TESTS for fn in lst]
     tasks = [(name, reg, test_fn) for name, reg in model_defs for test_fn in all_test_fns]
 
     results = Parallel(n_jobs=-1, prefer="threads")(
@@ -1613,10 +1745,10 @@ def run_all_interp_tests(model_defs, checkpoint=None):
         for name, reg, test_fn in tasks
     )
 
-    # Print results grouped by model and suite
+    # Print results grouped by model and Table A5 category
     for name, reg in model_defs:
         print(f"\n{'='*60}\n  Model: {name}\n{'='*60}")
-        for test_list, label in [(ALL_TESTS, "standard"), (HARD_TESTS, "hard"), (INSIGHT_TESTS, "insight"), (DISCRIM_TESTS, "discrim"), (SIMULATABILITY_TESTS, "simulatability")]:
+        for label, test_list in CATEGORY_TESTS:
             print(f"\n  [{label}]")
             suite_results = [r for r in results if r["model"] == name and r["test"] in {t.__name__ for t in test_list}]
             for result in suite_results:

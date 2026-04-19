@@ -995,90 +995,298 @@ HSTree_large,simulatability_sinusoidal,standard,False,4.145,2.96
 HSTree_large,simulatability_abs_value,standard,False,3.479,1.06
 HSTree_large,simulatability_twelve_features_all_active,standard,False,1.782,7.92
 HSTree_large,simulatability_nested_threshold,standard,True,2.004,2.00
-EBM,most_important_feature,standard,False,x0,"To determine the single most important feature for predicting the output using an `ExplainableBoostingRegressor`, you would need to examine the feature importances or scores provided by the model. Since I don't have access to the model's specific details or data, I cannot directly identify the most important feature. However, you can find it by inspecting the `model.feature_importances_` or `model.explain_global()` output.
+EBM,most_important_feature,standard,True,x0,x0
+EBM,point_prediction,standard,False,9.508,"The prediction for the input \( x_0 = 2.0 \), \( x_1 = 0.0 \), \( x_2 = 0.0 \) is:
 
-If you provide the feature importance data or global explanation, I can help identify the most important feature."
-EBM,point_prediction,standard,False,9.508,I cannot directly compute the prediction for the given input without access to the trained model and its internal parameters.
-EBM,direction_of_change,standard,False,8.302,"To determine the exact change in prediction when \( x_0 \) increases from 0.0 to 1.0 (with all other features at 0.0), you would need access to the trained Explainable Boosting Regressor (EBR) model and its feature contributions. The EBR model provides additive contributions for each feature, so the change in prediction is equal to the difference in the contribution of \( x_0 \) at 1.0 and 0.0.
+**5.0654**"
+EBM,direction_of_change,standard,True,8.302,"The prediction change is **7.878**.
 
-Without access to the model or its feature contribution values, I cannot provide a specific number. If you have access to the model's feature contribution graph or data, you can directly look up the contribution of \( x_0 \) at 1.0 and subtract its contribution at 0.0 to get the answer.
+This is calculated as the difference in the effect of \(x_0\) when it changes from 0.0 to 1.0, based on the shape function \(f(x_0)\):
 
-If you can provide more details or access to the model's outputs, I can assist further!"
-EBM,feature_ranking,standard,False,"x0, x1, x2","I'm sorry, I can't determine the most important features without access to the model's feature importances or data."
-EBM,threshold_identification,standard,False,0.5,"I would need more information about the model, such as the data it was trained on or the feature importances, to determine the threshold value for \( x_0 \). However, if you have access to the Explainable Boosting Machine (EBM) model's feature graph for \( x_0 \), you can identify the approximate threshold by observing where the prediction values change significantly."
-EBM,irrelevant_features,standard,False,"x1, x2, x3, x4 are irrelevant","To determine which features have little or no effect on the prediction in an `ExplainableBoostingRegressor` (EBM) model, you need to examine the feature importances or the magnitudes of the feature contributions. In EBM, this can be done by inspecting the **mean absolute scores** (or similar metrics) for each feature, which indicate how much each feature contributes to the predictions.
+- From the table for \(f(x_0)\), we can interpolate between \(x_0 = 0.161\) (effect = +1.464) and \(x_0 = 0.624\) (effect = +5.242) to estimate the effect at \(x_0 = 0.0\). Using linear interpolation:
+  \[
+  \text{Effect at } x_0 = 0.0 \approx 1.464 + \frac{(5.242 - 1.464)}{(0.624 - 0.161)} \cdot (0.0 - 0.161)
+  \]
+  \[
+  \text{Effect"
+EBM,feature_ranking,standard,True,"x0, x1, x2","x0, x1, x2"
+EBM,threshold_identification,standard,True,0.5,0.5
+EBM,irrelevant_features,standard,True,"x1, x2, x3, x4 are irrelevant","Based on the provided shape functions and their effects on the prediction, the features that appear to have little or no effect on the prediction are those with consistently small effect values across their range. These features are:
 
-However, since you haven't provided the actual output or feature importance values from the model, I cannot directly list the features with little or no effect. You can follow these steps to identify such features:
+**x1, x2, x3, x4**"
+EBM,sign_of_effect,standard,False,-5.27,"To calculate the change in prediction when \( x_1 \) increases by 1 unit (with all other features at 0), we need to look at the shape function for \( f(x_1) \). From the table:
 
-1. Use the `explain_global()` method of your trained `ExplainableBoostingRegressor` model to get a summary of feature importances.
-   ```python
-   ebm_global = model.explain_global()
-   for i in range(len(ebm_global.data())):
-       print(ebm_global.data(i))
-   ```
+- When \( x_1 = -0.082 \), the effect is \( +0.943 \).
+- When \( x_1 = +0.261 \), the effect is \( -0.996 \).
 
-2. Look for features with very low or zero"
-EBM,sign_of_effect,standard,False,-5.27,"To determine how much the prediction changes when \( x_1 \) increases by 1 unit (with all other features at 0) for an **Explainable Boosting Regressor (EBR)**, you need to look at the contribution of \( x_1 \) in the model's additive structure. However, without access to the specific trained model or its feature contributions, it is impossible to provide a numerical answer.
-
-If you have access to the trained model, you can inspect the contribution of \( x_1 \) by examining its **individual feature function** (partial dependence plot or similar). The change in prediction when \( x_1 \) increases by 1 unit can be directly read from this function.
-
-If you can provide more details or access to the model's outputs, I can help further!"
-EBM,counterfactual_prediction,standard,False,9.757,12.72
-EBM,hard_all_features_active,hard,False,5.89,"I cannot provide the prediction as a single number because the Explainable Boosting Regressor (EBM) is an interpretable machine learning model that requires access to the trained model's feature contributions and learned parameters to compute the prediction. Without access to the model's internal details or feature contributions, it is not possible to calculate the output."
-EBM,hard_pairwise_anti_intuitive,hard,False,-0.766,I cannot compute the exact difference between the predictions for Sample B and Sample A without access to the trained ExplainableBoostingRegressor model and its learned feature contributions. The result depends on the specific relationships the model has learned from the training data.
-EBM,hard_quantitative_sensitivity,hard,False,8.61,"To determine the exact change in the model's prediction when \( x_0 \) increases from 0.5 to 2.5 (with \( x_1 = 0 \) and \( x_2 = 0 \)), you would need access to the Explainable Boosting Regressor (EBR) model's learned feature contributions or its prediction function. Without this information, it is not possible to compute the change in prediction.
-
-If you have access to the EBR model, you can calculate the difference by evaluating the model's predictions at \( x_0 = 0.5 \) and \( x_0 = 2.5 \), while keeping \( x_1 = 0 \) and \( x_2 = 0 \), and then subtracting:
+The change in \( f(x_1) \) as \( x_1 \) increases from \( -0.082 \) to \( +0.261 \) is:
 
 \[
-\text{Difference} = \text{Prediction}(x_0=2.5, x_1=0, x_2=0) - \text{Prediction"
-EBM,hard_mixed_sign_goes_negative,hard,False,-0.467,I cannot directly compute the prediction for the given input without access to the trained model and its internal parameters.
-EBM,hard_two_feature_perturbation,hard,False,9.121,0.03
-EBM,insight_simulatability,insight,False,11.102,I cannot provide the predicted value as a single number without access to the trained model and its data.
-EBM,insight_sparse_feature_set,insight,False,"x0, x1 only","x0, x1, x2, x3, x4, x5, x6, x7, x8, x9"
-EBM,insight_nonlinear_threshold,insight,True,~0 (flat for x0<0),0.
-EBM,insight_nonlinear_direction,insight,False,6.057,I cannot provide a specific prediction without access to the trained model and its data.
-EBM,insight_counterfactual_target,insight,False,10.0,8.0
-EBM,insight_decision_region,insight,False,1.441,"I do not have enough information to calculate the threshold value of \( x_0 \). The ExplainableBoostingRegressor (EBM) is an interpretable machine learning model that uses additive contributions from each feature, but the specific contributions of \( x_0 \), \( x_1 \), and \( x_2 \) are not provided in your question. To determine the threshold for \( x_0 \), I would need the model's learned feature contributions or intercept."
-EBM,discrim_simulate_all_active,standard,False,5.875,I cannot directly compute the prediction for the given input without access to the trained model and its internal parameters. The prediction depends on the specific data and patterns learned by the Explainable Boosting Regressor during training.
-EBM,discrim_compactness,standard,False,,no
+\Delta f(x_1) = -0.996 - (+0.943) = -1.939
+\]
+
+Thus, the prediction decreases by **1.939** when \( x_1 \) increases by 1 unit (all other features at 0)."
+EBM,counterfactual_prediction,standard,False,9.757,6.37
+EBM,hard_all_features_active,hard,False,5.89,2.264
+EBM,hard_pairwise_anti_intuitive,hard,True,-0.766,"To calculate the difference in predictions for Sample B and Sample A, we need to compute the model's prediction for each sample and subtract the prediction for A from the prediction for B. The model's prediction is given by:
+
+\[
+y = \text{intercept} + f_0(x_0) + f_1(x_1) + f_2(x_2) + f_3(x_3) + f_4(x_4) + f_{0,1}(x_0, x_1) + f_{0,2}(x_0, x_2) + f_{0,3}(x_0, x_3)
+\]
+
+### Step 1: Extract relevant values from the shape functions
+For **Sample A**:
+- \(x_0 = 2.0\): Interpolating between \(x_0 = 1.004\) (\(+5.081\)) and \(x_0 ="
+EBM,hard_quantitative_sensitivity,hard,False,8.61,"To calculate the change in the model's prediction when \( x_0 \) increases from 0.5 to 2.5 (keeping \( x_1 = 0 \) and \( x_2 = 0 \)), we need to consider the contributions of \( f(x_0) \), \( f(x_1) \), \( f(x_2) \), and the pairwise terms involving \( x_0, x_1, x_2 \).
+
+### Step 1: Contribution of \( f(x_0) \)
+From the table for \( f(x_0) \):
+- At \( x_0 = 0.5 \): The closest grid points are \( x_0 = 0.230 \) (effect = +0.757) and \( x_0 = 0.669 \) (effect = +2.368). Interpolating linearly:
+\[
+\text{Effect at } x_0"
+EBM,hard_mixed_sign_goes_negative,hard,True,-0.467,-0.0689
+EBM,hard_two_feature_perturbation,hard,False,9.121,The prediction is **5.56**.
+EBM,insight_simulatability,insight,True,11.102,"To calculate the predicted value, we sum up the intercept, the effects of the univariate terms \( f(x_0), f(x_1), f(x_2), f(x_3) \), and the pairwise interaction terms \( f(x_0, x_1), f(x_0, x_2), f(x_0, x_3), f(x_1, x_2) \). Here's the calculation:
+
+### Step 1: Intercept
+\[
+\text{intercept} = 0.0029
+\]
+
+### Step 2: Univariate terms
+From the given data:
+- For \( x_0 = 1.0 \): Closest grid points are \( x_0 = 0.958 \) (effect = 5.095) and \( x_0 = 2.594 \) (effect = 11.659). Using linear interpolation:
+\[
+\text{effect of } f"
+EBM,insight_sparse_feature_set,insight,True,"x0, x1 only","x0, x1"
+EBM,insight_nonlinear_threshold,insight,True,~0 (flat for x0<0),-0.2
+EBM,insight_nonlinear_direction,insight,False,6.057,"To calculate the prediction, we sum up the intercept and the effects of each term for the given values of \(x_0 = 2.0\), \(x_1 = 0.0\), and \(x_2 = 0.0\). Here's the breakdown:
+
+1. **Intercept**: \(1.1480\)
+
+2. **Term 0: \(f(x_0)\)**  
+   For \(x_0 = 2.0\), we interpolate between \(x_0 = 0.997\) (effect = +1.875) and \(x_0 = 2.855\) (effect = +7.503).  
+   Using linear interpolation:  
+   \[
+   \text{Effect} = 1.875 + \frac{(2.0 - 0.997)}{(2.855 - 0.997)} \cdot (7.503 - 1.875"
+EBM,insight_counterfactual_target,insight,False,10.0,2.0
+EBM,insight_decision_region,insight,True,1.441,1.586
+EBM,discrim_simulate_all_active,standard,False,5.875,"To calculate the prediction, we sum up the intercept, the univariate effects for each feature, and the pairwise interaction effects. Here's the calculation:
+
+### Given:
+- **Intercept**: 0.1473
+- **x0 = 1.3**, **x1 = -0.7**, **x2 = 2.1**, **x3 = -1.5**, **x4 = 0.8**
+
+### Step 1: Interpolate univariate effects
+Using linear interpolation for each feature:
+
+#### f(x0):
+- x0=+0.989 → effect=+4.078
+- x0=+3.194 → effect=+11.342  
+For x0=1.3, interpolate between these points:  
+\[
+\text{effect} = 4.078 + \frac{(1.3 - 0.989)}{(3.194 - 0.989)} \cdot ("
+EBM,discrim_compactness,standard,False,,No
 EBM,discrim_dominant_feature_sample,standard,True,"x0 (coefficient ≈7, value=2.0 >> others)",x0
-EBM,discrim_unit_sensitivity,standard,False,5.567,"The exact change in the model's prediction when \( x_0 \) increases from 0 to 1 depends on the specific contribution of \( x_0 \) learned by the Explainable Boosting Regressor (EBR). Without access to the trained model's feature contributions or additive terms, it is not possible to provide a single number."
-EBM,discrim_predict_above_threshold,standard,False,2.01,I cannot provide a single number as the prediction without access to the trained model and its data. The prediction depends on the specific model's learned parameters and interactions.
-EBM,discrim_predict_below_threshold,standard,False,-0.03,I cannot provide a single number as the prediction without access to the trained model and its data. The prediction depends on the specific patterns and relationships learned by the Explainable Boosting Regressor during training.
-EBM,discrim_simulate_mixed_sign,standard,False,7.6,I 
-EBM,discrim_simulate_double_threshold,standard,False,1.965,I 
-EBM,discrim_simulate_additive_nonlinear,standard,False,5.795,I 
-EBM,discrim_simulate_interaction,standard,False,14.261,I 
-EBM,simulatability_eight_features,standard,False,7.946,I 
-EBM,simulatability_fifteen_features_sparse,standard,False,21.877,"To determine the prediction of the Explainable Boosting Regressor (EBR) for the given input, you would need access to the trained model and its feature contributions. Without access to the model or its specific parameters, it is not possible to compute the exact prediction. 
+EBM,discrim_unit_sensitivity,standard,False,5.567,"To calculate the change in the model's prediction when \( x_0 \) increases from 0 to 1, we need to evaluate the change in the contribution of \( f(x_0) \), as well as any pairwise interaction terms involving \( x_0 \) with \( x_1, x_2, \) and \( x_3 \). Since \( x_1 = 0 \), \( x_2 = 0 \), and \( x_3 = 0 \), we only need to consider the values of these variables at 0.
 
-If you have access to the model in your environment, you can use code like this in Python:
+### Step 1: Change in \( f(x_0) \)
+From Term 0, the shape function for \( f(x_0) \) is given. We interpolate between the grid points to find the effect at \( x_0 = 0 \) and \( x_0 = 1 \).
 
-```python
-from interpret.glassbox import ExplainableBoostingRegressor
+- For \( x_0 = 0 \): The closest grid points are"
+EBM,discrim_predict_above_threshold,standard,False,2.01,"To calculate the prediction for \( x_0 = 2.0 \), \( x_1 = 0.0 \), and \( x_2 = 0.0 \), we need to sum up the intercept, the univariate effects \( f(x_0) \), \( f(x_1) \), \( f(x_2) \), and the pairwise interaction effects \( f(x_0, x_1) \), \( f(x_0, x_2) \), and \( f(x_1, x_2) \).
 
-# Assuming `model` is your trained ExplainableBoostingRegressor
-input_data = [[1.5, 0, 0, 0.7, 0, 0, -1.0, 0, 0, -0.4, 0, 0, 2.0] + [0] * (total_features - 13)]
-prediction = model.predict(input_data)
-print(prediction[0])
-```
+### Step 1: Intercept
+The intercept is given as:
+\[
+\text{intercept} = 0.3114
+\]
 
-Replace `total_features` with the total number of features in your dataset"
-EBM,simulatability_quadratic,standard,False,5.152,I 
-EBM,simulatability_triple_interaction,standard,False,-2.091,I 
-EBM,simulatability_friedman1,standard,False,16.055,I 
-EBM,simulatability_cascading_threshold,standard,False,2.521,The prediction for the given input 
-EBM,simulatability_quadratic_counterfactual,standard,False,12.063,"To determine the exact change in prediction when \( x_0 \) goes from 0.0 to 2.0, while holding \( x_1 = 0.5 \), \( x_2 = 1.0 \), \( x_3 = 0.0 \), and \( x_4 = 0.0 \) fixed, you would need access to the trained Explainable Boosting Regressor (EBR) model and its feature contributions.
+---
 
-Since I don't have access to the model or its data, I "
-EBM,simulatability_exponential_decay,standard,False,4.868,I 
-EBM,simulatability_piecewise_three_segment,standard,False,1.518,I 
-EBM,simulatability_twenty_features_sparse,standard,False,14.645,"To provide a single number prediction, the actual trained model and its feature contributions are required. Without access to the model or its parameters, I "
-EBM,simulatability_sinusoidal,standard,False,4.961,I 
-EBM,simulatability_abs_value,standard,False,3.569,I 
-EBM,simulatability_twelve_features_all_active,standard,False,1.516,I 
-EBM,simulatability_nested_threshold,standard,False,2.068,I 
+### Step 2: Univariate terms
+We interpolate the univariate effects for each feature:
+
+#### For \( f(x_0) \):
+From the table for \( f(x_0) \):
+- Closest points to \( x_0"
+EBM,discrim_predict_below_threshold,standard,True,-0.03,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \( f_0(x_0) \), \( f_1(x_1) \), \( f_2(x_2) \), and the pairwise interaction terms \( f_3(x_0, x_1) \), \( f_4(x_0, x_2) \), and \( f_5(x_1, x_2) \).
+
+### Step 1: Intercept
+The intercept is given as:
+\[
+\text{intercept} = 0.3114
+\]
+
+### Step 2: Univariate terms
+From the shape functions:
+- For \( x_0 = -0.5 \): The closest grid points are \( x_0 = -0.636 \) (effect = -0.317) and \( x_0 = -0.269 \) (effect = -0.325). Using"
+EBM,discrim_simulate_mixed_sign,standard,False,7.6,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \( f(x_0), f(x_1), \dots \), and the pairwise interaction terms \( f(x_0, x_1) \) and \( f(x_0, x_2) \). Here's the step-by-step calculation:
+
+### 1. Intercept:
+\[
+\text{intercept} = -0.0271
+\]
+
+### 2. Univariate terms:
+We interpolate the effects for each feature based on the given values.
+
+#### \( f(x_0) \) for \( x_0 = 1.5 \):
+From the table:
+- \( x_0 = 1.008 \), effect = 4.040
+- \( x_0 = 3.142 \), effect = 10.329
+
+Using linear interpolation:
+\[
+\text{effect} = 4.040 + \frac{("
+EBM,discrim_simulate_double_threshold,standard,False,1.965,"The prediction for \( x_0 = 0.8 \), \( x_1 = 0.0 \), \( x_2 = 0.0 \), \( x_3 = 0.0 \) is:
+
+**1.646**"
+EBM,discrim_simulate_additive_nonlinear,standard,False,5.795,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \( f(x_0), f(x_1), f(x_2), f(x_3), f(x_4) \), and the pairwise interaction terms \( f(x_0, x_1), f(x_0, x_2), f(x_0, x_3) \). Let's compute step by step:
+
+### 1. Intercept:
+\[
+\text{intercept} = 1.1914
+\]
+
+### 2. Univariate terms:
+- For \( f(x_0) \): \( x_0 = 1.5 \)
+  - From the table, \( x_0 = 1.064 \to \text{effect} = +2.023 \) and \( x_0 = 3.743 \to \text{effect} = +8.937 \).
+  - Interpolating for"
+EBM,discrim_simulate_interaction,standard,False,14.261,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \(f(x0)\), \(f(x1)\), \(f(x2)\), \(f(x3)\), and the pairwise interaction terms \(f(x0, x1)\), \(f(x0, x2)\), \(f(x0, x3)\), and \(f(x1, x2)\). Let's compute each term step by step:
+
+### 1. Intercept:
+\[
+\text{intercept} = 0.0382
+\]
+
+### 2. Univariate terms:
+- For \(x0 = 2.0\): From Term 0, interpolate between \(x0 = +1.077\) (\(effect = +2.980\)) and \(x0 = +3.051\) (\(effect = +6.907\)):
+  \[
+  effect_{x0} = 2.980 +"
+EBM,simulatability_eight_features,standard,True,7.946,"To calculate the prediction, we sum the intercept and the effects of each feature based on their respective values. Interpolation is used for values that fall between the given grid points.
+
+### Step-by-step calculation:
+
+1. **Intercept**: -0.4335
+
+2. **f(x0)**: For \(x0 = 1.2\), interpolate between \(x0 = 0.969\) (effect = 5.984) and \(x0 = 2.661\) (effect = 15.327):
+   \[
+   \text{Effect} = 5.984 + \frac{(1.2 - 0.969)}{(2.661 - 0.969)} \cdot (15.327 - 5.984) = 6.866
+   \]
+
+3. **f(x1)**: For \(x1 = -0.8\), interpolate between \(x1 = -1."
+EBM,simulatability_fifteen_features_sparse,standard,False,21.877,"To calculate the prediction, we use the formula:
+
+\[
+y = \text{intercept} + f_0(x_0) + f_1(x_1) + f_2(x_2) + \dots
+\]
+
+For the given input:
+- \( x_0 = 1.5 \)
+- \( x_3 = 0.7 \)
+- \( x_5 = -1.0 \)
+- \( x_9 = -0.4 \)
+- \( x_{12} = 2.0 \)
+- All other features are 0.
+
+### Step 1: Start with the intercept
+The intercept is given as \( 0.3345 \).
+
+### Step 2: Add contributions from the terms
+We only consider terms for which we have data or non-zero values.
+
+#### Term 0: \( f(x_0) \)
+From the table, for \( x_0 = 1.5 \"
+EBM,simulatability_quadratic,standard,True,5.152,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \( f(x_0), f(x_1), f(x_2), f(x_3), f(x_4) \), and the pairwise interaction terms \( f(x_0, x_1) \), \( f(x_0, x_2) \), and \( f(x_0, x_3) \). Let's compute each term step by step:
+
+### 1. Intercept:
+\[
+\text{intercept} = 0.9393
+\]
+
+### 2. Univariate terms:
+- For \( x_0 = 1.5 \): From Term 0, \( x_0 = 1.051 \) (closest value) → effect = \( +0.507 \).
+- For \( x_1 = -1.0 \): From Term 1, \( x_1 = -1.102 \"
+EBM,simulatability_triple_interaction,standard,False,-2.091,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \(f(x_0), f(x_1), f(x_2), f(x_3), f(x_4), f(x_5)\), and the pairwise interaction terms \(f(x_0, x_1)\) and \(f(x_0, x_2)\). Let's compute each term step by step:
+
+### 1. Intercept:
+\[
+\text{intercept} = 0.0484
+\]
+
+---
+
+### 2. Univariate terms:
+#### \(f(x_0)\):
+For \(x_0 = 1.0\), it lies between \(x_0 = 0.564\) (effect = +0.165) and \(x_0 = 1.092\) (effect = +0.147). Using linear interpolation:
+\[
+\text{effect} = 0.165 + \"
+EBM,simulatability_friedman1,standard,True,16.055,The model predicts: **14.768**
+EBM,simulatability_cascading_threshold,standard,False,2.521,The predicted value for the given inputs is approximately **-0.091**.
+EBM,simulatability_quadratic_counterfactual,standard,False,12.063,The prediction changes by **2.53**.
+EBM,simulatability_exponential_decay,standard,False,4.868,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \( f(x_0), f(x_1), f(x_2), f(x_3) \), and the pairwise interaction terms \( f(x_0, x_1), f(x_0, x_2), f(x_0, x_3), f(x_1, x_2) \).
+
+### Step 1: Intercept
+The intercept is given as:
+\[
+\text{intercept} = 7.8116
+\]
+
+### Step 2: Univariate terms
+We interpolate the effects for each feature value:
+
+#### For \( x_0 = 0.5 \):
+From Term 0:
+- \( x_0 = 0.136 \) → effect = -3.672
+- \( x_0 = 0.570 \) → effect = -4.892
+
+Using linear interpolation:
+\[
+\"
+EBM,simulatability_piecewise_three_segment,standard,True,1.518,"To calculate the prediction for \( x_0 = 0.5 \), \( x_1 = 0.0 \), \( x_2 = 0.0 \), and \( x_3 = 0.0 \), we use the formula:
+
+\[
+y = \text{intercept} + f_0(x_0) + f_1(x_1) + f_2(x_2) + f_3(x_3) + f_4(x_0, x_1) + f_5(x_0, x_2) + f_6(x_0, x_3) + f_7(x_1, x_2)
+\]
+
+### Step-by-step calculation:
+
+#### 1. Intercept:
+\[
+\text{intercept} = 0.0839
+\]
+
+#### 2. Univariate terms:
+- For \( f_0(x_0 = 0.5)"
+EBM,simulatability_twenty_features_sparse,standard,False,14.645,"The prediction for the given input is:
+
+**0.1331**"
+EBM,simulatability_sinusoidal,standard,False,4.961,The predicted value is **1.692**.
+EBM,simulatability_abs_value,standard,True,3.569,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \( f(x0), f(x1), f(x2), f(x3), f(x4) \), and the pairwise interaction terms \( f(x0, x1), f(x0, x2), f(x0, x3) \). Let's compute each term step by step:
+
+### 1. Intercept:
+\[
+\text{intercept} = 0.7606
+\]
+
+### 2. Univariate terms:
+- **\( f(x0) \):**
+  For \( x0 = -1.5 \), interpolate between \( x0 = -2.935 \) (\( +5.157 \)) and \( x0 = -1.079 \) (\( +0.777 \)):
+  \[
+  f(x0) = 5.157 + \frac{-1.5 - (-2.935)}{-1"
+EBM,simulatability_twelve_features_all_active,standard,True,1.516,The model predicts: **1.768**
+EBM,simulatability_nested_threshold,standard,True,2.068,"To calculate the prediction, we sum up the intercept, the effects of the univariate terms \( f(x0), f(x1), f(x2), f(x3), f(x4) \), and the pairwise interaction terms \( f(x0, x1), f(x0, x2), f(x0, x3) \). Here's the step-by-step calculation:
+
+### 1. Intercept:
+\[
+\text{intercept} = 1.2996
+\]
+
+### 2. Univariate terms:
+- For \( f(x0) \): From the table, \( x0 = 0.8 \) is between \( x0 = 0.607 \) (effect = +2.033) and \( x0 = 1.104 \) (effect = +2.174). Using linear interpolation:
+\[
+\text{effect of } f(x0) = 2.033 + \frac{(0."
 TabPFN,most_important_feature,standard,False,x0,"The TabPFNRegressor does not provide direct feature importance scores, so it is not possible to determine the single most important feature without additional analysis."
 TabPFN,point_prediction,standard,False,9.946,I 
 TabPFN,direction_of_change,standard,False,8.019,I 
