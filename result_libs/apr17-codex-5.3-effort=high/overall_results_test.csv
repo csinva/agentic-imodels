@@ -1,22 +1,57 @@
 commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description
-baseline,10.25,0.5541,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
-baseline,14.12,0.7006,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
-baseline,14.81,0.6433,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
-baseline,15.44,0.7261,baseline,OLS,ordinary least squares linear regression
-baseline,14.88,0.5287,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
-baseline,13.44,0.6051,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
-baseline,6.62,0.4204,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
-baseline,7.19,0.4841,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
-baseline,15.75,0.1911,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
-baseline,12.50,0.4713,baseline,FIGS_mini,small FIGS with up to 8 max_rules
-baseline,12.44,0.4586,baseline,FIGS_large,large FIGS with up to 20 max_rules
-baseline,9.88,0.4968,baseline,RuleFit,RuleFit with up to 20 max_rules
-baseline,11.94,0.6752,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
-baseline,9.88,0.6497,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
-baseline,4.06,0.5605,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
+baseline,28.31,0.4777,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
+baseline,37.50,0.6497,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
+baseline,40.12,0.5924,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
+baseline,42.81,0.6943,baseline,OLS,ordinary least squares linear regression
+baseline,41.19,0.6178,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
+baseline,37.38,0.6433,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
+baseline,19.56,0.5669,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
+baseline,19.25,0.5350,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
+baseline,43.62,0.4140,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
+baseline,34.56,0.5860,baseline,FIGS_mini,small FIGS with up to 8 max_rules
+baseline,35.31,0.5669,baseline,FIGS_large,large FIGS with up to 20 max_rules
+baseline,27.44,0.5478,baseline,RuleFit,RuleFit with up to 20 max_rules
+baseline,32.38,0.6561,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
+baseline,28.75,0.6624,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
+baseline,11.06,0.4904,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
 baseline,nan,0.1720,baseline,TabPFN,"TabPFN foundation model for tabular data (training data capped at 200 samples, 2 ensemble members, low-memory fit mode for CPU latency)"
-,11.88,0.6943,evolved,SparseSignedBasisPursuit_v1,Forward-selected sparse signed basis (linear/hinge/square/interaction) with ridge refit and light coefficient rounding
-,6.25,0.7580,evolved,ValGatedTeacherAuditAtlas_v1,"Dual-path regressor with validation-gated multi-teacher batch ensemble (HGB/RF/GBM/Ridge, optional TabPFN) plus distilled compact linear single-row audit atlas and explicit prompt-answer map"
-,9.88,0.6115,evolved,DenseSplineResidual_v1,Dense ridge linear backbone plus greedy residual hinge/interaction basis with exact arithmetic string form
-,5.94,0.7580,evolved,CalibratedBoostAuditAtlas_v1,"Dual-path regressor with calibrated GBM primary teacher blended with a RidgeCV anchor for fast batch prediction, plus distilled compact linear single-row audit atlas and explicit prompt-answer map"
-,2.88,0.7516,evolved,RegimeMixtureTeacherAuditAtlas_v1,"Dual-path regressor with regime-aware OOF super-learner (global plus low/mid/high simplex blends over HGB/GBR/ExtraTrees/RF/Ridge with optional TabPFN), affine calibration, residual ridge correction, and compact single-row audit atlas"
+,33.06,0.7580,evolved,SparseSignedBasisPursuit_v1,Forward-selected sparse signed basis (linear/hinge/square/interaction) with ridge refit and light coefficient rounding
+,17.62,0.6497,evolved,ValGatedTeacherAuditAtlas_v1,"Dual-path regressor with validation-gated multi-teacher batch ensemble (HGB/RF/GBM/Ridge, optional TabPFN) plus distilled compact linear single-row audit atlas and explicit prompt-answer map"
+,29.06,0.5541,evolved,DenseSplineResidual_v1,Dense ridge linear backbone plus greedy residual hinge/interaction basis with exact arithmetic string form
+,16.94,0.6369,evolved,CalibratedBoostAuditAtlas_v1,"Dual-path regressor with calibrated GBM primary teacher blended with a RidgeCV anchor for fast batch prediction, plus distilled compact linear single-row audit atlas and explicit prompt-answer map"
+,7.25,0.0000,evolved,RegimeMixtureTeacherAuditAtlas_v1,"Dual-path regressor with regime-aware OOF super-learner (global plus low/mid/high simplex blends over HGB/GBR/ExtraTrees/RF/Ridge with optional TabPFN), affine calibration, residual ridge correction, and compact single-row audit atlas"
+,35.19,0.6688,evolved,ValidatedSparseSpline_v1,Validation-selected sparse ridge backbone with one optional residual hinge/abs nonlinear basis term
+,42.75,0.6497,evolved,SparseRidgeHingeGCV_v1,"GCV-selected ridge backbone pruned to dominant linear terms, plus a few residual hinge threshold terms"
+,38.00,0.5669,evolved,LinResStumpOMP_v1,Sparse linear OMP core plus a few residual decision-stump corrections for compact nonlinear additivity
+,10.31,0.6879,evolved,CalibratedSparseHingeStudent_v1,Validation-calibrated HGB/RF/Ridge batch blend with sparse linear-plus-one-hinge distilled single-row equation
+,40.81,0.7134,evolved,MDLHybridSymbolic_v1,"Validation-selected symbolic hybrid: dense ridge vs sparse quantized linear/hinge/step, choosing simplest near-best RMSE structure"
+,31.12,0.6306,evolved,DenseRidgeAdaptiveSpline_v1,Dense ridge backbone with holdout-selected pruning and up to three residual one-dimensional spline-like correction terms
+,28.94,0.6051,evolved,SparseKnotAbsInt_v1,Forward-selected sparse additive model with per-feature adaptive |x-t| kink terms plus at most one interaction
+,39.75,0.6624,evolved,SparseLinHingeRefine_v1,"Sparse linear backbone with greedy one-sided hinge refinements, optional interaction, and coefficient quantization for simulatability"
+,16.19,0.7134,evolved,DualPathSparseSymbolic_v2,Blended GBM/RF/Ridge batch teacher with sparse forward-selected symbolic single-row equation over linear/square/hinge/interaction terms
+,31.94,0.6624,evolved,OrthSparseAdditive_v1,Ridge linear backbone plus orthogonal forward-selected tiny additive correction set (hinge/abs/square + few interactions)
+,19.31,0.6688,evolved,DistilledSparsePiecewise_v1,Boosted-tree batch predictor with sparse distilled single-row symbolic equation (linear/hinge/interaction) and coefficient quantization
+,26.69,0.6497,evolved,QuantizedSparseBasis_v1,Forward-selected sparse nonlinear basis (linear/hinge/square/interaction) with post-fit coefficient quantization for arithmetic simulatability
+,15.06,0.0000,evolved,SparseGateDistilledBoost_v1,Dual-path calibrated HGB/ExtraTrees/Ridge batch blend with compact sparse linear-plus-hinge symbolic single-row rule
+,17.38,0.6433,evolved,TeacherStudentCompactDistill_v1,Blended GBM+ridge batch teacher with complexity-penalized compact symbolic student (linear/square/abs/hinge/step/interaction) for single-row simulatability
+,41.94,0.5987,evolved,RidgeResidualSymbolic_v1,Ridge backbone with adaptive linear pruning plus one residual interaction and one residual hinge correction
+,24.75,0.6306,evolved,StagewiseHingeAdditive_v1,Stagewise residual fitting over sparse linear/hinge/square univariate terms with compact quantized arithmetic form
+,26.12,0.6178,evolved,HGBLinearAuditAtlas_v1,HistGradientBoosting batch teacher with distilled compact linear single-row atlas and explicit audit lookup templates
+,43.44,0.6306,evolved,RuleGateSparseLin_v1,Greedy sparse linear regressor with one optional threshold gate selecting between two compact branch equations
+,7.69,0.0000,evolved,DisagreementRoutedSimplexAtlas_v2,"Dual-path regressor with disagreement-routed simplex teacher stacking (TabPFN for small-n plus HGB/ExtraTrees/RF/GBR/Ridge), TabPFN fusion gate, affine calibration, residual ridge correction, and compact single-row audit atlas"
+,16.06,0.6433,evolved,DualPathBoostedSymbolic_v1,Dual-path model: boosted trees for multi-row prediction quality plus compact symbolic linear+hinge equation for single-row simulatability
+,7.12,0.0000,evolved,GeoUncertaintyRegimeAtlas_v1,"Dual-path regressor with OOF uncertainty-routed teacher stacking over HGB/ExtraTrees/RF/GBR/Ridge/KNN (optional small-data TabPFN), affine calibration, and optional residual correction, plus compact single-row audit atlas"
+,29.94,0.5796,evolved,AnchorSplineRidge_v1,Dense ridge backbone with validation-selected single-feature anchored spline residual using three hinge knots
+,41.50,0.6497,evolved,SparseTriBinAdditive_v1,Sparse ridge linear backbone plus up to two single-feature tri-bin residual corrections
+,32.56,0.7134,evolved,CognitiveRidgeOneHinge_v1,Validation-tuned dense ridge with optional single hinge residual and cognitive-complexity-aware linear pruning
+,34.38,0.5541,evolved,SparseModelTree_v1,Sparse GCV-ridge linear backbone with optional one-threshold split into two compact sparse linear branch equations
+,15.56,0.8025,evolved,TeacherStudentRuleSpline_v1,Two-path model: GBM teacher for batch predictions plus sparse symbolic student over linear/square/abs/hinge/step/interaction/gated terms
+,15.12,0.0000,evolved,CalibratedTabPFNForestAtlas_v1,"Dual-path regressor with TabPFN-first validated blend (TabPFN/HGB/RF/Ridge), affine calibration, sparse residual ridge correction, and compact single-row audit atlas"
+,43.19,0.6943,evolved,ComplexityRoundedRidge_v1,"Holdout-selected ridge with mild pruning and decimal-rounded coefficients, tuned for RMSE and arithmetic simplicity"
+,14.75,0.6688,evolved,TransparentDistilledForestBoost_v1,Holdout-calibrated GBM/RF/ExtraTrees/Ridge batch ensemble with sparse distilled linear-plus-hinge symbolic single-row equation
+,42.25,0.6178,evolved,CompactSplineRidge_v1,Dense linear ridge backbone with validation-pruned compact spline basis (abs/square/hinge + few interactions)
+,15.75,0.5987,evolved,TabPFNResidualAuditAtlas_v1,"Dual-path regressor with small-data TabPFN + HGB/Ridge calibrated teacher blend, sparse residual ridge correction, and compact single-row audit atlas with exact prompt-answer map"
+,39.19,0.6815,evolved,SnapRidgeOneKnot_v1,"Validation-selected ridge with adaptive linear sparsity, one optional nonlinear residual term, and snapped coefficients"
+,17.56,0.7325,evolved,TeacherStudentSpectralRuleSpline_v1,Two-path model with transform-aware screening and sparse symbolic student over linear/polynomial/trig/exp/hinge/interaction terms plus GBM batch teacher
+,28.69,0.0000,evolved,AdaptiveStackedTeacherAuditAtlas_v1,Dual-path regressor with regime-adaptive stacked teacher blend (HGB/RF/ExtraTrees/GBM/Ridge with optional TabPFN) plus compact single-row audit atlas and exact prompt-answer map
+,25.81,0.5796,evolved,SparseHingeOMP_q2575_v1,Greedy sparse additive model over linear/quadratic/abs/hinge(25/50/75th) and selected pairwise interactions

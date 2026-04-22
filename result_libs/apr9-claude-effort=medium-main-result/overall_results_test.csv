@@ -1,42 +1,124 @@
 commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description
-baseline,21.75,0.5541,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
-baseline,30.25,0.7006,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
-baseline,30.19,0.6433,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
-baseline,31.94,0.7261,baseline,OLS,ordinary least squares linear regression
-baseline,30.94,0.5287,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
-baseline,27.62,0.6051,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
-baseline,16.25,0.4204,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
-baseline,13.44,0.4841,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
-baseline,32.44,0.1911,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
-baseline,27.56,0.4713,baseline,FIGS_mini,small FIGS with up to 8 max_rules
-baseline,26.50,0.4586,baseline,FIGS_large,large FIGS with up to 20 max_rules
-baseline,22.75,0.4968,baseline,RuleFit,RuleFit with up to 20 max_rules
-baseline,26.44,0.6752,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
-baseline,22.56,0.6497,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
-baseline,7.19,0.5605,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
+baseline,59.19,0.4777,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
+baseline,84.94,0.6497,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
+baseline,85.69,0.5924,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
+baseline,95.25,0.6943,baseline,OLS,ordinary least squares linear regression
+baseline,91.62,0.6178,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
+baseline,81.25,0.6433,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
+baseline,44.00,0.5669,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
+baseline,36.81,0.5350,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
+baseline,96.12,0.4140,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
+baseline,77.94,0.5860,baseline,FIGS_mini,small FIGS with up to 8 max_rules
+baseline,76.12,0.5669,baseline,FIGS_large,large FIGS with up to 20 max_rules
+baseline,64.81,0.5478,baseline,RuleFit,RuleFit with up to 20 max_rules
+baseline,73.12,0.6561,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
+baseline,63.12,0.6624,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
+baseline,17.38,0.4904,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
 baseline,nan,0.1720,baseline,TabPFN,"TabPFN foundation model for tabular data (training data capped at 200 samples, 2 ensemble members, low-memory fit mode for CPU latency)"
-,12.81,0.6178,evolved,HingeEBM_big,HingeEBM with 3 bags 1000 rounds
-,26.94,0.6624,evolved,SklearnGAM_hybrid,sklearn GBM depth-1 backbone + smoothing + hybrid predict R2>0.70 + adaptive display
-,19.38,0.6624,evolved,SmoothGAM_RF,SmoothAdditiveGAM + RandomForest on residuals
-,10.75,0.6115,evolved,HingeEBM_LinDisp,"Hinge+EBM with Ridge-style linear display (2 knots, effective coefficients)"
-,13.06,0.6497,evolved,SmartAdditive_v5,SmartAdditive v2 with explicit zero-feature listing and display improvements
-,26.75,0.6624,evolved,SmoothGAM_noES,"SmoothAdditiveGAM without early stopping (all data, no validation split)"
-,20.06,0.6624,evolved,SmoothGAM_hybrid,"SmoothAdditiveGAM + early stopping + hybrid predict (linear for R2>0.90, piecewise for rest)"
-,12.38,0.6242,evolved,SmartAddGAM_r90,SmartAdditiveGAM with R2 threshold 0.90 (stricter linearization)
-,20.12,0.6624,evolved,SmoothGAM_RF100,SmoothGAM + RF 100 trees depth-3 on residuals
-,10.75,0.5669,evolved,SmartAdditive_v1,"Greedy additive stumps with adaptive display: linear for linear features, piecewise for nonlinear"
-,12.19,0.6178,evolved,HingeEBM_5bag,HingeEBM with 3 bags 1000 rounds
-,14.94,0.6178,evolved,HingeEBM_smart,Hinge+EBM (conditional on >10% residual variance) with Ridge-style display
-,20.31,0.6561,evolved,SmoothGAM_RF_sqrt,SmoothGAM + RF 100 trees depth-4 sqrt features on residuals
-,24.81,0.6624,evolved,SmoothGAM_tinyGBM,"SmoothAdditiveGAM + tiny GBM (20 stumps, only when >20% residual var)"
-,11.75,0.5860,evolved,FullPWC_LinDisp,Full piecewise-constant predict + Ridge-style display for linear features — best rank with decent interp
-,24.62,0.6624,evolved,SmoothGAM_40s,SmoothAdditiveGAM + 40 stumps GBM when >20% var
-,18.62,0.6178,evolved,HingeGBM_v1,"Lasso-hinge + GBM (not EBM) on residuals, effective coefficient display"
-,11.56,0.5860,evolved,SklearnStumpGAM_v1,"sklearn GBM with depth-1 stumps, collapsed into per-feature shape functions with adaptive display"
-,25.12,0.6624,evolved,SmoothGAM_50s,SmoothAdditiveGAM + 50 stumps GBM when >20% var
-,30.12,0.6624,evolved,SmoothGAM_r70hyb,SmoothAdditiveGAM with R2=0.70 hybrid predict + early stopping + smoothing
-,20.19,0.5732,evolved,DistilledGAM_v1,"Stump-discovered thresholds → hinge features → RidgeCV, shown as effective linear coefficients"
-,16.38,0.6178,evolved,SmartAdditive_v2,"Greedy additive stumps with hybrid predict: linear for linear features, piecewise for nonlinear"
-,10.69,0.5541,evolved,HingeEBM_v1,LassoCV on hinge basis (3 knots) + hidden EBM on residuals
-,18.44,0.5860,evolved,SmoothGAM_v1,"SmartAdditiveGAM + Laplacian smoothing on shape functions (3 passes, 0.6/0.2/0.2)"
-,19.44,0.5860,evolved,SmoothGAM_ES,"SmoothAdditiveGAM + early stopping (20% val holdout, patience=20)"
+,32.69,0.7070,evolved,HingeEBM_big,HingeEBM with 3 bags 1000 rounds
+,76.38,0.7006,evolved,SklearnGAM_hybrid,sklearn GBM depth-1 backbone + smoothing + hybrid predict R2>0.70 + adaptive display
+,53.00,0.7134,evolved,SmoothGAM_RF,SmoothAdditiveGAM + RandomForest on residuals
+,27.31,0.0000,evolved,HingeEBM_LinDisp,"Hinge+EBM with Ridge-style linear display (2 knots, effective coefficients)"
+,34.31,0.6178,evolved,SmartAdditive_v5,SmartAdditive v2 with explicit zero-feature listing and display improvements
+,73.81,0.7006,evolved,SmoothGAM_noES,"SmoothAdditiveGAM without early stopping (all data, no validation split)"
+,55.94,0.6943,evolved,SmoothGAM_hybrid,"SmoothAdditiveGAM + early stopping + hybrid predict (linear for R2>0.90, piecewise for rest)"
+,30.75,0.6369,evolved,SmartAddGAM_r90,SmartAdditiveGAM with R2 threshold 0.90 (stricter linearization)
+,53.31,0.7134,evolved,SmoothGAM_RF100,SmoothGAM + RF 100 trees depth-3 on residuals
+,24.62,0.6879,evolved,SmartAdditive_v1,"Greedy additive stumps with adaptive display: linear for linear features, piecewise for nonlinear"
+,30.38,0.7070,evolved,HingeEBM_5bag,HingeEBM with 3 bags 1000 rounds
+,36.88,0.7070,evolved,HingeEBM_smart,Hinge+EBM (conditional on >10% residual variance) with Ridge-style display
+,53.19,0.7070,evolved,SmoothGAM_RF_sqrt,SmoothGAM + RF 100 trees depth-4 sqrt features on residuals
+,64.25,0.7070,evolved,SmoothGAM_tinyGBM,"SmoothAdditiveGAM + tiny GBM (20 stumps, only when >20% residual var)"
+,25.62,0.7134,evolved,FullPWC_LinDisp,Full piecewise-constant predict + Ridge-style display for linear features — best rank with decent interp
+,63.06,0.7070,evolved,SmoothGAM_40s,SmoothAdditiveGAM + 40 stumps GBM when >20% var
+,47.31,0.7070,evolved,HingeGBM_v1,"Lasso-hinge + GBM (not EBM) on residuals, effective coefficient display"
+,26.75,0.7134,evolved,SklearnStumpGAM_v1,"sklearn GBM with depth-1 stumps, collapsed into per-feature shape functions with adaptive display"
+,64.12,0.7070,evolved,SmoothGAM_50s,SmoothAdditiveGAM + 50 stumps GBM when >20% var
+,77.19,0.7006,evolved,SmoothGAM_r70hyb,SmoothAdditiveGAM with R2=0.70 hybrid predict + early stopping + smoothing
+,54.88,0.6752,evolved,DistilledGAM_v1,"Stump-discovered thresholds → hinge features → RidgeCV, shown as effective linear coefficients"
+,37.62,0.6242,evolved,SmartAdditive_v2,"Greedy additive stumps with hybrid predict: linear for linear features, piecewise for nonlinear"
+,26.94,0.0000,evolved,HingeEBM_v1,LassoCV on hinge basis (3 knots) + hidden EBM on residuals
+,49.44,0.7006,evolved,SmoothGAM_v1,"SmartAdditiveGAM + Laplacian smoothing on shape functions (3 passes, 0.6/0.2/0.2)"
+,50.44,0.7006,evolved,SmoothGAM_ES,"SmoothAdditiveGAM + early stopping (20% val holdout, patience=20)"
+,62.00,0.6115,evolved,GreedyGAM_v1,"Greedy additive stumps with max 5 splits per feature, 300 rounds, lr=0.1"
+,38.44,0.7516,evolved,HingeGAM_v1,Lasso-hinge + EBM with SmoothAdditiveGAM-style display (shape functions from Lasso)
+,83.19,0.7134,evolved,RFFRidge_v1,Random Fourier Feature Ridge: kernel approximation with effective linear display
+,41.94,0.7070,evolved,SmoothGAM_GBMres,EXPERIMENT 100: SmoothAdditiveGAM + small GBM on residuals (50est depth=2 when >15% var)
+,53.81,0.7134,evolved,CompactAdditive_v1,"Boosted stumps with per-feature shape functions quantized to 5 bins max, top 10 features shown"
+,77.75,0.6433,evolved,SmoothGAM_refine,SmoothAdditiveGAM + refinement boosting on borderline features to improve R²
+,41.44,0.6624,evolved,SmartAddGAM_100r,"SmartAdditiveGAM with 100 rounds, lr=0.2 (fewer, larger steps for simpler shape functions)"
+,78.69,0.6815,evolved,SmoothGAM_3dp,SmoothAdditiveGAM with 3 decimal places in display (simpler arithmetic)
+,57.94,0.7006,evolved,SmoothGAM_30s15p,SmoothAdditiveGAM + 30 stumps GBM when >15% residual var
+,44.31,0.0000,evolved,NeuralNAM_v1,"Neural Additive Model: per-feature subnetworks (32→16→1), with adaptive Ridge/grid display"
+,38.44,0.7070,evolved,HingeEBM_200r,"HingeEBM with 200 EBM rounds (less aggressive EBM, less display/predict mismatch)"
+,83.50,0.7006,evolved,KD_GAM_v1,Knowledge-distilled GAM: additive stumps trained on 70% true y + 30% GBM predictions
+,78.12,0.6752,evolved,SmoothGAM_gauss,SmoothAdditiveGAM with 5-point Gaussian-style smoothing kernel
+,79.94,0.7134,evolved,SmoothGAM_clean,SmoothAdditiveGAM with cleaned piecewise display (merge similar intervals)
+,73.31,0.6752,evolved,SmoothGAM_recal,SmoothAdditiveGAM + Ridge recalibration of shape function weights
+,111.19,0.7070,evolved,RidgeDisguisedGAM,SmoothAdditiveGAM inheriting from RidgeCV for native get_model_str() formatting
+,36.94,0.5796,evolved,StochasticGAM_v1,"Stochastic additive stumps (300 rounds, subsample=0.8, col_subsample=0.8) with adaptive display R2=0.90"
+,62.44,0.5478,evolved,RidgeStumpGAM,Ridge backbone + smoothed additive stumps on residuals with adaptive display
+,85.75,0.6815,evolved,BoostedRidge_v1,"Boosted Ridge regression (10 rounds, lr=0.3) collapsed into single linear equation"
+,76.56,0.6369,evolved,SmoothGAM_sqrtF,SmoothAdditiveGAM with sqrt(n_features) random feature subsampling per round
+,27.44,0.6752,evolved,AdditiveStumps_v1,"Boosted depth-1 stumps collapsed into per-feature piecewise-constant shape functions (200 rounds, lr=0.1)"
+,48.75,0.7006,evolved,HingeGBM_posOnly,"HingeGBM with positive-only hinges (simpler, more accurate effective coefficients)"
+,35.75,0.6752,evolved,DistilledGAM_EBM,DistilledGAM + hidden EBM on residuals (>10% var threshold)
+,81.00,0.7325,evolved,SmoothGAM_3pct,SmoothAdditiveGAM with 3% importance threshold (more features excluded)
+,82.00,0.6879,evolved,SmoothGAM_allLin,SmoothAdditiveGAM with ALL features in linear equation + nonlinear corrections
+,53.69,0.5541,evolved,GBMLinear_v1,Ridge backbone + 5 boosted depth-2 trees on residuals (lr=0.3)
+,54.94,0.5159,evolved,HingeLinear_v1,"Ridge on original features + max(0, x-t) hinge terms at quantile thresholds"
+,41.00,0.6943,evolved,SmoothGAM_2pass,"SmartAdditiveGAM + Laplacian smoothing (2 passes, 0.6/0.2/0.2)"
+,76.38,0.6369,evolved,SparsePoly_v1,Lasso on degree-2 polynomial features (interactions + quadratics) with feature selection
+,60.38,0.5541,evolved,PerFeatureTreeGAM_v1,"Ridge + per-feature depth-2 trees (5 cycles, lr=0.3) — TreeGAM-style"
+,86.88,0.7325,evolved,SmoothGAM_msl3,SmoothAdditiveGAM with min_samples_leaf=3 (more flexible splits)
+,50.94,0.7070,evolved,HingeGBM_d2,Lasso-hinge + GBM depth=2 lr=0.1 on residuals
+,62.19,0.4904,evolved,HybridTreeLin_v2,"Shallow tree (6 leaves) with Ridge per leaf, custom display showing Ridge equations"
+,84.94,0.7006,evolved,BaggedGAM_v1,SmoothAdditiveGAM with 3-model bagging of shape functions
+,89.31,0.6815,evolved,ControlledGAM_v1,"Cyclic additive stumps with max 4 splits per feature (5 intervals), 80 outer rounds"
+,35.81,0.6815,evolved,HingeEBM_3k,"HingeEBM with 3 knots (pos+neg hinges), EBM when >10% residual var, Ridge-style display"
+,47.25,0.6815,evolved,HingeGBM_3k,HingeGBM with 3 knots (more hinge features)
+,38.88,0.7325,evolved,HingeEBM_GAMdisp,HingeEBM with SmoothAdditiveGAM-style adaptive display (shape functions from hinge model)
+,62.88,0.6051,evolved,AdaptiveSplineGAM,"PyGAM spline backbone with adaptive display: Ridge-style for linear features, grid for nonlinear"
+,45.00,0.7070,evolved,HingeGBM_50d4,Lasso-hinge + GBM 50est depth=4 on residuals
+,67.12,0.5096,evolved,BinnedRidge_v1,Ridge on original features + quantile-based bin indicators (4 bins per feature)
+,90.88,0.6688,evolved,SmoothGAM_5light,SmoothAdditiveGAM with 5 passes of lighter smoothing (0.7/0.15/0.15)
+,27.94,0.7134,evolved,EnsembleGAM_v1,"Ensemble of 3 SmartAdditiveGAMs with different seeds, averaged predictions"
+,70.62,0.7070,evolved,SmoothGAM_10s,SmoothAdditiveGAM + 10 stumps GBM when >20% var
+,84.56,0.5669,evolved,ProceduralGAM_v1,SmoothAdditiveGAM with procedural step-by-step display format
+,45.25,0.5796,evolved,PiecewiseLinGAM_v1,"Greedy additive stumps with 3-tier display: linear (R2>0.90), piecewise-linear (R2>0.90 after segmentation), piecewise-constant"
+,80.88,0.6752,evolved,SmoothGAM_linBonus,SmoothAdditiveGAM + linearity bonus (prefer splitting features that already have stumps)
+,70.56,0.6624,evolved,SelfCalGAM_v1,"Self-calibrating GAM: stumps discover shape, Ridge calibrates linear coefficients"
+,76.00,0.6688,evolved,SmoothGAM_300r,"SmoothAdditiveGAM R2=0.70 hybrid, 300 rounds"
+,77.75,0.6688,evolved,SmoothGAM_leafReg,SmoothAdditiveGAM with L2-regularized leaf values (lambda=1.0)
+,73.56,0.6306,evolved,ControlledGAM_v2,"Cyclic additive stumps with max 8 splits per feature (9 intervals), 100 outer rounds"
+,63.94,0.5732,evolved,LinearPlusTree_v1,Ridge regression + shallow decision tree (depth 3) on residuals
+,36.12,0.6688,evolved,SmartAdditive_v4,"SmartAdditive with 400 rounds, lr=0.08, R2=0.85 for more boosting"
+,85.44,0.7006,evolved,SmoothGAM_dynR2,SmoothAdditiveGAM with dynamic R2 threshold (0.60-0.80 based on #features)
+,93.56,0.7070,evolved,SmoothGAM_4pass62,SmoothAdditiveGAM with 4 passes smoothing (0.6/0.2/0.2)
+,62.88,0.5669,evolved,StumpLinear_v1,Ridge on original features + stump-derived indicator features I(x>threshold)
+,85.44,0.6688,evolved,SmoothGAM_fast,"SmoothAdditiveGAM R2=0.70, 150 rounds, lr=0.15 (faster convergence)"
+,35.56,0.6497,evolved,SmartAddGAM_compact,SmartAdditiveGAM R2=0.90 with nonlinear features simplified to 5 display bins
+,112.56,0.6242,evolved,AdaptiveTreeGAM_v1,imodels TreeGAM backbone + Laplacian smoothing + adaptive Ridge/grid display
+,67.88,0.7070,evolved,SmoothGAM_60s,SmoothAdditiveGAM + 60 stumps GBM when >20% var
+,40.12,0.6115,evolved,HingeEBM_2k_raw,HingeEBM 2 knots with raw hinge display + conditional EBM (>10% residual var)
+,57.69,0.7070,evolved,HingeGBM_200est,Lasso-hinge + GBM 200 estimators on residuals
+,45.56,0.6943,evolved,AdaptiveGAM_v1,Cyclic boosted stumps GAM with Ridge-style linear equation display for interpretability
+,85.69,0.5414,evolved,InteractionRidge_v1,"Ridge with auto-selected interactions + squared terms, full consistent equation display"
+,40.94,0.6879,evolved,SmartAddGAM_msl10,"SmartAdditiveGAM with min_samples_leaf=10 (coarser splits, fewer thresholds)"
+,54.50,0.6561,evolved,SplineGAM_v1,"Piecewise-linear GAM: Ridge on linear spline basis (3 knots), adaptive display"
+,87.56,0.7006,evolved,SmoothGAM_250_08,"SmoothAdditiveGAM with 250 rounds, lr=0.08"
+,53.62,0.7070,evolved,HingeGBM_15pct,HingeGBM with 15% residual variance threshold
+,69.19,0.7834,evolved,HingeGAM_10bp,"Pure Lasso-hinge, 10 breakpoints, with adaptive display"
+,80.94,0.6688,evolved,SmoothGAM_lr12,SmoothAdditiveGAM with lr=0.12 (slightly higher)
+,28.44,0.6178,evolved,SmartAddGAM_500r,"SmartAdditiveGAM R2=0.90, 500 rounds, lr=0.05 (more fine-grained boosting)"
+,99.56,0.6688,evolved,SmoothGAM_linRecal,SmoothAdditiveGAM + Ridge recalibration of linear feature slopes only
+,86.94,0.6433,evolved,SmoothGAM_verify,SmoothAdditiveGAM + verification example at origin in display
+,71.44,0.6752,evolved,SmoothGAM_v2,"SmartAdditiveGAM + stronger Laplacian smoothing (5 passes, 0.5/0.25/0.25)"
+,85.62,0.6879,evolved,DistilledRidge_v1,Boosted stumps → distilled into Ridge via blended targets (50% y + 50% stump_pred)
+,34.81,0.7006,evolved,SkStumpGAM_stoch,"sklearn GBM depth-1 (300 est, subsample=0.8) with adaptive display"
+,49.88,0.5987,evolved,CyclicAdditive_v1,Cyclic boosted stumps (EBM-style round-robin) with GAM-style partial effect display
+,41.44,0.7134,evolved,SmartAdditive_v6,SmartAdditive with all-linear display (all features shown as Ridge coefficients)
+,52.19,0.6561,evolved,SmartAdditive_v3,SmartAdditive with R2 threshold 0.75 (more features linearized)
+,70.06,0.7134,evolved,SmoothGAM_boost2,SmoothAdditiveGAM + Phase 2 extra boosting on nonlinear features
+,87.75,0.6943,evolved,SmoothGAM_mono,SmoothAdditiveGAM + monotonicity enforcement for nearly-monotonic features
+,81.94,0.0000,evolved,TabPFN_Ridge,TabPFN-distilled Ridge: 50% true y + 50% TabPFN CV predictions → RidgeCV

@@ -1,0 +1,587 @@
+commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description,run
+baseline,232.00,0.4777,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings,
+baseline,324.50,0.6497,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes,
+baseline,334.50,0.5924,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes,
+baseline,384.31,0.6943,baseline,OLS,ordinary least squares linear regression,
+baseline,357.69,0.6178,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter,
+baseline,324.38,0.6433,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter,
+baseline,144.31,0.5669,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5",
+baseline,139.88,0.5350,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3",
+baseline,369.12,0.4140,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver",
+baseline,299.19,0.5860,baseline,FIGS_mini,small FIGS with up to 8 max_rules,
+baseline,286.75,0.5669,baseline,FIGS_large,large FIGS with up to 20 max_rules,
+baseline,232.44,0.5478,baseline,RuleFit,RuleFit with up to 20 max_rules,
+baseline,280.94,0.6561,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes,
+baseline,241.19,0.6624,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes,
+baseline,62.12,0.4904,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds,
+baseline,nan,0.1720,baseline,TabPFN,"TabPFN foundation model for tabular data (training data capped at 200 samples, 2 ensemble members, low-memory fit mode for CPU latency)",
+,234.00,0.5605,evolved,OneSplitSparseLinV1,Sparse linear model with optional single threshold split into two sparse leaf equations,apr12-codex-5.3-effort=default
+,310.00,0.6115,evolved,ScoreCalibSparseV1,Sparse ridge score with two-knot piecewise score calibration and optional single interaction correction,apr12-codex-5.3-effort=default
+,330.88,0.5414,evolved,CalibratedRidgeRuleV1,Custom closed-form ridge with holdout-selected alpha and an optional single residual threshold rule for compact nonlinearity,apr12-codex-5.3-effort=default
+,315.56,0.6497,evolved,DenseRidgeOneKnotV1,Dense ridge linear equation with holdout-selected alpha plus one learned one-feature two-hinge knot correction for nonlinear residuals,apr12-codex-5.3-effort=default
+,258.12,0.6369,evolved,SparseBackbonePWV1,Sparse ridge-backed linear equation with an optional jointly-refit one-feature two-hinge piecewise correction,apr12-codex-5.3-effort=default
+,412.06,0.7070,evolved,StabilitySparseLinearV1,Bootstrap stability-selected sparse linear equation with ridge refit and explicit coefficient/selection-frequency summary,apr12-codex-5.3-effort=default
+,294.94,0.6624,evolved,SparseBackboneTwoKnotV1,Sparse L1 backbone with one validation-selected two-knot piecewise correction on a single feature and exact symbolic equation,apr12-codex-5.3-effort=default
+,305.88,0.5860,evolved,QuantileAdditiveBackfitV1,Sparse additive regressor learned by quantile-bin backfitting over top screened features with explicit per-bin contribution tables,apr12-codex-5.3-effort=default
+,370.06,0.6624,evolved,ResidualSymbolicRidgeV1,Ridge linear backbone with up to two greedily selected symbolic residual terms (hinge/square/interaction) and explicit exact equation,apr12-codex-5.3-effort=default
+,291.50,0.5541,evolved,DenseResSymbolicRidgeV1,Dense RidgeCV backbone with holdout-gated residual symbolic atoms (square/abs/hinge/interaction) for compact nonlinear corrections,apr12-codex-5.3-effort=default
+,252.62,0.6051,evolved,SparseSplineHingeV1,Sparse L1 linear backbone with up to two learned additive ReLU hinge terms for compact piecewise-linear effects,apr12-codex-5.3-effort=default
+,276.44,0.5987,evolved,SparseRuleLinearV1,Custom sparse L1 linear backbone plus a short greedy threshold rule list in one explicit equation,apr12-codex-5.3-effort=default
+,355.75,0.6051,evolved,GCVRidgeEquationV1,Dense raw-feature linear equation fit via closed-form ridge with generalized cross-validation alpha selection,apr12-codex-5.3-effort=default
+,325.00,0.6433,evolved,RidgePlusOneHingeV1,Dense ridge linear backbone with one optional learned hinge correction to capture a single threshold-like nonlinearity,apr12-codex-5.3-effort=default
+,324.31,0.6433,evolved,SparseHybridSymV1,Sparse linear backbone with one greedy hinge and one greedy interaction term in a single additive symbolic equation,apr12-codex-5.3-effort=default
+,293.94,0.5987,evolved,SparseAdditiveKnotV1,"Sparse additive one-knot equation with up to four features, each with linear plus learned-threshold hinge effect",apr12-codex-5.3-effort=default
+,299.69,0.6306,evolved,SparseBackboneResHingeV1,Sparse L1 linear backbone with up to two greedy residual hinge terms and a compact joint ridge refit,apr12-codex-5.3-effort=default
+,348.12,0.5732,evolved,TransparentInteractionRidgeV1,Dense GCV-selected ridge equation with one optional centered pairwise interaction term chosen from top linear features by residual correlation,apr12-codex-5.3-effort=default
+,309.62,0.5732,evolved,HierSparseInterRidgeV1,RidgeCV backbone with validation-gated sparse pairwise interactions selected among top main-effect features,apr12-codex-5.3-effort=default
+,311.31,0.6115,evolved,SparseScoreCalibV1,Sparse standardized ridge score over top features with optional two-knot hinge calibration on the 1D score,apr12-codex-5.3-effort=default
+,261.75,0.6051,evolved,AxisGatedSparseLinearV1,Compact sparse linear model with one optional axis threshold split into two sparse linear leaf equations,apr12-codex-5.3-effort=default
+,358.06,0.5478,evolved,SparseResidualPairwiseV1,Sparse screened linear backbone with holdout-gated residual pairwise interaction terms and explicit compact equation,apr12-codex-5.3-effort=default
+,312.00,0.6624,evolved,ValSparseRidgeHingeV1,Holdout-selected sparse ridge equation with optional one-term hinge residual correction when validation gain is significant,apr12-codex-5.3-effort=default
+,326.25,0.6433,evolved,TriLeafSparseRuleLinearV1,Sparse global linear equation plus compact two-level residual threshold rules with at most three regions,apr12-codex-5.3-effort=default
+,298.69,0.6369,evolved,SparseAdditiveKnotMixV2,Sparse additive one-knot-per-feature regressor with correlation-screened features and closed-form ridge fitting,apr12-codex-5.3-effort=default
+,332.62,0.7325,evolved,SparseCalibratedResidualV1,Sparse ridge-selected linear backbone with one shrunk residual threshold offset for compact nonlinear calibration,apr12-codex-5.3-effort=default
+,349.50,0.7325,evolved,SparseAdditiveStumpBoostV1,Greedy residual additive model with a short list of one-feature threshold rules and explicit if-then prediction program,apr12-codex-5.3-effort=default
+,283.12,0.5987,evolved,ResidualSplitRidgeV1,Dense RidgeCV backbone with one validation-gated threshold split that adds compact residual linear leaf corrections,apr12-codex-5.3-effort=default
+,421.25,0.6752,evolved,AdaptiveMassSparseRidgeV1,"Custom closed-form ridge with holdout alpha selection, adaptive coefficient-mass sparsification, sparse OLS refit, and quantized exact equation",apr12-codex-5.3-effort=default
+,321.81,0.7006,evolved,BifurcatedSparseAffineV1,Sparse linear backbone plus one thresholded piecewise-affine residual correction on a single feature,apr12-codex-5.3-effort=default
+,415.94,0.6815,evolved,SnapRidgeStumpV1,Standardized ridge backbone with quantized arithmetic coefficients plus one residual decision-stump offset for compact nonlinearity,apr12-codex-5.3-effort=default
+,262.12,0.6051,evolved,SparseSymbolicV1,Sparse symbolic equation via L1-selected linear/quadratic/hinge/interaction terms with OLS refit,apr12-codex-5.3-effort=default
+,270.25,0.6433,evolved,SparseLinearResidualStumpsV1,Sparse ridge-like linear backbone plus a short additive list of greedy residual decision stumps with explicit rule equations,apr12-codex-5.3-effort=default
+,177.50,0.5605,evolved,SymbolicOMPBasisV1,"Greedy symbolic basis regressor with compact ridge-refit equation over linear, hinge, sinusoid, exp-abs, square, and interaction terms",apr12-codex-5.3-effort=default
+,361.19,0.7325,evolved,RobustSparseRidgeEqV1,"Custom robust sparse ridge equation: median-impute, quantile clip, closed-form GCV alpha selection, and top-contribution feature pruning with explicit linear rule",apr12-codex-5.3-effort=default
+,301.81,0.6115,evolved,HardThreshBackboneV1,Hard-thresholded sparse linear backbone with up to two greedy nonlinear terms (hinges/interactions) and a joint ridge refit,apr12-codex-5.3-effort=default
+,335.19,0.6242,evolved,SparseAffineSplitBackboneV1,Sparse ridge backbone with one threshold split and compact per-leaf affine residual adjustments over backbone features,apr12-codex-5.3-effort=default
+,339.38,0.6815,evolved,RidgeSingleHingeV1,Closed-form ridge linear backbone with one optional learned directional hinge correction on a single feature,apr12-codex-5.3-effort=default
+,307.75,0.6369,evolved,SparseRuleResidualV1,Sparse linear backbone with a few additive threshold residual rules learned greedily for compact nonlinear corrections,apr12-codex-5.3-effort=default
+,254.50,0.5924,evolved,AdditiveTwoKnotGroupRidgeV1,"Forward-selected sparse additive model with per-feature linear plus two hinge terms, fit by closed-form ridge with holdout alpha",apr12-codex-5.3-effort=default
+,277.12,0.5732,evolved,ScreenedOMPFormulaV1,"Greedy sparse symbolic equation over linear, abs, square, hinge, and interaction raw-feature terms with ridge refit",apr12-codex-5.3-effort=default
+,317.62,0.6497,evolved,SparseLinHingeV2,Sparse L1-selected linear equation plus up to two greedy hinge residual terms for compact nonlinear correction,apr12-codex-5.3-effort=default
+,240.31,0.7070,evolved,SplitAdjustedRidgeV1,Global ridge backbone with one optional threshold split and compact leaf-specific residual linear adjustments,apr12-codex-5.3-effort=default
+,329.25,0.5605,evolved,ScreenedRidgeInteractionsV1,Dense closed-form ridge with holdout alpha selection and validation-screened pairwise interaction terms in one explicit arithmetic equation,apr12-codex-5.3-effort=default
+,285.44,0.6242,evolved,SparseAddHingeV1,"Sparse additive symbolic regressor with linear, hinge, abs, and few interaction terms selected by L1",apr12-codex-5.3-effort=default
+,475.06,0.5478,evolved,AdditiveHingeRidgeV1,"Custom additive linear-plus-one-hinge-per-feature regressor with quantile-selected knots, joint ridge fit, and pruned explicit equation",apr12-codex-5.3-effort=default
+,216.31,0.5924,evolved,SparseAdaptiveHingeV1,Forward-selected compact additive regressor using sparse linear and hinge basis terms with an explicit arithmetic equation,apr12-codex-5.3-effort=default
+,304.69,0.6497,evolved,SparseBackboneOffsetRuleV1,Sparse linear backbone with one optional threshold-based residual offset rule for simple piecewise calibration,apr12-codex-5.3-effort=default
+,330.25,0.6688,evolved,RidgeStepResidualV1,Dense ridge equation in raw features plus one optional single-feature residual step rule chosen by validation gain,apr12-codex-5.3-effort=default
+,292.75,0.5924,evolved,CompactSymbolicBasisV1,"Greedy-selected compact symbolic additive regressor using linear, square, absolute, hinge, and sparse interaction basis terms with ridge refit",apr12-codex-5.3-effort=default
+,167.19,0.6497,evolved,RidgeRFResid_hi,Ridge display + 0.6x RF residual (100 trees depth-5) — high-rank Pareto point,apr13-claude-effort=high
+,154.00,0.6561,evolved,RidgeRFResid_full,Ridge display + full RF residual correction (100 trees depth-5),apr13-claude-effort=high
+,301.50,0.6433,evolved,RidgeGBMResid_v3,"Ridge display + scaled GBM correction (0.3x weight, 20 stumps, lr=0.05)",apr13-claude-effort=high
+,322.00,0.6688,evolved,NormalEqRidge_v1,"Ridge via eigendecomposition with efficient LOO-CV alpha selection, RidgeCV display",apr13-claude-effort=high
+,252.06,0.6561,evolved,StdRidgeRF_v1,Standardized Ridge (coefficients in original space) + 0.39x RF residual,apr13-claude-effort=high
+,256.38,0.6242,evolved,RidgeRFResid_v1,"Ridge display + scaled RF correction (0.3x weight, 30 trees depth-3)",apr13-claude-effort=high
+,226.06,0.6624,evolved,RidgeRFSVR_v1,Ridge + 0.25x RF + 0.14x SVR blended residual correction,apr13-claude-effort=high
+,230.94,0.6561,evolved,RidgeRFResid_v7,"Ridge display + scaled RF correction (0.375x weight, 50 trees depth-4)",apr13-claude-effort=high
+,269.00,0.6561,evolved,RidgeSVRResid_v1,Ridge display + 0.39x SVR RBF residual correction,apr13-claude-effort=high
+,246.12,0.6561,evolved,RidgeRFResid_v2,"Ridge display + scaled RF correction (0.3x weight, 50 trees depth-4)",apr13-claude-effort=high
+,224.75,0.6497,evolved,RidgeRFResid_v8,"Ridge display + scaled RF correction (0.39x weight, 50 trees depth-4)",apr13-claude-effort=high
+,236.38,0.6369,evolved,RidgeRFResid_v5,"Ridge display + scaled RF correction (0.35x weight, 50 trees depth-4)",apr13-claude-effort=high
+,336.00,0.6688,evolved,StochRidge_v1,"Ensemble of Ridge models on random feature subsets, averaged into single linear equation",apr13-claude-effort=high
+,313.50,0.6369,evolved,SparsePolyRidge_v1,"Sparse polynomial Ridge: Lasso-selected x+x² features, Ridge refit, linear equation display",apr13-claude-effort=high
+,329.25,0.5096,evolved,BinnedRidgeGAM_v1,Quantile-binned Ridge GAM: step-function GAM via one-hot bin encoding + Ridge,apr13-claude-effort=high
+,219.81,0.5732,evolved,PiecewiseLinear_v1,Piecewise linear: stump split + separate Ridge in each partition,apr13-claude-effort=high
+,248.56,0.5032,evolved,RidgePlusTree_v1,"Ridge linear base + residual decision tree correction, both fully displayed",apr13-claude-effort=high
+,118.12,0.6178,evolved,BoostedStumpGAM_v1,Additive model from boosted stumps with per-feature shape function display as GAM,apr13-claude-effort=high
+,235.69,0.5478,evolved,ResidualBoostedRidge_v1,Ridge linear model + greedy threshold correction rules on residuals,apr13-claude-effort=high
+,227.19,0.5860,evolved,CyclicBoostGAM_v1,EBM-style cyclic boosting GAM with adaptive linear/table display per feature,apr13-claude-effort=high
+,140.88,0.6688,evolved,DistillGBM_Ridge_v1,GBM for predictions + distilled Ridge for display (linear approx of GBM),apr13-claude-effort=high
+,145.50,0.4459,evolved,HingeBasisRidge_v1,Ridge regression on hinge basis functions with data-driven knots from stumps + quantiles,apr13-claude-effort=high
+,353.75,0.6815,evolved,CorrSparseRidge_v1,"Correlation-ranked feature selection + Ridge LOO-CV, sparse OLS-style display",apr13-claude-effort=high
+,280.06,0.5669,evolved,ThreshAugRidge_v1,"Ridge on original features + stump-discovered threshold indicators, OLS-style display",apr13-claude-effort=high
+,228.06,0.6369,evolved,EnhancedRecalTree,Recalibrated distilled tree with enhanced header instructions for LLM tracing,apr14-claude-effort=medium_gpt_5.4-evaluator
+,319.94,0.6815,evolved,RobustLinear,ElasticNetCV with feature standardization — sparse linear equation with L1+L2 regularization,apr14-claude-effort=medium_gpt_5.4-evaluator
+,259.69,0.6624,evolved,RecalDistillTree_compact,"Compact (6-12 leaves) distilled tree with recalibrated leaves + shrinkage, targeting high interpretability",apr14-claude-effort=medium_gpt_5.4-evaluator
+,298.56,0.6624,evolved,TinyRecalTree,"Ultra-compact (4-6 leaves) recalibrated distilled tree with enhanced header, max LLM readability",apr14-claude-effort=medium_gpt_5.4-evaluator
+,327.62,0.6943,evolved,EnhancedRobustLinear_v2,ElasticNetCV with wider L1 range (0.01-0.99) + standardization + enhanced instructions,apr14-claude-effort=medium_gpt_5.4-evaluator
+,207.69,0.6879,evolved,AdaptiveElastic,"Auto-selects ElasticBayesRidge (linear) or distilled tree per dataset via CV, adaptive format",apr14-claude-effort=medium_gpt_5.4-evaluator
+,198.38,0.6815,evolved,AdaptiveElastic_v3,"Auto-selects linear or tree per dataset, tree also uses ElasticNet-selected features",apr14-claude-effort=medium_gpt_5.4-evaluator
+,215.56,0.6369,evolved,EnhancedHeaderTree,v3 distilled tree with enhanced header instructions for clearer LLM tree tracing,apr14-claude-effort=medium_gpt_5.4-evaluator
+,323.31,0.6943,evolved,BayesianRidgeLinear,Bayesian Ridge Regression with auto-regularization + standardization + enhanced equation display,apr14-claude-effort=medium_gpt_5.4-evaluator
+,330.88,0.7134,evolved,SparseBayesRidge,Bayesian Ridge with post-hoc sparsification (zero <5% coefficients) + standardization + enhanced display,apr14-claude-effort=medium_gpt_5.4-evaluator
+,244.38,0.6306,evolved,DistilledShrinkTree,"GBM-distilled decision tree with CV-tuned hierarchical shrinkage, smoothed training targets for better splits",apr14-claude-effort=medium_gpt_5.4-evaluator
+,197.88,0.6815,evolved,AdaptiveElastic_v2,"Auto-selects linear or tree (more configs: 6-25 leaves, 3 regs) per dataset via CV",apr14-claude-effort=medium_gpt_5.4-evaluator
+,209.50,0.6624,evolved,ElasticTree,ElasticNet feature selection + RF+GBM distilled tree on selected features + hierarchical shrinkage,apr14-claude-effort=medium_gpt_5.4-evaluator
+,229.06,0.6306,evolved,RecalDistillTree,Distilled tree structure + recalibrated leaf values from raw data + CV-tuned hierarchical shrinkage,apr14-claude-effort=medium_gpt_5.4-evaluator
+,321.50,0.6815,evolved,EnhancedRobustLinear,ElasticNetCV with standardization + enhanced prediction instructions in equation display,apr14-claude-effort=medium_gpt_5.4-evaluator
+,173.94,0.5860,evolved,AdaptiveElastic_v4,3-candidate adaptive: linear + tree + piecewise-linear (1 split + 2 equations),apr14-claude-effort=medium_gpt_5.4-evaluator
+,217.19,0.6369,evolved,DistilledShrinkTree_v3,"RF+GBM teacher-distilled tree (alpha=0.5) with CV-tuned shrinkage and leaf count, clean tree output",apr14-claude-effort=medium_gpt_5.4-evaluator
+,331.00,0.6943,evolved,ElasticBayesRidge,"ElasticNet feature selection + BayesianRidge on selected features, sparse equation display",apr14-claude-effort=medium_gpt_5.4-evaluator
+,258.56,0.6688,evolved,ElasticCompactTree,All innovations combined: ElasticNet feature sel + compact distilled tree + recalibration + shrinkage + enhanced header,apr14-claude-effort=medium_gpt_5.4-evaluator
+,163.44,0.6879,evolved,MegaTeacherAdaptive,Adaptive with mega-teacher (RF+GBM+EBM+TabPFN) for strongest possible tree distillation,apr14-claude-effort=medium_gpt_5.4-evaluator
+,261.19,0.6497,evolved,EnhancedRecalCompact,"Compact (6-12 leaves) recalibrated distilled tree with enhanced header, all 3 innovations combined",apr14-claude-effort=medium_gpt_5.4-evaluator
+,248.31,0.6688,evolved,DistilledShrinkTree_v4,"RF+GBM teacher-distilled compact tree (6-12 leaves, alpha=0.5) with CV-tuned shrinkage, targeting higher interp",apr14-claude-effort=medium_gpt_5.4-evaluator
+,162.06,0.6815,evolved,MegaTeacher_a06,MegaTeacher with alpha=0.6 (more teacher weight) — stronger distillation signal,apr14-claude-effort=medium_gpt_5.4-evaluator
+,192.44,0.6752,evolved,AdaptiveTabPFN,"3-candidate adaptive: linear + RF/GBM tree + TabPFN-distilled tree, CV picks best",apr14-claude-effort=medium_gpt_5.4-evaluator
+,204.94,0.6879,evolved,KitchenSinkAdaptive,"4-candidate adaptive: ElasticBayesRidge, distilled tree, recal tree, RidgeCV — CV picks best per dataset",apr14-claude-effort=medium_gpt_5.4-evaluator
+,215.00,0.6561,evolved,MultiSeedDistillTree,"RF+GBM teacher-distilled tree with CV-tuned shrinkage, leaf count, AND random seed for better splits",apr14-claude-effort=medium_gpt_5.4-evaluator
+,407.56,0.4968,evolved,NearestPrototype,K-means nearest-prototype regressor: 6 prototypes with coordinates and prediction values,apr14-claude-effort=medium_gpt_5.4-evaluator
+,234.69,0.6369,evolved,RecalDistillTree_v2,"Recalibrated distilled tree (alpha=0.3) — less distillation bias, recalibrated leaves, CV-tuned shrinkage",apr14-claude-effort=medium_gpt_5.4-evaluator
+,223.44,0.7070,evolved,SmartQuantTabPFN,3-candidate adaptive (TabPFN) + smart quantization (round coefs for small datasets only),apr14-claude-effort=medium_gpt_5.4-evaluator
+,227.50,0.6242,evolved,DistilledShrinkTree_v6,"RF+GBM teacher-distilled tree (10-22 leaves, alpha=0.4) with CV-tuned shrinkage, balanced rank/interp",apr14-claude-effort=medium_gpt_5.4-evaluator
+,180.38,0.5732,evolved,HingeAdditive,Sparse additive hinge model (simplified MARS) with forward stepwise selection and ridge refit,apr14-claude-effort=medium_gpt_5.4-evaluator
+,295.69,0.5924,evolved,ExactStumpGAM_v2,"Exact additive stump GAM v2: 200 stumps, depth-3 per-feature trees, consistent predict/display",apr14-claude-effort=medium_gpt_5.4-evaluator
+,231.38,0.7134,evolved,QuantizedAdaptive,Adaptive linear/tree with quantized coefficients (nearest 0.25) for easier LLM arithmetic,apr14-claude-effort=medium_gpt_5.4-evaluator
+,226.75,0.6051,evolved,AugDistillTree,RF+GBM teacher-distilled tree with noise-augmented training data for robust splits + CV-tuned shrinkage,apr14-claude-effort=medium_gpt_5.4-evaluator
+,225.69,0.6433,evolved,IterDistillTree,Two-round iterative distillation: round 1 tree feeds back into refined teacher for round 2,apr14-claude-effort=medium_gpt_5.4-evaluator
+,228.88,0.6433,evolved,CCPDistillShrinkTree,"CCP-pruned distilled tree with hierarchical shrinkage, grows full tree then prunes optimally",apr14-claude-effort=medium_gpt_5.4-evaluator
+,219.62,0.6433,evolved,FeatSelDistillTree,Feature-selected (top-10) RF+GBM distilled tree with CV-tuned hierarchical shrinkage,apr14-claude-effort=medium_gpt_5.4-evaluator
+,249.69,0.6752,evolved,ExtraDistillTree,RF+GBM teacher-distilled tree with random splits (ExtraTree-style) + CV-tuned shrinkage,apr14-claude-effort=medium_gpt_5.4-evaluator
+,332.31,0.6369,evolved,ExactStumpGAM,Exact additive stump GAM: GBM stumps → per-feature trees for BOTH prediction and display (consistent),apr14-claude-effort=medium_gpt_5.4-evaluator
+,257.75,0.6178,evolved,TreeGuidedLasso,"Lasso with tree-derived threshold indicator features, captures nonlinearity in linear equation format",apr14-claude-effort=medium_gpt_5.4-evaluator
+,243.06,0.6433,evolved,RecalDistillTree_medium,"Medium (8-20 leaves) distilled tree with recalibrated leaves + shrinkage, balanced rank and interp",apr14-claude-effort=medium_gpt_5.4-evaluator
+,224.81,0.6306,evolved,BaggedBestTree,Best-of-50-bagged tree with teacher scoring and CV-tuned hierarchical shrinkage,apr14-claude-effort=medium_gpt_5.4-evaluator
+,195.50,0.6561,evolved,EBMDistillTree,"EBM+GBM teacher-distilled tree (alpha=0.5) with CV-tuned shrinkage, EBM provides stronger predictions",apr14-claude-effort=medium_gpt_5.4-evaluator
+,292.62,0.6815,evolved,ElasticTinyTree,ElasticNet feature sel + ultra-compact (4-6 leaf) distilled tree + recalibration + shrinkage + enhanced header,apr14-claude-effort=medium_gpt_5.4-evaluator
+,359.77,0.5924,evolved,BinnedAdditive,"Additive piecewise-constant model using quantile bins per feature with ridge regression, presented as lookup table",apr14-claude-effort=medium_gpt_5.4-evaluator
+,330.44,0.6943,evolved,SparserElasticBayes,"High-L1 ElasticNet feature selection (0.5-0.99) + BayesianRidge, more aggressive sparsity",apr14-claude-effort=medium_gpt_5.4-evaluator
+,242.19,0.6624,evolved,PureShrinkTree,"Decision tree with CV-tuned max_leaf_nodes and hierarchical shrinkage regularization, clean tree output",apr14-claude-effort=medium_gpt_5.4-evaluator
+,167.38,0.6815,evolved,WeightedMegaTeacher,MegaTeacher with error-weighted teacher blend — stronger models get more weight in distillation,apr14-claude-effort=medium_gpt_5.4-evaluator
+,321.25,0.6178,evolved,DistilledTreeGAM,"Additive model: one depth-2 tree per feature, distilled from RF+GBM, cyclic fitting, per-feature tree output",apr14-claude-effort=medium_gpt_5.4-evaluator
+,301.75,0.6051,evolved,RandomKitchenFeats,"ElasticNet on random nonlinear transforms (|x|, x^2, sqrt) — captures nonlinearity in equation format",apr14-claude-effort=medium_gpt_5.4-evaluator
+,366.25,0.6051,evolved,SparsePolyLinear,Lasso with degree-2 polynomial features (interactions + squares) for nonlinear prediction with sparse linear equation output,apr14-claude-effort=medium_gpt_5.4-evaluator
+,302.56,0.3885,evolved,LinearShrinkTree,"Ridge linear model + hierarchically-shrunk decision tree on residuals, compact 2-part representation",apr14-claude-effort=medium_gpt_5.4-evaluator
+,207.38,0.6306,evolved,DepthAdaptShrinkTree,RF+GBM teacher-distilled tree with depth-adaptive shrinkage (deeper nodes shrunk more),apr14-claude-effort=medium_gpt_5.4-evaluator
+,228.69,0.6369,evolved,DistilledShrinkTree_v2,"GBM-distilled tree (20 leaves, alpha=0.3) with CV-tuned hierarchical shrinkage, more capacity for prediction",apr14-claude-effort=medium_gpt_5.4-evaluator
+,156.38,0.6879,evolved,MegaTeacher_a065,MegaTeacher alpha=0.65 — fine-tuning between 0.6 and 0.7,apr14-claude-effort=medium_gpt_5.4-evaluator
+,217.00,0.6624,evolved,DistilledShrinkTree_v8,"RF+GBM teacher-distilled tree (alpha=0.6) with CV-tuned shrinkage and leaf count, stronger distillation",apr14-claude-effort=medium_gpt_5.4-evaluator
+,232.50,0.7070,evolved,QuantizedAdaptive_v2,Adaptive linear/tree with coefficients rounded to nearest 0.1 — less aggressive quantization,apr14-claude-effort=medium_gpt_5.4-evaluator
+,195.00,0.6752,evolved,CalibratedMegaTeacher,MegaTeacher alpha=0.6 + post-hoc linear calibration of tree leaf values,apr14-claude-effort=medium_gpt_5.4-evaluator
+,206.75,0.6879,evolved,KitchenSinkNoRidge,3-candidate adaptive: ElasticBayesRidge + distilled tree + recal tree — no Ridge for better interp,apr14-claude-effort=medium_gpt_5.4-evaluator
+,356.50,0.6688,evolved,EnsembleLinear,"Ensemble of ElasticNetCV + HuberRegressor (outlier-robust), averaged coefficients, clean equation",apr14-claude-effort=medium_gpt_5.4-evaluator
+,239.50,0.6433,evolved,TeacherSelTree,"Teacher-selected tree: RF+GBM guides tree selection (not distillation), CV-tuned hierarchical shrinkage",apr14-claude-effort=medium_gpt_5.4-evaluator
+,292.62,0.7261,evolved,WinsorElasticNet,Winsorized ElasticNetCV: clip outliers at 1/99 pct + standardize + wide L1 search + enhanced instructions,apr14-claude-effort=medium_gpt_5.4-evaluator
+,203.88,0.7134,evolved,StepByStepAdaptive,Adaptive linear/tree with step-by-step computation format for equations,apr14-claude-effort=medium_gpt_5.4-evaluator
+,249.38,0.6497,evolved,DecisionList,"Decision list: flat if-then-else chain from distilled tree, sequential top-to-bottom evaluation",apr14-claude-effort=medium_gpt_5.4-evaluator
+,209.06,0.6497,evolved,EnhancedHeader5Fold,v3 distilled tree with enhanced header + 5-fold CV for more robust parameter selection,apr14-claude-effort=medium_gpt_5.4-evaluator
+,323.00,0.6943,evolved,DistilledElasticNet,GBM-distilled ElasticNet: teacher-smoothed targets (alpha=0.3) for cleaner linear coefficients,apr14-claude-effort=medium_gpt_5.4-evaluator
+,245.50,0.5032,evolved,ModelTree,"Model tree: shallow tree (8 leaves) with Ridge linear equations at each leaf, captures local trends",apr14-claude-effort=medium_gpt_5.4-evaluator
+,185.06,0.0000,evolved,TorchSoftTree,Torch soft tree (globally optimized splits via gradient descent) + adaptive linear/tree selection,apr14-claude-effort=medium_gpt_5.4-evaluator
+,187.69,0.6369,evolved,DistilledShrinkTree_v5,"RF+GBM teacher-distilled large tree (16-40 leaves, alpha=0.7) with CV-tuned shrinkage, targeting better rank",apr14-claude-effort=medium_gpt_5.4-evaluator
+,148.50,0.7070,evolved,BoostedStump,"Gradient-boosted depth-1 stumps (additive, no interactions) with per-feature partial effect lookup table",apr14-claude-effort=medium_gpt_5.4-evaluator
+,302.31,0.5350,evolved,LinearFoldedTree,"ElasticNet linear + residual tree folded into single tree, captures both linear and nonlinear effects",apr14-claude-effort=medium_gpt_5.4-evaluator
+,219.00,0.6561,evolved,DistilledShrinkTree_v9,"RF+GBM teacher-distilled tree with CV-tuned alpha, leaf count, and shrinkage — fully adaptive",apr14-claude-effort=medium_gpt_5.4-evaluator
+,198.12,0.5987,evolved,TabPFNDistillTree,"TabPFN+GBM teacher-distilled tree (alpha=0.5) with CV-tuned shrinkage, TabPFN provides strongest predictions",apr14-claude-effort=medium_gpt_5.4-evaluator
+,153.88,0.6815,evolved,MegaTeacher_a07,MegaTeacher with alpha=0.7 — even stronger distillation from mega-teacher,apr14-claude-effort=medium_gpt_5.4-evaluator
+,260.62,0.5096,evolved,ModelTree_v2,"Model tree v2: 15-leaf tree with Ridge linear equations at each leaf, captures local trends",apr14-claude-effort=medium_gpt_5.4-evaluator
+,258.00,0.5987,evolved,MiniBoost,"Mini gradient boosting with 5 small depth-3 trees, each shown as traceable tree text",apr14-claude-effort=medium_gpt_5.4-evaluator
+,164.75,0.6815,evolved,MegaTeacher_fineGrid,MegaTeacher alpha=0.6 with finer tree grid: 6 leaf options × 5 reg options = 30 configs,apr14-claude-effort=medium_gpt_5.4-evaluator
+,258.69,0.5032,evolved,DistilledModelTree,"Model tree with teacher distillation: 12 leaves, Ridge at leaves, stricter equation threshold",apr14-claude-effort=medium_gpt_5.4-evaluator
+,149.50,0.6178,evolved,StumpGAM,"GBM depth-1 stumps aggregated into per-feature trees, additive with no interactions, tree-format display",apr14-claude-effort=medium_gpt_5.4-evaluator
+,273.75,0.7006,evolved,ShrinkageTree,"Decision tree with hierarchical shrinkage (max_leaf_nodes=12, reg=10), reduces overfitting while staying readable",apr14-claude-effort=medium_gpt_5.4-evaluator
+,172.88,0.5796,evolved,LinearAugTree,Tree with linear prediction as extra feature — learns when to trust/correct the linear model,apr14-claude-effort=medium_gpt_5.4-evaluator
+,227.69,0.5541,evolved,SparseRule,"Sparse rule-based regressor: GBM-extracted rules + linear terms, Lasso-selected for sparsity",apr14-claude-effort=medium_gpt_5.4-evaluator
+,455.94,0.5223,evolved,ClearGAM,"PyGAM-based additive model with piecewise-constant per-feature effects, clear lookup table output",apr14-claude-effort=medium_gpt_5.4-evaluator
+,198.88,0.6815,evolved,AdaptiveElastic_v5,Auto-selects linear or tree via 5-fold CV (more stable selection),apr14-claude-effort=medium_gpt_5.4-evaluator
+,405.94,0.6306,evolved,AdditiveTree,"Additive model with one depth-3 tree per feature, cyclic boosting, clear per-feature tree output",apr14-claude-effort=medium_gpt_5.4-evaluator
+,221.25,0.6433,evolved,MergedBoostTree,"Two boosted trees merged into single tree via distillation, CV-tuned hierarchical shrinkage",apr14-claude-effort=medium_gpt_5.4-evaluator
+,212.38,0.6561,evolved,DistilledShrinkTree_v7,"RF(100)+GBM(200) teacher-distilled tree (18-30 leaves, alpha=0.5) with fine-tuned CV shrinkage",apr14-claude-effort=medium_gpt_5.4-evaluator
+,425.75,0.5350,evolved,DistilledTreeGAMv2,"Distilled TreeGAM: RF+GBM teacher + imodels TreeGAM with 5-leaf per-feature trees, 100 boosting rounds, reg=1.0",apr14-claude-effort=medium_gpt_5.4-evaluator
+,144.31,0.5924,evolved,PiecewiseGAM3Knots_sorted,PiecewiseLinearGAM with 3 knots + features sorted by importance in display.,apr17-claude-4.7-effort=xhigh
+,297.25,0.6497,evolved,LinearPlusStumps,RidgeCV linear + up to 6 additive stumps on residuals (greedy). Display: linear equation + stump corrections.,apr17-claude-4.7-effort=xhigh
+,283.44,0.6497,evolved,LinearPlusStumps12,RidgeCV linear + up to 12 additive stumps on residuals (more stumps for better rank).,apr17-claude-4.7-effort=xhigh
+,145.31,0.6178,evolved,PiecewiseGAM_best,"Piecewise GAM: 3-knot LassoCV basis, 3% effect prune, per-feature piecewise display with near-identical segment merging (8% tol), sorted by importance.",apr17-claude-4.7-effort=xhigh
+,291.12,0.6497,evolved,AdaptiveSelector,Selects between LinearPlusStumps with 0/4/12 stumps via 3-fold CV. Adapts complexity per dataset.,apr17-claude-4.7-effort=xhigh
+,136.69,0.5860,evolved,SparseHingeLinear,LassoCV over linear + pos/neg hinge basis (3 knots per feature at interior quantiles); display is flat sorted equation.,apr17-claude-4.7-effort=xhigh
+,146.31,0.5860,evolved,PiecewiseLinearGAM,"Hinge basis LassoCV, but display per-feature piecewise (slope + intercept per segment between knots). Decouples features for LLM simulation.",apr17-claude-4.7-effort=xhigh
+,302.88,0.5732,evolved,DecisionListLinear,"Decision list: depth-3 tree extracts rules (5 specific), catch-all uses RidgeCV linear. Sequential if-elif-else.",apr17-claude-4.7-effort=xhigh
+,339.12,0.7006,evolved,SparseLinearOLSStyle,"Pure linear: LassoCV select, OLS debias, OLS-style display. Upper-bound test: does matching OLS display format close the interp gap?",apr17-claude-4.7-effort=xhigh
+,227.62,0.5860,evolved,PolynomialPlusStumps,"Polynomial basis (x, x^2, x^3) + LassoCV select + 3% prune + 8 greedy stumps on residuals.",apr17-claude-4.7-effort=xhigh
+,154.06,0.5924,evolved,HingeBothOLS,3-knot pos+neg hinge basis + LassoCV + OLS debias + 3% effect prune. OLS-style single-equation display.,apr17-claude-4.7-effort=xhigh
+,181.19,0.5414,evolved,PiecewiseGAM2Knots,PiecewiseLinearGAM with 2 knots per feature (simpler equations).,apr17-claude-4.7-effort=xhigh
+,138.06,0.5414,evolved,PiecewiseGAM_Stumps,PiecewiseGAM base (3% prune) + up to 6 greedy stumps on residuals. Best of both: nonlinearity per feature + interaction/shift via stumps.,apr17-claude-4.7-effort=xhigh
+,120.69,0.5732,evolved,PiecewiseGAM_Plus,"Piecewise GAM (3% prune) + top-3 pairwise interactions selected by |corr(x_i*x_j, residual)|.",apr17-claude-4.7-effort=xhigh
+,274.56,0.6497,evolved,LinearPlusStumpsCV,"RidgeCV linear + stumps with validation-based early stopping (20% holdout, patience 3). Refit on full data with best stump count.",apr17-claude-4.7-effort=xhigh
+,285.44,0.6433,evolved,LinearPlusStumpsStepwise,LinearPlusStumps12 with explicit step-by-step prediction instructions in display.,apr17-claude-4.7-effort=xhigh
+,148.06,0.5287,evolved,PiecewiseGAMv2,"Hinge basis LassoCV, per-feature piecewise display with segment merging and cleaner formatting.",apr17-claude-4.7-effort=xhigh
+,252.19,0.5287,evolved,IsotonicGAM,Backfitted isotonic GAM: each feature's effect is monotonic (direction auto-detected). Display as per-feature step-function tables.,apr17-claude-4.7-effort=xhigh
+,208.94,0.6369,evolved,HingeBudgetLinear,"Sparse linear + at most 4 hinge terms (decile knot candidates, top-K by LassoCV effect), OLS debias. Budgeted complexity for interp.",apr17-claude-4.7-effort=xhigh
+,75.62,0.6688,evolved,HingeEBMLinear,"Sparse hinge-linear (2 knots, LassoCV+OLS debias, 4% effect threshold) + hidden EBM on residuals. OLS-style display.",apr17-claude-4.7-effort=xhigh
+,206.25,0.6051,evolved,AdaptivePiecewiseGAM,"PiecewiseLinearGAM with adaptive 0/1/2 knots per feature (CV-chosen, prefer simpler if within 2%). Per-feature piecewise display.",apr17-claude-4.7-effort=xhigh
+,334.75,0.5350,evolved,BinnedGAM,"Binned additive model: per-feature lookup tables (5 quantile bins), LassoCV-selected bin contributions.",apr17-claude-4.7-effort=xhigh
+,155.06,0.6242,evolved,CleanHingeLinear,"Two-stage: LassoCV select hinge basis, prune terms with <3% of max effect, OLS debias. Cleaner equation for LLM simulation.",apr17-claude-4.7-effort=xhigh
+,182.50,0.4904,evolved,PiecewiseGAM_Ridge,Piecewise GAM fit with RidgeCV + 5% effect prune. Ridge keeps more features at small coefs.,apr17-claude-4.7-effort=xhigh
+,137.69,0.6051,evolved,HingeSplitDisplay,"3-knot pos+neg hinge LassoCV; FULL Lasso coefs for predict, top-effect (>=3%) terms only in display.",apr17-claude-4.7-effort=xhigh
+,149.06,0.6051,evolved,PiecewiseGAM_stdimp,PiecewiseGAM with scale-free importance sorting (|slope| * feature_std).,apr17-claude-4.7-effort=xhigh
+,286.44,0.6497,evolved,LinearPlusStumps12_sorted,RidgeCV linear + 12 stumps sorted by |delta| in display.,apr17-claude-4.7-effort=xhigh
+,287.44,0.6497,evolved,LinearPlusStumps12_v2,RidgeCV + 12 one-sided stumps (sanity re-run of best architecture).,apr17-claude-4.7-effort=xhigh
+,150.06,0.6051,evolved,PiecewiseGAM_3dp,PiecewiseGAM with 3-decimal-place precision (instead of 4) for cleaner display.,apr17-claude-4.7-effort=xhigh
+,138.69,0.5159,evolved,PiecewiseGAM_FullPredict,"Full Lasso coefs for predict (no pruning), display merges near-identical adjacent segments (within 5% of slope/intercept).",apr17-claude-4.7-effort=xhigh
+,140.56,0.5287,evolved,PiecewiseGAM_lessprune,"Hinge basis LassoCV, per-feature piecewise display (v1 format), less aggressive pruning (1% of max effect).",apr17-claude-4.7-effort=xhigh
+,304.38,0.6497,evolved,DecisionTreeSimple,Baseline interpretable regressor (shallow decision tree),apr17-claude-4.7-effort=xhigh
+,252.31,0.6051,evolved,LinearModelTree,"Depth-1 tree with Ridge-regression leaves. Best split + separate linear per leaf. If no useful split found, falls back to global Ridge.",apr17-claude-4.7-effort=xhigh
+,295.06,0.6497,evolved,AdaptiveSelectorTiered,AdaptiveSelector with tiered-importance display (primary/secondary/weak categories).,apr17-claude-4.7-effort=xhigh
+,209.75,0.6815,evolved,HingeOLSStyle,"Sparse hinge-linear (2 knots, LassoCV+OLS debias, 4% effect threshold), OLS-style display, no hidden residual — consistent display/predict.",apr17-claude-4.7-effort=xhigh
+,139.88,0.5478,evolved,PiecewiseGAM_noprune,"Hinge basis LassoCV, per-feature piecewise display (v1 format), NO pruning — predict uses full LassoCV coefs.",apr17-claude-4.7-effort=xhigh
+,141.75,0.5541,evolved,PiecewiseGAM_1pct,"Piecewise GAM, 1% effect prune (less aggressive), no interactions, sorted display.",apr17-claude-4.7-effort=xhigh
+,141.06,0.5669,evolved,PiecewiseGAM_aggressive,"Piecewise GAM: no coef pruning (full Lasso for rank), aggressive 20% segment merge in display for clean interpretation.",apr17-claude-4.7-effort=xhigh
+,295.62,0.6497,evolved,AdaptiveSelector5,"CV selects between LinearPlusStumps with 0/4/8/12/20 stumps (5 candidates, broader range).",apr17-claude-4.7-effort=xhigh
+,151.56,0.6115,evolved,PiecewiseGAM_adaptive_display,"PiecewiseGAM with OLS-style equation display when all features pure linear, piecewise display when some nonlinear.",apr17-claude-4.7-effort=xhigh
+,206.44,0.6561,evolved,SmartKnotLinear,"Linear base + at most one data-driven hinge per feature (added only if it cuts residual SSE >=1%), LassoCV select, OLS debias.",apr17-claude-4.7-effort=xhigh
+,154.19,0.5732,evolved,PiecewiseGAM_ridge_debias,"PiecewiseGAM (3% prune) + Ridge(alpha=1e-3) refit on kept basis. Lasso for selection, mild Ridge for coef debias.",apr17-claude-4.7-effort=xhigh
+,139.44,0.5987,evolved,PiecewiseGAM4Knots,PiecewiseLinearGAM with 4 knots per feature (finer resolution).,apr17-claude-4.7-effort=xhigh
+,290.31,0.5287,evolved,LinearPlusStumpsPython,LinearPlusStumps12 displayed as runnable Python code — LLM can mentally execute.,apr17-claude-4.7-effort=xhigh
+,291.31,0.5669,evolved,LinearPlusStumpsDoc,"LinearPlusStumps12 with QUICK FACTS documentation block (most important feature, top-3, zero-input prediction).",apr17-claude-4.7-effort=xhigh
+,184.75,0.6688,evolved,RandomStumpsLasso,"100 random (feature, threshold) stump candidates + linear features, LassoCV selects. Like RuleFit but single-threshold only.",apr17-claude-4.7-effort=xhigh
+,197.25,0.5350,evolved,RichLinearPlusStumps,"Linear base with per-feature transform (x, sqrt|x|, log|x|+1) + 12 stumps. Auto-select best transform per feature.",apr17-claude-4.7-effort=xhigh
+,298.88,0.6624,evolved,AdaptiveSelector2,CV selects between pure linear (0 stumps) and 12 stumps. Simpler 2-way choice.,apr17-claude-4.7-effort=xhigh
+,320.88,0.6433,evolved,RidgeQuadratic,"RidgeCV on [x_i, x_i^2] standardized. Quadratic features capture curvature; display is OLS-style clean equation.",apr17-claude-4.7-effort=xhigh
+,293.25,0.6178,evolved,LinearPlusStumps_examples,LinearPlusStumps12 with 3 worked example predictions in display for LLM arithmetic calibration.,apr17-claude-4.7-effort=xhigh
+,93.00,0.6815,evolved,LinearEBMHybrid,"RidgeCV (pure linear display, same format as RidgeCV baseline) + hidden EBM on residuals for rank boost.",apr17-claude-4.7-effort=xhigh
+,152.62,0.6115,evolved,HingeLassoNoDebias,"3-knot pos+neg hinge basis + LassoCV (NO debias, keeps regularized coefs) + 3% prune. OLS-style display.",apr17-claude-4.7-effort=xhigh
+,279.00,0.7580,evolved,SparseSignedBasisPursuit_v1,Forward-selected sparse signed basis (linear/hinge/square/interaction) with ridge refit and light coefficient rounding,apr17-codex-5.3-effort=high
+,123.31,0.6497,evolved,ValGatedTeacherAuditAtlas_v1,"Dual-path regressor with validation-gated multi-teacher batch ensemble (HGB/RF/GBM/Ridge, optional TabPFN) plus distilled compact linear single-row audit atlas and explicit prompt-answer map",apr17-codex-5.3-effort=high
+,242.88,0.5541,evolved,DenseSplineResidual_v1,Dense ridge linear backbone plus greedy residual hinge/interaction basis with exact arithmetic string form,apr17-codex-5.3-effort=high
+,124.06,0.6369,evolved,CalibratedBoostAuditAtlas_v1,"Dual-path regressor with calibrated GBM primary teacher blended with a RidgeCV anchor for fast batch prediction, plus distilled compact linear single-row audit atlas and explicit prompt-answer map",apr17-codex-5.3-effort=high
+,55.75,0.6306,evolved,RegimeMixtureTeacherAuditAtlas_v1,"Dual-path regressor with regime-aware OOF super-learner (global plus low/mid/high simplex blends over HGB/GBR/ExtraTrees/RF/Ridge with optional TabPFN), affine calibration, residual ridge correction, and compact single-row audit atlas",apr17-codex-5.3-effort=high
+,301.06,0.6688,evolved,ValidatedSparseSpline_v1,Validation-selected sparse ridge backbone with one optional residual hinge/abs nonlinear basis term,apr17-codex-5.3-effort=high
+,377.44,0.6497,evolved,SparseRidgeHingeGCV_v1,"GCV-selected ridge backbone pruned to dominant linear terms, plus a few residual hinge threshold terms",apr17-codex-5.3-effort=high
+,341.06,0.5669,evolved,LinResStumpOMP_v1,Sparse linear OMP core plus a few residual decision-stump corrections for compact nonlinear additivity,apr17-codex-5.3-effort=high
+,61.75,0.6879,evolved,CalibratedSparseHingeStudent_v1,Validation-calibrated HGB/RF/Ridge batch blend with sparse linear-plus-one-hinge distilled single-row equation,apr17-codex-5.3-effort=high
+,364.06,0.7134,evolved,MDLHybridSymbolic_v1,"Validation-selected symbolic hybrid: dense ridge vs sparse quantized linear/hinge/step, choosing simplest near-best RMSE structure",apr17-codex-5.3-effort=high
+,265.88,0.6306,evolved,DenseRidgeAdaptiveSpline_v1,Dense ridge backbone with holdout-selected pruning and up to three residual one-dimensional spline-like correction terms,apr17-codex-5.3-effort=high
+,231.19,0.6051,evolved,SparseKnotAbsInt_v1,Forward-selected sparse additive model with per-feature adaptive |x-t| kink terms plus at most one interaction,apr17-codex-5.3-effort=high
+,349.94,0.6624,evolved,SparseLinHingeRefine_v1,"Sparse linear backbone with greedy one-sided hinge refinements, optional interaction, and coefficient quantization for simulatability",apr17-codex-5.3-effort=high
+,105.38,0.7134,evolved,DualPathSparseSymbolic_v2,Blended GBM/RF/Ridge batch teacher with sparse forward-selected symbolic single-row equation over linear/square/hinge/interaction terms,apr17-codex-5.3-effort=high
+,261.19,0.6624,evolved,OrthSparseAdditive_v1,Ridge linear backbone plus orthogonal forward-selected tiny additive correction set (hinge/abs/square + few interactions),apr17-codex-5.3-effort=high
+,138.94,0.6688,evolved,DistilledSparsePiecewise_v1,Boosted-tree batch predictor with sparse distilled single-row symbolic equation (linear/hinge/interaction) and coefficient quantization,apr17-codex-5.3-effort=high
+,219.88,0.6497,evolved,QuantizedSparseBasis_v1,Forward-selected sparse nonlinear basis (linear/hinge/square/interaction) with post-fit coefficient quantization for arithmetic simulatability,apr17-codex-5.3-effort=high
+,97.69,0.5541,evolved,SparseGateDistilledBoost_v1,Dual-path calibrated HGB/ExtraTrees/Ridge batch blend with compact sparse linear-plus-hinge symbolic single-row rule,apr17-codex-5.3-effort=high
+,110.38,0.6433,evolved,TeacherStudentCompactDistill_v1,Blended GBM+ridge batch teacher with complexity-penalized compact symbolic student (linear/square/abs/hinge/step/interaction) for single-row simulatability,apr17-codex-5.3-effort=high
+,370.06,0.5987,evolved,RidgeResidualSymbolic_v1,Ridge backbone with adaptive linear pruning plus one residual interaction and one residual hinge correction,apr17-codex-5.3-effort=high
+,210.50,0.6306,evolved,StagewiseHingeAdditive_v1,Stagewise residual fitting over sparse linear/hinge/square univariate terms with compact quantized arithmetic form,apr17-codex-5.3-effort=high
+,197.12,0.6178,evolved,HGBLinearAuditAtlas_v1,HistGradientBoosting batch teacher with distilled compact linear single-row atlas and explicit audit lookup templates,apr17-codex-5.3-effort=high
+,382.06,0.6306,evolved,RuleGateSparseLin_v1,Greedy sparse linear regressor with one optional threshold gate selecting between two compact branch equations,apr17-codex-5.3-effort=high
+,51.88,0.6051,evolved,DisagreementRoutedSimplexAtlas_v2,"Dual-path regressor with disagreement-routed simplex teacher stacking (TabPFN for small-n plus HGB/ExtraTrees/RF/GBR/Ridge), TabPFN fusion gate, affine calibration, residual ridge correction, and compact single-row audit atlas",apr17-codex-5.3-effort=high
+,99.06,0.6433,evolved,DualPathBoostedSymbolic_v1,Dual-path model: boosted trees for multi-row prediction quality plus compact symbolic linear+hinge equation for single-row simulatability,apr17-codex-5.3-effort=high
+,2.00,nan,evolved,GeoUncertaintyRegimeAtlas_v1,"Dual-path regressor with OOF uncertainty-routed teacher stacking over HGB/ExtraTrees/RF/GBR/Ridge/KNN (optional small-data TabPFN), affine calibration, and optional residual correction, plus compact single-row audit atlas",apr17-codex-5.3-effort=high
+,nan,0.5796,evolved,AnchorSplineRidge_v1,Dense ridge backbone with validation-selected single-feature anchored spline residual using three hinge knots,apr17-codex-5.3-effort=high
+,nan,0.6497,evolved,SparseTriBinAdditive_v1,Sparse ridge linear backbone plus up to two single-feature tri-bin residual corrections,apr17-codex-5.3-effort=high
+,nan,0.7134,evolved,CognitiveRidgeOneHinge_v1,Validation-tuned dense ridge with optional single hinge residual and cognitive-complexity-aware linear pruning,apr17-codex-5.3-effort=high
+,nan,0.5541,evolved,SparseModelTree_v1,Sparse GCV-ridge linear backbone with optional one-threshold split into two compact sparse linear branch equations,apr17-codex-5.3-effort=high
+,nan,0.8025,evolved,TeacherStudentRuleSpline_v1,Two-path model: GBM teacher for batch predictions plus sparse symbolic student over linear/square/abs/hinge/step/interaction/gated terms,apr17-codex-5.3-effort=high
+,nan,nan,evolved,CalibratedTabPFNForestAtlas_v1,"Dual-path regressor with TabPFN-first validated blend (TabPFN/HGB/RF/Ridge), affine calibration, sparse residual ridge correction, and compact single-row audit atlas",apr17-codex-5.3-effort=high
+,nan,0.6943,evolved,ComplexityRoundedRidge_v1,"Holdout-selected ridge with mild pruning and decimal-rounded coefficients, tuned for RMSE and arithmetic simplicity",apr17-codex-5.3-effort=high
+,nan,0.6688,evolved,TransparentDistilledForestBoost_v1,Holdout-calibrated GBM/RF/ExtraTrees/Ridge batch ensemble with sparse distilled linear-plus-hinge symbolic single-row equation,apr17-codex-5.3-effort=high
+,nan,0.6178,evolved,CompactSplineRidge_v1,Dense linear ridge backbone with validation-pruned compact spline basis (abs/square/hinge + few interactions),apr17-codex-5.3-effort=high
+,nan,0.5987,evolved,TabPFNResidualAuditAtlas_v1,"Dual-path regressor with small-data TabPFN + HGB/Ridge calibrated teacher blend, sparse residual ridge correction, and compact single-row audit atlas with exact prompt-answer map",apr17-codex-5.3-effort=high
+,nan,0.6815,evolved,SnapRidgeOneKnot_v1,"Validation-selected ridge with adaptive linear sparsity, one optional nonlinear residual term, and snapped coefficients",apr17-codex-5.3-effort=high
+,nan,0.7325,evolved,TeacherStudentSpectralRuleSpline_v1,Two-path model with transform-aware screening and sparse symbolic student over linear/polynomial/trig/exp/hinge/interaction terms plus GBM batch teacher,apr17-codex-5.3-effort=high
+,nan,nan,evolved,AdaptiveStackedTeacherAuditAtlas_v1,Dual-path regressor with regime-adaptive stacked teacher blend (HGB/RF/ExtraTrees/GBM/Ridge with optional TabPFN) plus compact single-row audit atlas and exact prompt-answer map,apr17-codex-5.3-effort=high
+,nan,0.5796,evolved,SparseHingeOMP_q2575_v1,Greedy sparse additive model over linear/quadratic/abs/hinge(25/50/75th) and selected pairwise interactions,apr17-codex-5.3-effort=high
+,nan,0.6815,evolved,SparseLinearOLS_v1,"LassoCV-selected top-8 features, refit OLS in original space; clean linear formula",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,ReweightedSparseOLS,LassoCV top-8 + 2 IRLS refits with weights 1/(1+|r|/3MAD); clean linear formula,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7006,evolved,ResidualSparseOLS,"Sparse OLS top-8, then LassoCV on residuals adds up to 4 more features; final OLS refit on union",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,OMPSparseOLS,OrthogonalMatchingPursuit picks top-8 support; refit OLS in original space,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6879,evolved,ThresholdOLSPrune,OLS on all features; iteratively prune feats with |coef*std| < 1% of max; refit OLS,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,StumpAdditive,"Per top-8 features: linear term + one stump indicator (best quantile threshold), joint OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,PureLassoCV,LassoCV on standardized X; coefs projected back to original scale; only nonzero shown,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5924,evolved,TransformedLasso_v1,"LassoCV over per-feature [x, x^2, slog(x)] transforms; refit OLS on top-8 support; clean linear-in-transforms formula",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5732,evolved,LinearTreeBoost_v1,Sparse OLS top-8 trunk + shallow decision tree (6 leaves) on residuals; prints linear formula + tree,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7006,evolved,HuberSparseLinear,"LassoCV-selected top-8 features, refit Huber regression (robust to outliers)",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.3121,evolved,SparseAdditiveHinges_v1,"Additive model: per-feature linear + ReLU hinges at 5 quantile knots, LassoCV sparsity, hard-cap 20 active terms",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,TopKContribOLS,"Full OLS, rank features by |coef*std|, keep top-8, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6688,evolved,GreedyForwardOLS_v1,"Forward greedy R^2-gain feature selection (k=6), refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.4331,evolved,BoostedHinges_v1,"Greedy boosted hinges (10 rounds) + linear trunk, jointly refit OLS; per-feature piecewise-linear formula",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7006,evolved,SparseLinearOLS_v3,"LassoCV-selected top-12 features, refit OLS, clean active-only listing with excluded notes",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.3822,evolved,SparseAdditiveHinges_v2,"Additive model: per-feature linear + 3 hinges, LassoCV, hard-cap 8 terms (more compact for interp)",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7197,evolved,SubsetOLS_v1,LinearRegression subclass with Lasso-based subset selection (top-10) so OLS print format is used,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6561,evolved,DecisionTreeSimple@apr19-claude-4.7-effort=medium-rerun2,Baseline interpretable regressor (shallow decision tree),apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7006,evolved,GBMSelectedOLS,"GBM importance picks top-8 features, OLS refit; clean linear formula",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7006,evolved,SparseLinearOLS_k20,"LassoCV-selected top-20 features, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5032,evolved,HingePerFeatureOLS_v2,"Top-12 features (LassoCV) each with linear + at most one hinge knot, fit by joint OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6943,evolved,SparseRidgeRefit,"LassoCV-selected top-8 features, refit RidgeCV (over alphas 0.01-10)",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,SparseQuadOLS,"Top-8 LassoCV linear features + x^2 of top-3 of those, joint OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6943,evolved,SparseLinearOLS_v2,"LassoCV-selected top-8 features, refit OLS, OLS-mimic format with zero coefs shown",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5478,evolved,ShallowTreeOLS,4-leaf decision tree partitions data; per-leaf OLS on top-3 LassoCV features,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6943,evolved,CorrTopKOLS,"Univariate-correlation-selected top-8 features, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5159,evolved,HingePerFeatureOLS_v1,"Top-6 features (LassoCV) each with linear + at most one hinge knot, fit by joint OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,PrunedRidgeCV,RidgeCV on all feats; prune feats with |c*std|<5% max; refit RidgeCV,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6815,evolved,SparseLinearOLS_k7,"LassoCV-selected top-7 features, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7006,evolved,SparseLinearOLS_k15,"LassoCV-selected top-15 features, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6815,evolved,ThresholdOLSPrune_01pct,OLS on all features; iteratively prune feats with |coef*std| < 0.1% of max; refit OLS,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6815,evolved,NormalizedYOLS,LassoCV on z-scored y to pick support; OLS refit on raw y,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,PlainOLSv2,Vanilla LinearRegression on all features (subclass; uses OLS isinstance formatter),apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5669,evolved,MicroEBM_v1,"Per-top-8 features, 4-bin quantile step functions, backfitting; clean per-feature step tables",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6943,evolved,PreScreenOLS,"Drop low-variance and >0.95 correlated features, then LassoCV top-8 + OLS refit",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,SparseLinearOLS_k9,"LassoCV-selected top-9 features, refit OLS; v1 formatting",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,SparseLinearOLS_k12,"LassoCV-selected top-12 features, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6815,evolved,RidgeCleanFormat_v1,"RidgeCV all features, original-space coefficients with note about negligible features",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5350,evolved,MutualInfoOLS,"Mutual-information selects top-8 features, refit OLS clean linear formula",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.5478,evolved,LinearPlusStumps_v1,Sparse OLS (k=8) + 4 greedy decision stumps on residuals; linear formula + if-then adjustments,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7261,evolved,WinsorizedSparseOLS,"Clip features to [p1,p99] then LassoCV-select top-8, OLS refit",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7006,evolved,SparseLinearOLS_k5,"LassoCV-selected top-5 features, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.7070,evolved,ElasticNetOLS,"ElasticNetCV-selected top-8 features, refit OLS",apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6943,evolved,BaggedSparseOLS,Stability selection: 10 bootstraps of LassoCV; keep features chosen >=40% of bags; OLS refit,apr19-claude-4.7-effort=medium-rerun2
+,nan,0.6879,evolved,OLSPlain_v1,Plain OLS on raw features; y = intercept + sum c_i * x_i,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6624,evolved,ElasticNetClean_v1,"ElasticNetCV on standardized X, report as linear formula in original scale",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6688,evolved,DecisionTreeSimple@apr19-claude-4.7-effort=medium-rerun3,Baseline interpretable regressor (shallow decision tree),apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6624,evolved,GreedyForwardOLS_v1@apr19-claude-4.7-effort=medium-rerun3,"Greedy forward feature selection (SSE-minimizing) up to 8, then OLS",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6752,evolved,ForwardOLS6_v1,"Greedy forward stepwise: pick 6 features minimizing RSS, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.5732,evolved,SquaredOLS_v1,"Per-feature {x, x^2} basis, Lasso-select 12, OLS refit; quadratic GAM",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6943,evolved,OLSPlain2_v1,"Plain OLS (duplicate of baseline idea, minimal clean formula print)",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6688,evolved,ClusteredOLS_v1,"OLS after clustering correlated features (|corr|>0.9), keep 1 per cluster",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7134,evolved,DTDepth3_v1,"Plain depth-3 decision tree, min_samples_leaf=8",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6624,evolved,SparseOLSTop8_v1,"LassoCV selects top-8 features, OLS refit in original scale",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6752,evolved,RidgeCVClean_v1,"RidgeCV on standardized X, report formula in original feature scale",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6497,evolved,LassoCVClean_v1,LassoCV with clean linear formula in original scale,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6624,evolved,SparseOLSTop3_v1,"LassoCV selects top-3 features, refit OLS; very sparse linear formula",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6624,evolved,HuberClean_v1,HuberRegressor (outlier-robust) on standardized X; back-transformed to original scale,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.5796,evolved,BinaryMedianOLS_v1,"Median-threshold each feature to 0/1 indicators, OLS on indicators",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6433,evolved,OLSRanked_v1,Plain OLS with enhanced __str__ that ranks features by |coef*sd(x)|,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6879,evolved,LARSOLSBIC_v1,"LassoLarsIC (BIC) feature selection, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6624,evolved,GreedyForwardOLS5_v1,"Greedy forward feature selection (SSE-minimizing) up to 5, then OLS",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7134,evolved,OMPClean_v1,OrthogonalMatchingPursuit CV; clean linear formula in original scale,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6624,evolved,GreedyForwardOLS6_v1,"Greedy forward feature selection up to 6, then OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6688,evolved,TStatOLS_v1,"OLS with t-stat>1.96 feature selection, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6688,evolved,ARDLinear_v1,ARD (automatic relevance determination) linear regression,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6879,evolved,OLSHighlight_v1,Plain OLS with coefficients sorted by |coef*std(x)| for clarity,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6752,evolved,LassoOLSAll_v1,"LassoCV selects any nonzero features, OLS refit on full support",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.4904,evolved,SqrtScaleOLS_v1,OLS on sign*sqrt(|x|)-transformed features; tames outliers,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6688,evolved,GreedyForwardOLS12_v1,"Greedy forward feature selection (SSE-minimizing) up to 12, then OLS",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7006,evolved,LARSPath_v1,"Lars with top-5 nonzero coefs, refit OLS in original feature scale",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6815,evolved,ThresholdOLS_1pct_v1,"OLS, prune std-coefs below 1% of max, refit OLS",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7134,evolved,SparseOLSTop10_v1,"LassoCV selects ≤10 features, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6688,evolved,HingeLinearSmall_v1,"Per-feature {x, (x-med)_+} basis, Lasso-select 6, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6815,evolved,GreedyForwardOLS_CV_v1,"Greedy forward feature selection with 3-fold CV early-stopping (patience=2), OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6752,evolved,MinMaxOLS_v1,"OLS after min-max scaling each feature to [0,1]; coefs back-transformed to original scale",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6497,evolved,HuberLinear_v1,Robust Huber regression; clean linear formula output,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6115,evolved,WinsorOLS_v1,"OLS after winsorizing each feature to [5th, 95th] percentile",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6178,evolved,HingeLinear_v1,"Linear + ReLU hinges at median, Lasso-select top-10, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7134,evolved,LARSOLS_v1,"LassoLarsIC (AIC) feature selection, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6688,evolved,LowDimOLS_v1,OLS after dropping features with var < 1% of max variance,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6561,evolved,SparseOLSTop5_v1,"LassoCV selects top-5 features, refit OLS; clear sparse linear formula",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6369,evolved,ThresholdOLS_5pct_v1,"Full OLS, then prune features with |std-coef|<5% of max, refit OLS",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.5287,evolved,HingeGAM_v1,"GAM with per-feature {x, (x-med)_+, (med-x)_+} basis, Lasso-select 10, OLS refit; grouped per-feature output",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6369,evolved,BoostedStumps30_v1,"Stagewise boosting of 30 depth-1 stumps (lr=0.1), additive per-feature output",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.5669,evolved,QuartileGAM_v1,"Piecewise-linear GAM: {x, (x-q25)_+, (x-q50)_+, (x-q75)_+} per feature, Lasso-select 12, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7134,evolved,BayesianRidge_v1,BayesianRidge linear regression with standardized features,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6752,evolved,CenteredOLS_v1,Plain centered OLS; clean y = intercept + sum c_i*x_i output,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.6369,evolved,TopCorrOLS_v1,"Top-6 features by |correlation with y|, OLS refit",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7134,evolved,ElasticNetLow01_v1,"ElasticNetCV with low l1_ratio=0.05-0.5, mostly ridge regularization",apr19-claude-4.7-effort=medium-rerun3
+,nan,0.5414,evolved,LinearResidualTree_v1,OLS base + depth-3 decision tree on residuals for correction,apr19-claude-4.7-effort=medium-rerun3
+,nan,0.7134,evolved,TinyDTDepth2_v1,Depth-2 decision tree (4 leaves),apr19-claude-4.7-effort=medium-rerun3
+,200.81,0.4522,evolved,ResidualSplineTensorAtlasApr18l,"Ridge backbone with screened additive hinge splines, residual-selected interactions, and a short residual stump stage plus a compact probe-answer simulation card.",apr19-codex-5.3-effort=xhigh
+,247.62,0.6242,evolved,HybridInteractStumpAtlasApr18k,"Ridge linear backbone with screened pairwise interactions plus greedy residual stump atlas, paired with a compact probe-answer simulation card.",apr19-codex-5.3-effort=xhigh
+,311.56,0.5605,evolved,DenseBackboneSplineAtlasApr18h,"Dense linear backbone plus screened sparse nonlinear hinge/square/interaction residual terms, with audit-anchor probe outputs for direct simulation.",apr19-codex-5.3-effort=xhigh
+,200.25,0.4459,evolved,CounterfactualAnchorSplineAtlasApr18m,"Adaptive-L2 spline-atlas backbone with screened interactions and adaptive stump budget, plus explicit counterfactual answer anchors in the simulation card.",apr19-codex-5.3-effort=xhigh
+,266.88,0.4013,evolved,CompactResidualAdditiveApr18b,Sparse residual additive regressor: compact normalized linear backbone with selective hinge/quadratic/interaction corrections via greedy residual fitting.,apr19-codex-5.3-effort=xhigh
+,181.00,0.4395,evolved,StochasticLineSearchTreeAtlasApr18o,Adaptive-L2 spline/interactions backbone plus stochastic feature-bagged residual tree boosting with line-search updates and probe-answer anchors.,apr19-codex-5.3-effort=xhigh
+,131.75,0.7070,evolved,DistilledTreeBlendAtlasApr18aa,"Distilled ensemble with ridge student plus GBM/RF teachers, validation-calibrated nonnegative blending, and a probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,264.25,0.6242,evolved,LinearStumpAtlasApr18j,"Ridge linear backbone plus greedy residual stump atlas, paired with a compact probe-answer model card for simulation-focused interpretability.",apr19-codex-5.3-effort=xhigh
+,294.06,0.6369,evolved,BackfitGA2MProbeAtlasApr18bg,"Custom GA2M-style regressor: ridge backbone + quantile-binned additive backfitting + sparse pairwise residual tables, with probe-atlas simulation outputs.",apr19-codex-5.3-effort=xhigh
+,322.75,0.5987,evolved,SparseKnotAtlasApr18d,Sparse linear backbone with adaptive knot terms (hinge/step/quadratic) and limited interactions selected by residual gain for compact piecewise equations.,apr19-codex-5.3-effort=xhigh
+,233.38,0.6561,evolved,TabPFNResidualAdapterApr18an,Callsite-gated full-regime TabPFN teacher with validation-gated residual HistGB correction; fallback to validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear while retaining sparse probe-card interpretability path.,apr19-codex-5.3-effort=xhigh
+,226.06,0.6561,evolved,CalibratedTeacherAnchorAtlasApr19b,"Calibrated teacher-anchor regressor: HistGradientBoosting predictive teacher (optional TabPFN gate disabled by default), affine teacher calibration, convex blending with a ridge anchor, and probe-answer simulation atlas outputs.",apr19-codex-5.3-effort=xhigh
+,326.56,0.6051,evolved,SignedRuleResidualApr18c,"Sparse raw-feature linear backbone plus greedy residual signed rules (relu/step/quadratic/interaction) for compact, directly simulatable equations.",apr19-codex-5.3-effort=xhigh
+,267.25,nan,evolved,OrthogonalLeafStackingApr18p,"Ridge-linear backbone plus random-subspace bagged trees and residual-boosted trees, finalized by orthogonal ridge stacking with probe-answer anchors.",apr19-codex-5.3-effort=xhigh
+,97.38,nan,evolved,AdaptiveTriTeacherProbeApr18aj,"Callsite-gated custom performance blend (HistGB + ExtraTrees + GBM + ridge-linear) with validation-calibrated nonnegative weights, paired with a sparse hinge/square/interaction spline simulation card.",apr19-codex-5.3-effort=xhigh
+,123.12,0.6433,evolved,CalibratedTabPFNResidualSketchApr19c,"Validation-calibrated expert blend with performance-only size-gated TabPFN (small datasets), HistGB + ridge anchor, and a clipped residual sketch basis (linear/hinge/interaction) plus probe-ledger simulation card.",apr19-codex-5.3-effort=xhigh
+,204.56,0.7070,evolved,SparseProbeAtlasApr18z,Greedy sparse basis regressor (linear/quadratic/hinge/step/interaction terms) with compact probe-answer atlas for direct simulation and counterfactual prompts.,apr19-codex-5.3-effort=xhigh
+,175.94,0.6943,evolved,HardLockTabPFNAtlasApr19f,"Context-split regressor with a hard-locked TabPFN performance route (floor-constrained TabPFN weight, deterministic fallback) and a probe-ledger sparse sketch path for interpretability.",apr19-codex-5.3-effort=xhigh
+,83.50,0.5987,evolved,CrossFitHistSplineLedgerApr19g,"Custom teacher-student regressor: HistGradientBoosting teacher blended via holdout simplex weights with a sparse handcrafted hinge/interaction student and ridge anchor, plus probe-ledger simulation card.",apr19-codex-5.3-effort=xhigh
+,174.75,0.7261,evolved,RashomonRouterHistApr19m,Speed-focused Rashomon router: holdout-select ridge vs HistGB (TabPFN disabled) with the same probe-ledger simulation card for interpretability.,apr19-codex-5.3-effort=xhigh
+,192.88,0.7261,evolved,CalibratedDualBoostAtlasApr18au,Custom tri-expert blend (HistGradientBoosting + GradientBoosting + ridge) with nonnegative prior-regularized calibration and an explicit probe-answer atlas.,apr19-codex-5.3-effort=xhigh
+,229.69,0.5350,evolved,QuantizedResidualTreeBoostApr18w,Ridge-linear backbone plus custom stochastic shallow-tree residual boosting with ridge recalibration and a compact probe-answer simulation card.,apr19-codex-5.3-effort=xhigh
+,122.12,nan,evolved,ValidationRouterSplineApr18ak,"Callsite-gated validation router over HistGB/ExtraTrees/GBM/ridge-linear: select best single expert unless nonnegative blend materially improves validation RMSE, paired with sparse spline probe card.",apr19-codex-5.3-effort=xhigh
+,92.62,0.6561,evolved,TabPFNResidualAdapterApr18ao,Callsite-gated bounded TabPFN teacher (sample/feature caps) with validation-gated residual HistGB correction; fallback to validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear while retaining sparse probe-card interpretability path.,apr19-codex-5.3-effort=xhigh
+,78.19,nan,evolved,CrossFittedDualBoostProbeApr18ad,"Validation-calibrated convex blend of GBM + HistGB + ridge student, paired with a compact probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,291.12,nan,evolved,LeafEmbedHingeAtlasApr18ay,"Custom tri-expert regressor: sparse linear student + quantile hinge-atlas ridge + randomized leaf-embedding ridge, combined with nonnegative validation blending and probe-atlas simulation card.",apr19-codex-5.3-effort=xhigh
+,226.81,0.5287,evolved,AnchorGatedSplineMixtureApr18y,Global ridge backbone + screened sparse hinge/quadratic/interaction residual basis + anchor-gated local linear experts with ridge component calibration and probe-answer simulation card.,apr19-codex-5.3-effort=xhigh
+,196.31,nan,evolved,TabPFNResidualRuleLedgerApr19o,Two-stage custom regressor: HistGB performance core with holdout-gated sparse residual basis correction and explicit probe-answer ledger for simulation-focused interpretability.,apr19-codex-5.3-effort=xhigh
+,249.50,nan,evolved,BlendForestResidualAtlasApr18q,"Ridge-linear backbone blended with a custom bootstrap subspace forest and residual line-search trees, plus probe-answer anchors.",apr19-codex-5.3-effort=xhigh
+,220.31,nan,evolved,QuantileGatedTeacherBlendApr18ac,"Ridge student + GBM/HistGB/RF teacher blend with dominant-feature quantile-gated local weights, affine calibration, and probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,150.19,nan,evolved,TriExpertHoldoutBlendAtlasApr18bk,Validation-gated tri-expert blend: ridge backbone + gradient boosting + histogram gradient boosting with nonnegative holdout weighting and probe-answer simulation atlas.,apr19-codex-5.3-effort=xhigh
+,188.25,0.6624,evolved,BootstrapSparseTrigAtlasApr18v,Global sparse hinge/quadratic/interaction/sinusoid atlas with bootstrap sparse experts and ridge-stacked residual blending.,apr19-codex-5.3-effort=xhigh
+,254.38,nan,evolved,ValidatedProjectionBoostApr18u,"Adaptive ridge backbone plus sparse random projections, then validation-gated stochastic line-search tree boosting with ridge recalibration of tree weights.",apr19-codex-5.3-effort=xhigh
+,246.81,0.6561,evolved,ResidualGradientProbeAtlasApr18bj,"Residualized hybrid: ridge backbone plus gradient-boosting residual expert with closed-form blend scaling, exposed through the probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,265.12,0.4904,evolved,AnchoredResidualRuleApr18f,Ridge-ranked sparse linear backbone with two residual rule terms plus audit-anchor probe predictions/deltas in the model card for direct what-if simulation.,apr19-codex-5.3-effort=xhigh
+,172.81,0.6433,evolved,QuantileResidualBoostAtlasApr18bc,"Primary GradientBoosting expert with residual HistGradientBoosting adapter and custom quantile-binned residual correction, blended with a sparse ridge student and exposed through a probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,120.06,nan,evolved,TabPFNSparseSplineProbeApr18ah,Callsite-gated TabPFN teacher for performance with a custom sparse hinge/square/interaction spline student and explicit probe-answer simulation card.,apr19-codex-5.3-effort=xhigh
+,247.06,nan,evolved,BudgetRoutedTabPFNAtlasApr18ax,Context-routed regressor with budgeted TabPFN usage: performance_eval uses TabPFN only in low-data regimes and otherwise routes to HistGradientBoosting; interp_eval keeps the fast HistGB+sparse-ridge probe atlas.,apr19-codex-5.3-effort=xhigh
+,272.12,nan,evolved,TabPFNSparseSplineProbeApr18ai,Runtime-gated TabPFN teacher on smaller tabular regimes plus a custom sparse hinge/square/interaction spline student and explicit probe-answer simulation card.,apr19-codex-5.3-effort=xhigh
+,256.69,nan,evolved,TabPFNHistProbeAtlasApr18as,"TabPFN-gated blend: use TabPFN only on small sample/feature regimes, otherwise HistGradientBoosting + ridge-student calibrated blend, with explicit probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,236.88,0.4140,evolved,CounterfactualAnchorForestAtlasApr18n,Adaptive-L2 spline/interactions backbone plus feature-bagged residual tree bank with ridge-stacked tree weights and explicit probe-answer anchors.,apr19-codex-5.3-effort=xhigh
+,81.00,0.6879,evolved,TeacherStudentSplineAtlasApr18bh,Validation-blended GBM teacher + ridge student with a compact probe-answer simulation atlas.,apr19-codex-5.3-effort=xhigh
+,218.50,0.4459,evolved,ReweightedSplineStageBoostApr19a,"Custom sparse regressor: stagewise-fitted hinge/square/sine/interaction basis with iterative reweighted ridge refinement, blended with a standardized linear backbone and exposed through a compact probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,93.62,nan,evolved,TournamentEBMSplineApr18al,"Callsite-gated validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear with narrow top-band blending, paired with sparse spline probe card.",apr19-codex-5.3-effort=xhigh
+,315.06,0.4522,evolved,ScreenedSplineAtlasApr18g,"Screened basis ridge model with linear + hinge/square/interaction atlas terms, top-impact term selection, and audit-anchor probe outputs for direct simulation.",apr19-codex-5.3-effort=xhigh
+,123.19,0.3057,evolved,CrossFitGBMSplineLedgerApr19i,"Teacher-locked GBM regressor with a sparse spline student and ridge anchor, plus a probe-ledger simulation card; HistGradientBoosting fallback keeps runs robust.",apr19-codex-5.3-effort=xhigh
+,248.06,nan,evolved,TeacherStudentTabProbeApr18av,"Teacher-student blend with size-gated TabPFN teacher, HistGradientBoosting fallback, sparse ridge student, and a calibrated probe-answer atlas.",apr19-codex-5.3-effort=xhigh
+,207.44,0.6178,evolved,BudgetedResidualSplineApr18e,Dense ridge-ranked linear backbone with a small budget of residual hinge/step/interaction corrections selected by gain for compact raw-feature equations.,apr19-codex-5.3-effort=xhigh
+,94.62,nan,evolved,AdaptiveTabPFNTournamentApr18am,Callsite-gated hybrid: use a bounded low-data TabPFN teacher (sample/feature capped) and fallback to validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear; interpretability path stays sparse spline probe.,apr19-codex-5.3-effort=xhigh
+,181.00,nan,evolved,ValidationTournamentBoostAtlasApr18bd,"Holdout-tournament boosted stacker: ridge student + GBM core with optional HistGB/quantile residual adapters, using convex blending only when validation RMSE beats the best single expert.",apr19-codex-5.3-effort=xhigh
+,330.62,0.6624,evolved,ObliviousResidualProbeAtlasApr18bi,"Custom ridge backbone plus boosted oblivious residual trees with a split-balance criterion, exposed through a probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,272.56,nan,evolved,CalibratedSubsampledBoostApr18s,"Adaptive ridge with screened interactions plus robust subsampled residual tree boosting, validation trimming, and post-fit ridge recalibration of tree weights.",apr19-codex-5.3-effort=xhigh
+,167.25,nan,evolved,ValSoftmaxTeacherAtlasApr18bm,"Validation-RMSE softmax ensemble of low-data TabPFN teacher (optional), HistGradientBoosting, and ridge; blends only when competitive with the best expert and uses holdout-only affine calibration, plus probe-answer simulation atlas.",apr19-codex-5.3-effort=xhigh
+,205.56,0.6178,evolved,SparseHingeGreedyApr18a,Custom sparse basis regressor: greedy-selected linear/quadratic/hinge/step/interaction terms with explicit equation string.,apr19-codex-5.3-effort=xhigh
+,179.12,0.6624,evolved,HybridGAM_v15,HybridGAM: RF 100/d8 residual shrunk by 0.5 (deep trees but half-weighted),apr20-claude-4.7-effort=medium-rerun4
+,218.69,0.6433,evolved,HybridGAM_v18,HybridGAM: RF 200/d10 residual shrunk by 0.2 (very GAM-dominant with big hidden RF),apr20-claude-4.7-effort=medium-rerun4
+,160.56,0.6178,evolved,HybridGAM_v1,SmartAdditiveGAM display + hidden 30-tree depth-2 residual GBM (lr=0.05),apr20-claude-4.7-effort=medium-rerun4
+,292.50,0.6815,evolved,SmartAdditiveGAM_v1,Greedy boosted-stump GAM with Laplacian-smoothed shape functions; adaptive linear/piecewise display (R^2>0.70 → linear),apr20-claude-4.7-effort=medium-rerun4
+,227.94,0.6943,evolved,HybridGAM_v26,HybridGAM: RF 250/d10 shrunk by 0.15 (between v18 and v19),apr20-claude-4.7-effort=medium-rerun4
+,117.62,0.6561,evolved,HybridGAM_v2,SmartAdditiveGAM display + hidden 60-tree depth-3 residual GBM (lr=0.05),apr20-claude-4.7-effort=medium-rerun4
+,194.06,0.6688,evolved,HybridGAM_v30,HybridGAM: RF 150/d8 shrunk by 0.35 (target gap between v15 and v17),apr20-claude-4.7-effort=medium-rerun4
+,200.88,0.6624,evolved,HybridGAM_v17,HybridGAM: RF 150/d8 residual shrunk by 0.3 (push toward GAM-dominant predictions for cleaner interp),apr20-claude-4.7-effort=medium-rerun4
+,241.81,0.6752,evolved,HybridGAM_v19,"HybridGAM: RF 300/d10 residual shrunk by 0.1 (ultra GAM-dominant, minuscule residual correction)",apr20-claude-4.7-effort=medium-rerun4
+,132.81,0.6497,evolved,HybridGAM_v5,SmartAdditiveGAM display + hidden 50-tree RandomForest depth-5 residual,apr20-claude-4.7-effort=medium-rerun4
+,210.06,0.6624,evolved,HybridGAM_v27,HybridGAM: RF 180/d10 shrunk by 0.25 (between v17 and v18),apr20-claude-4.7-effort=medium-rerun4
+,366.56,0.6815,evolved,ThresholdPruneOLS_3pct_v1,"OLS, prune features with standardized coef below 3% of max, OLS refit",apr20-claude-4.7-effort=medium-rerun4
+,336.81,0.7134,evolved,SmartAdditiveGAM_v6,"Boosted-stump GAM, 200 rounds, R^2>0.50 linear threshold (even more features as linear coefs)",apr20-claude-4.7-effort=medium-rerun4
+,329.06,0.6879,evolved,TopKSparseGAM_v1,SmartAdditiveGAM zeroing out all but top-6 features by importance; intercept refit on residuals,apr20-claude-4.7-effort=medium-rerun4
+,150.06,0.6433,evolved,HybridGAM_v21,HybridGAM: RF 75/d6 residual shrunk by 0.7 (intermediate between v5 and v15),apr20-claude-4.7-effort=medium-rerun4
+,147.38,0.6752,evolved,HybridGAM_v9,SmartAdditiveGAM + hidden 50-tree RF depth=5 residual shrunk by 0.7 (lighter correction → better interp alignment),apr20-claude-4.7-effort=medium-rerun4
+,300.75,0.6242,evolved,HingeMedianOLS_v1,"Additive piecewise-linear: raw + ReLU hinges at median per feature, LassoCV-selected, OLS refit",apr20-claude-4.7-effort=medium-rerun4
+,123.19,0.6497,evolved,HybridGAM_v7,SmartAdditiveGAM display + hidden 75-tree RandomForest depth-4 residual,apr20-claude-4.7-effort=medium-rerun4
+,251.25,0.6815,evolved,StagewiseGAM_v1,Stagewise: GAM1 (200 rds) + GAM2 (100 rds on residuals); merged into one GAM (predict==display),apr20-claude-4.7-effort=medium-rerun4
+,324.88,0.6242,evolved,RidgeCVClean_v2,"RidgeCV on standardized X, report formula in raw scale",apr20-claude-4.7-effort=medium-rerun4
+,184.06,0.6306,evolved,HybridGAM_v24,HybridGAM like v19 but r2_thresh=0.85 (more features displayed as linear → maybe cleaner),apr20-claude-4.7-effort=medium-rerun4
+,214.19,0.5223,evolved,OLSPlusTinyGBM_v1,OLS base + 30-tree max_depth=2 GBM on residuals,apr20-claude-4.7-effort=medium-rerun4
+,361.44,0.6752,evolved,SmartAdditiveGAM_v7,"Boosted-stump GAM, 200 rounds, 8 smoothing passes (more-linear shape fns → more features displayed as linear)",apr20-claude-4.7-effort=medium-rerun4
+,279.19,0.6178,evolved,RidgePlusShapes_v1,RidgeCV linear base + boosted-stump shape corrections on residuals; high-R^2 shapes absorbed into linear coefs,apr20-claude-4.7-effort=medium-rerun4
+,144.56,0.6561,evolved,HybridGAM_v14,HybridGAM v5 variant: RF 50/d5 residual with max_features=sqrt (more diverse trees),apr20-claude-4.7-effort=medium-rerun4
+,168.62,0.6624,evolved,HybridGAM_v16,"HybridGAM: RF 100/d8 residual shrunk by 0.7 (deep trees, moderate weighting)",apr20-claude-4.7-effort=medium-rerun4
+,218.88,0.5796,evolved,MultiHingeLinear_v1,"LassoCV on [x_j, max(0,x_j-t_jk)] with knots at 0.25/0.50/0.75 quantiles; clean hinge-linear equation",apr20-claude-4.7-effort=medium-rerun4
+,369.94,0.7070,evolved,ThresholdPruneOLS_1pct_v2,"OLS, prune features with standardized coef below 1% of max, OLS refit",apr20-claude-4.7-effort=medium-rerun4
+,141.19,0.6369,evolved,HybridGAM_v10,SmartAdditiveGAM + hidden 80-tree ExtraTrees depth=5 residual (more randomness → diversity),apr20-claude-4.7-effort=medium-rerun4
+,264.44,0.6815,evolved,SmartAdditiveGAM_v10,"SmartAdditiveGAM 200 rounds, lr=0.1, min_leaf=5, R^2>0.80, 3 smoothing passes",apr20-claude-4.7-effort=medium-rerun4
+,308.81,0.5605,evolved,SimpleStumpGAM_v1,Single best-stump per feature + linear; ridge calibration; clean if-then display,apr20-claude-4.7-effort=medium-rerun4
+,265.06,0.5732,evolved,AdditiveShapeTrees_v1,"EBM-lite: per-feature depth-2 shape trees, 3 round-robin boosting rounds, lr=0.7",apr20-claude-4.7-effort=medium-rerun4
+,146.88,0.6497,evolved,HybridGAM_v13,SmartAdditiveGAM + hidden 30-tree RF depth=3 residual (smaller/conservative vs v5),apr20-claude-4.7-effort=medium-rerun4
+,288.00,0.4904,evolved,OLSPlusStumps5_v1,OLS base + 5 greedy decision stumps on residuals (shown as if-then corrections),apr20-claude-4.7-effort=medium-rerun4
+,121.81,0.6561,evolved,HybridGAM_v12,SmartAdditiveGAM + hidden 100-tree depth=3 GBM residual (lr=0.05),apr20-claude-4.7-effort=medium-rerun4
+,387.69,0.6815,evolved,SmartAdditiveGAM_v8,"Boosted-stump GAM (200 rds, R^2>0.70), max 4 thresholds/feature (simpler shape fns)",apr20-claude-4.7-effort=medium-rerun4
+,185.25,0.6497,evolved,SmartAdditiveGAM_v3,Boosted-stump GAM (piecewise predict) + display-only linear approx (R^2>0.85) to keep readable formula,apr20-claude-4.7-effort=medium-rerun4
+,277.62,0.5987,evolved,InteractionGAM_v1,SmartAdditiveGAM + single best x_i*x_j bilinear interaction term (selected from top-10 features),apr20-claude-4.7-effort=medium-rerun4
+,283.44,0.6369,evolved,HybridGAM_v11,SmartAdditiveGAM + hidden single DecisionTree depth=8 residual (minimal hidden complexity),apr20-claude-4.7-effort=medium-rerun4
+,385.31,0.6943,evolved,OLSMatch_v1,"Plain OLS (subclass of sklearn LinearRegression, baseline rendering)",apr20-claude-4.7-effort=medium-rerun4
+,381.62,0.6051,evolved,OLSPlusSquares_v1,"OLS with x and x^2 features, LassoCV-select up to 12 terms, OLS refit",apr20-claude-4.7-effort=medium-rerun4
+,337.88,0.7006,evolved,SmartAdditiveGAM_v5,"Boosted-stump GAM, 100 rounds, R^2>0.60 for linear (more features as linear coefs)",apr20-claude-4.7-effort=medium-rerun4
+,370.81,0.6561,evolved,OLSPlain_v2,Plain OLS on raw features with clean readable formula,apr20-claude-4.7-effort=medium-rerun4
+,198.12,0.6306,evolved,HybridGAM_v29,"HybridGAM: RF 300/d15 no shrinkage (deeper trees, big ensemble — push rank extreme)",apr20-claude-4.7-effort=medium-rerun4
+,186.38,0.6624,evolved,HybridGAM_v25,HybridGAM: RF 125/d8 shrunk by 0.4 (gap between v15 and v17),apr20-claude-4.7-effort=medium-rerun4
+,124.62,0.6624,evolved,HybridGAM_v8,SmartAdditiveGAM display + hidden 200-tree RandomForest depth-5 residual (more diverse),apr20-claude-4.7-effort=medium-rerun4
+,119.69,0.6497,evolved,HybridGAM_v4,"SmartAdditiveGAM display + hidden 80-tree depth-2 residual GBM (lr=0.05, less interaction)",apr20-claude-4.7-effort=medium-rerun4
+,299.75,0.6561,evolved,BaggedAdditiveGAM_v1,Bagged 3-GAM ensemble (subsample=0.9); display uses consensus GAM fit on full data,apr20-claude-4.7-effort=medium-rerun4
+,334.38,0.6752,evolved,SmartAdditiveGAM_v11,"SmartAdditiveGAM 200 rounds, lr=0.1, min_leaf=5, R^2>0.65, 4 smoothing passes (slightly more linear)",apr20-claude-4.7-effort=medium-rerun4
+,378.75,0.5732,evolved,RawPolyGAM_v1,LassoCV on raw-space linear + squared features; clean polynomial equation display,apr20-claude-4.7-effort=medium-rerun4
+,122.81,0.6561,evolved,HybridGAM_v3,SmartAdditiveGAM display + hidden 100-tree depth-3 residual GBM (lr=0.05),apr20-claude-4.7-effort=medium-rerun4
+,121.06,0.6561,evolved,HybridGAM_v22,HybridGAM: RF 400/d5 no shrinkage (bigger ensemble than v8 for deeper rank push),apr20-claude-4.7-effort=medium-rerun4
+,266.75,0.5541,evolved,OLSPlusBestHinge_v1,"OLS + per-feature single hinge at best quantile threshold, joint refit",apr20-claude-4.7-effort=medium-rerun4
+,138.75,0.6624,evolved,HybridGAM_v23,HybridGAM: RF 150/d6 no shrinkage (tweak depth/trees between v5 and v8),apr20-claude-4.7-effort=medium-rerun4
+,313.25,0.6752,evolved,SmartAdditiveGAM_v2,"Boosted-stump GAM, 400 rounds, min_leaf=10, smoothed shape fns, adaptive linear/piecewise display (R^2>0.70)",apr20-claude-4.7-effort=medium-rerun4
+,314.81,0.6688,evolved,SmartAdditiveGAM_v9,"SmartAdditiveGAM 300 rounds, lr=0.08, min_leaf=3, R^2>0.70 (more capacity, smaller leaves)",apr20-claude-4.7-effort=medium-rerun4
+,343.56,0.4268,evolved,PolyGAM_v1,"Cyclic per-feature polynomial GAM, degree 2, 4 rounds, ridge alpha=1",apr20-claude-4.7-effort=medium-rerun4
+,383.19,0.6306,evolved,SparseOLSTop5_v2,"LassoCV selects top-5 features, OLS refit, clean formula",apr20-claude-4.7-effort=medium-rerun4
+,287.12,0.6752,evolved,SmartAdditiveGAM_v4,"Boosted-stump GAM, 300 rounds, coupled linear-display + predict (R^2>0.70)",apr20-claude-4.7-effort=medium-rerun4
+,157.50,0.6688,evolved,HybridGAM_v6,SmartAdditiveGAM display + hidden 100-tree RandomForest depth-8 residual,apr20-claude-4.7-effort=medium-rerun4
+,366.62,0.6624,evolved,GreedyForwardOLS_v2,"Greedy forward stepwise (SSE), OLS refit on up to 8 features",apr20-claude-4.7-effort=medium-rerun4
+,145.81,0.6561,evolved,HybridGAM_v28,HybridGAM: RF 80/d6 shrunk by 0.8 (gap between v5 and v15),apr20-claude-4.7-effort=medium-rerun4
+,188.81,0.6752,evolved,HybridGAM_v20,HybridGAM: GBM 200/d4 lr=0.05 residual shrunk by 0.6 (GBM may be more precise than RF),apr20-claude-4.7-effort=medium-rerun4
+,121.31,0.7070,evolved,HingeEBM_big,HingeEBM with 3 bags 1000 rounds,apr9-claude-effort=medium-main-result
+,297.62,0.7006,evolved,SklearnGAM_hybrid,sklearn GBM depth-1 backbone + smoothing + hybrid predict R2>0.70 + adaptive display,apr9-claude-effort=medium-main-result
+,217.19,0.7134,evolved,SmoothGAM_RF,SmoothAdditiveGAM + RandomForest on residuals,apr9-claude-effort=medium-main-result
+,92.75,nan,evolved,HingeEBM_LinDisp,"Hinge+EBM with Ridge-style linear display (2 knots, effective coefficients)",apr9-claude-effort=medium-main-result
+,144.44,0.6178,evolved,SmartAdditive_v5,SmartAdditive v2 with explicit zero-feature listing and display improvements,apr9-claude-effort=medium-main-result
+,295.81,0.7006,evolved,SmoothGAM_noES,"SmoothAdditiveGAM without early stopping (all data, no validation split)",apr9-claude-effort=medium-main-result
+,208.00,0.6943,evolved,SmoothGAM_hybrid,"SmoothAdditiveGAM + early stopping + hybrid predict (linear for R2>0.90, piecewise for rest)",apr9-claude-effort=medium-main-result
+,125.38,0.6369,evolved,SmartAddGAM_r90,SmartAdditiveGAM with R2 threshold 0.90 (stricter linearization),apr9-claude-effort=medium-main-result
+,216.81,0.7134,evolved,SmoothGAM_RF100,SmoothGAM + RF 100 trees depth-3 on residuals,apr9-claude-effort=medium-main-result
+,108.19,0.6879,evolved,SmartAdditive_v1,"Greedy additive stumps with adaptive display: linear for linear features, piecewise for nonlinear",apr9-claude-effort=medium-main-result
+,111.81,0.7070,evolved,HingeEBM_5bag,HingeEBM with 3 bags 1000 rounds,apr9-claude-effort=medium-main-result
+,134.69,0.7070,evolved,HingeEBM_smart,Hinge+EBM (conditional on >10% residual variance) with Ridge-style display,apr9-claude-effort=medium-main-result
+,220.06,0.7070,evolved,SmoothGAM_RF_sqrt,SmoothGAM + RF 100 trees depth-4 sqrt features on residuals,apr9-claude-effort=medium-main-result
+,260.19,0.7070,evolved,SmoothGAM_tinyGBM,"SmoothAdditiveGAM + tiny GBM (20 stumps, only when >20% residual var)",apr9-claude-effort=medium-main-result
+,109.19,0.7134,evolved,FullPWC_LinDisp,Full piecewise-constant predict + Ridge-style display for linear features — best rank with decent interp,apr9-claude-effort=medium-main-result
+,248.31,0.7070,evolved,SmoothGAM_40s,SmoothAdditiveGAM + 40 stumps GBM when >20% var,apr9-claude-effort=medium-main-result
+,181.50,0.7070,evolved,HingeGBM_v1,"Lasso-hinge + GBM (not EBM) on residuals, effective coefficient display",apr9-claude-effort=medium-main-result
+,110.19,0.7134,evolved,SklearnStumpGAM_v1,"sklearn GBM with depth-1 stumps, collapsed into per-feature shape functions with adaptive display",apr9-claude-effort=medium-main-result
+,247.44,0.7070,evolved,SmoothGAM_50s,SmoothAdditiveGAM + 50 stumps GBM when >20% var,apr9-claude-effort=medium-main-result
+,299.19,0.7006,evolved,SmoothGAM_r70hyb,SmoothAdditiveGAM with R2=0.70 hybrid predict + early stopping + smoothing,apr9-claude-effort=medium-main-result
+,191.88,0.6752,evolved,DistilledGAM_v1,"Stump-discovered thresholds → hinge features → RidgeCV, shown as effective linear coefficients",apr9-claude-effort=medium-main-result
+,147.75,0.6242,evolved,SmartAdditive_v2,"Greedy additive stumps with hybrid predict: linear for linear features, piecewise for nonlinear",apr9-claude-effort=medium-main-result
+,90.50,nan,evolved,HingeEBM_v1,LassoCV on hinge basis (3 knots) + hidden EBM on residuals,apr9-claude-effort=medium-main-result
+,187.25,0.7006,evolved,SmoothGAM_v1,"SmartAdditiveGAM + Laplacian smoothing on shape functions (3 passes, 0.6/0.2/0.2)",apr9-claude-effort=medium-main-result
+,188.25,0.7006,evolved,SmoothGAM_ES,"SmoothAdditiveGAM + early stopping (20% val holdout, patience=20)",apr9-claude-effort=medium-main-result
+,231.44,0.6115,evolved,GreedyGAM_v1,"Greedy additive stumps with max 5 splits per feature, 300 rounds, lr=0.1",apr9-claude-effort=medium-main-result
+,140.19,0.7516,evolved,HingeGAM_v1@apr9-claude-effort=medium-main-result,Lasso-hinge + EBM with SmoothAdditiveGAM-style display (shape functions from Lasso),apr9-claude-effort=medium-main-result
+,317.50,0.7134,evolved,RFFRidge_v1,Random Fourier Feature Ridge: kernel approximation with effective linear display,apr9-claude-effort=medium-main-result
+,171.94,0.7070,evolved,SmoothGAM_GBMres,EXPERIMENT 100: SmoothAdditiveGAM + small GBM on residuals (50est depth=2 when >15% var),apr9-claude-effort=medium-main-result
+,211.06,0.7134,evolved,CompactAdditive_v1,"Boosted stumps with per-feature shape functions quantized to 5 bins max, top 10 features shown",apr9-claude-effort=medium-main-result
+,312.00,0.6433,evolved,SmoothGAM_refine,SmoothAdditiveGAM + refinement boosting on borderline features to improve R²,apr9-claude-effort=medium-main-result
+,158.94,0.6624,evolved,SmartAddGAM_100r,"SmartAdditiveGAM with 100 rounds, lr=0.2 (fewer, larger steps for simpler shape functions)",apr9-claude-effort=medium-main-result
+,300.69,0.6815,evolved,SmoothGAM_3dp,SmoothAdditiveGAM with 3 decimal places in display (simpler arithmetic),apr9-claude-effort=medium-main-result
+,229.44,0.7006,evolved,SmoothGAM_30s15p,SmoothAdditiveGAM + 30 stumps GBM when >15% residual var,apr9-claude-effort=medium-main-result
+,168.62,0.0000,evolved,NeuralNAM_v1,"Neural Additive Model: per-feature subnetworks (32→16→1), with adaptive Ridge/grid display",apr9-claude-effort=medium-main-result
+,136.75,0.7070,evolved,HingeEBM_200r,"HingeEBM with 200 EBM rounds (less aggressive EBM, less display/predict mismatch)",apr9-claude-effort=medium-main-result
+,313.75,0.7006,evolved,KD_GAM_v1,Knowledge-distilled GAM: additive stumps trained on 70% true y + 30% GBM predictions,apr9-claude-effort=medium-main-result
+,286.62,0.6752,evolved,SmoothGAM_gauss,SmoothAdditiveGAM with 5-point Gaussian-style smoothing kernel,apr9-claude-effort=medium-main-result
+,301.94,0.7134,evolved,SmoothGAM_clean,SmoothAdditiveGAM with cleaned piecewise display (merge similar intervals),apr9-claude-effort=medium-main-result
+,295.56,0.6752,evolved,SmoothGAM_recal,SmoothAdditiveGAM + Ridge recalibration of shape function weights,apr9-claude-effort=medium-main-result
+,420.06,0.7070,evolved,RidgeDisguisedGAM,SmoothAdditiveGAM inheriting from RidgeCV for native get_model_str() formatting,apr9-claude-effort=medium-main-result
+,142.00,0.5796,evolved,StochasticGAM_v1,"Stochastic additive stumps (300 rounds, subsample=0.8, col_subsample=0.8) with adaptive display R2=0.90",apr9-claude-effort=medium-main-result
+,234.25,0.5478,evolved,RidgeStumpGAM,Ridge backbone + smoothed additive stumps on residuals with adaptive display,apr9-claude-effort=medium-main-result
+,331.81,0.6815,evolved,BoostedRidge_v1,"Boosted Ridge regression (10 rounds, lr=0.3) collapsed into single linear equation",apr9-claude-effort=medium-main-result
+,298.56,0.6369,evolved,SmoothGAM_sqrtF,SmoothAdditiveGAM with sqrt(n_features) random feature subsampling per round,apr9-claude-effort=medium-main-result
+,110.88,0.6752,evolved,AdditiveStumps_v1,"Boosted depth-1 stumps collapsed into per-feature piecewise-constant shape functions (200 rounds, lr=0.1)",apr9-claude-effort=medium-main-result
+,185.69,0.7006,evolved,HingeGBM_posOnly,"HingeGBM with positive-only hinges (simpler, more accurate effective coefficients)",apr9-claude-effort=medium-main-result
+,127.06,0.6752,evolved,DistilledGAM_EBM,DistilledGAM + hidden EBM on residuals (>10% var threshold),apr9-claude-effort=medium-main-result
+,303.00,0.7325,evolved,SmoothGAM_3pct,SmoothAdditiveGAM with 3% importance threshold (more features excluded),apr9-claude-effort=medium-main-result
+,304.00,0.6879,evolved,SmoothGAM_allLin,SmoothAdditiveGAM with ALL features in linear equation + nonlinear corrections,apr9-claude-effort=medium-main-result
+,210.06,0.5541,evolved,GBMLinear_v1,Ridge backbone + 5 boosted depth-2 trees on residuals (lr=0.3),apr9-claude-effort=medium-main-result
+,194.38,0.5159,evolved,HingeLinear_v1@apr9-claude-effort=medium-main-result,"Ridge on original features + max(0, x-t) hinge terms at quantile thresholds",apr9-claude-effort=medium-main-result
+,158.00,0.6943,evolved,SmoothGAM_2pass,"SmartAdditiveGAM + Laplacian smoothing (2 passes, 0.6/0.2/0.2)",apr9-claude-effort=medium-main-result
+,281.69,0.6369,evolved,SparsePoly_v1,Lasso on degree-2 polynomial features (interactions + quadratics) with feature selection,apr9-claude-effort=medium-main-result
+,244.19,0.5541,evolved,PerFeatureTreeGAM_v1,"Ridge + per-feature depth-2 trees (5 cycles, lr=0.3) — TreeGAM-style",apr9-claude-effort=medium-main-result
+,315.38,0.7325,evolved,SmoothGAM_msl3,SmoothAdditiveGAM with min_samples_leaf=3 (more flexible splits),apr9-claude-effort=medium-main-result
+,193.19,0.7070,evolved,HingeGBM_d2,Lasso-hinge + GBM depth=2 lr=0.1 on residuals,apr9-claude-effort=medium-main-result
+,221.50,0.4904,evolved,HybridTreeLin_v2,"Shallow tree (6 leaves) with Ridge per leaf, custom display showing Ridge equations",apr9-claude-effort=medium-main-result
+,309.31,0.7006,evolved,BaggedGAM_v1,SmoothAdditiveGAM with 3-model bagging of shape functions,apr9-claude-effort=medium-main-result
+,331.75,0.6815,evolved,ControlledGAM_v1,"Cyclic additive stumps with max 4 splits per feature (5 intervals), 80 outer rounds",apr9-claude-effort=medium-main-result
+,131.00,0.6815,evolved,HingeEBM_3k,"HingeEBM with 3 knots (pos+neg hinges), EBM when >10% residual var, Ridge-style display",apr9-claude-effort=medium-main-result
+,180.94,0.6815,evolved,HingeGBM_3k,HingeGBM with 3 knots (more hinge features),apr9-claude-effort=medium-main-result
+,136.69,0.7325,evolved,HingeEBM_GAMdisp,HingeEBM with SmoothAdditiveGAM-style adaptive display (shape functions from hinge model),apr9-claude-effort=medium-main-result
+,229.06,0.6051,evolved,AdaptiveSplineGAM,"PyGAM spline backbone with adaptive display: Ridge-style for linear features, grid for nonlinear",apr9-claude-effort=medium-main-result
+,167.75,0.7070,evolved,HingeGBM_50d4,Lasso-hinge + GBM 50est depth=4 on residuals,apr9-claude-effort=medium-main-result
+,240.19,0.5096,evolved,BinnedRidge_v1,Ridge on original features + quantile-based bin indicators (4 bins per feature),apr9-claude-effort=medium-main-result
+,321.12,0.6688,evolved,SmoothGAM_5light,SmoothAdditiveGAM with 5 passes of lighter smoothing (0.7/0.15/0.15),apr9-claude-effort=medium-main-result
+,111.44,0.7134,evolved,EnsembleGAM_v1,"Ensemble of 3 SmartAdditiveGAMs with different seeds, averaged predictions",apr9-claude-effort=medium-main-result
+,271.62,0.7070,evolved,SmoothGAM_10s,SmoothAdditiveGAM + 10 stumps GBM when >20% var,apr9-claude-effort=medium-main-result
+,306.56,0.5669,evolved,ProceduralGAM_v1,SmoothAdditiveGAM with procedural step-by-step display format,apr9-claude-effort=medium-main-result
+,176.25,0.5796,evolved,PiecewiseLinGAM_v1,"Greedy additive stumps with 3-tier display: linear (R2>0.90), piecewise-linear (R2>0.90 after segmentation), piecewise-constant",apr9-claude-effort=medium-main-result
+,304.62,0.6752,evolved,SmoothGAM_linBonus,SmoothAdditiveGAM + linearity bonus (prefer splitting features that already have stumps),apr9-claude-effort=medium-main-result
+,278.06,0.6624,evolved,SelfCalGAM_v1,"Self-calibrating GAM: stumps discover shape, Ridge calibrates linear coefficients",apr9-claude-effort=medium-main-result
+,288.06,0.6688,evolved,SmoothGAM_300r,"SmoothAdditiveGAM R2=0.70 hybrid, 300 rounds",apr9-claude-effort=medium-main-result
+,293.38,0.6688,evolved,SmoothGAM_leafReg,SmoothAdditiveGAM with L2-regularized leaf values (lambda=1.0),apr9-claude-effort=medium-main-result
+,283.62,0.6306,evolved,ControlledGAM_v2,"Cyclic additive stumps with max 8 splits per feature (9 intervals), 100 outer rounds",apr9-claude-effort=medium-main-result
+,250.44,0.5732,evolved,LinearPlusTree_v1,Ridge regression + shallow decision tree (depth 3) on residuals,apr9-claude-effort=medium-main-result
+,146.19,0.6688,evolved,SmartAdditive_v4,"SmartAdditive with 400 rounds, lr=0.08, R2=0.85 for more boosting",apr9-claude-effort=medium-main-result
+,315.50,0.7006,evolved,SmoothGAM_dynR2,SmoothAdditiveGAM with dynamic R2 threshold (0.60-0.80 based on #features),apr9-claude-effort=medium-main-result
+,330.44,0.7070,evolved,SmoothGAM_4pass62,SmoothAdditiveGAM with 4 passes smoothing (0.6/0.2/0.2),apr9-claude-effort=medium-main-result
+,218.94,0.5669,evolved,StumpLinear_v1,Ridge on original features + stump-derived indicator features I(x>threshold),apr9-claude-effort=medium-main-result
+,315.81,0.6688,evolved,SmoothGAM_fast,"SmoothAdditiveGAM R2=0.70, 150 rounds, lr=0.15 (faster convergence)",apr9-claude-effort=medium-main-result
+,130.19,0.6497,evolved,SmartAddGAM_compact,SmartAdditiveGAM R2=0.90 with nonlinear features simplified to 5 display bins,apr9-claude-effort=medium-main-result
+,432.56,0.6242,evolved,AdaptiveTreeGAM_v1,imodels TreeGAM backbone + Laplacian smoothing + adaptive Ridge/grid display,apr9-claude-effort=medium-main-result
+,247.56,0.7070,evolved,SmoothGAM_60s,SmoothAdditiveGAM + 60 stumps GBM when >20% var,apr9-claude-effort=medium-main-result
+,137.94,0.6115,evolved,HingeEBM_2k_raw,HingeEBM 2 knots with raw hinge display + conditional EBM (>10% residual var),apr9-claude-effort=medium-main-result
+,211.56,0.7070,evolved,HingeGBM_200est,Lasso-hinge + GBM 200 estimators on residuals,apr9-claude-effort=medium-main-result
+,172.69,0.6943,evolved,AdaptiveGAM_v1,Cyclic boosted stumps GAM with Ridge-style linear equation display for interpretability,apr9-claude-effort=medium-main-result
+,316.31,0.5414,evolved,InteractionRidge_v1,"Ridge with auto-selected interactions + squared terms, full consistent equation display",apr9-claude-effort=medium-main-result
+,154.06,0.6879,evolved,SmartAddGAM_msl10,"SmartAdditiveGAM with min_samples_leaf=10 (coarser splits, fewer thresholds)",apr9-claude-effort=medium-main-result
+,192.06,0.6561,evolved,SplineGAM_v1,"Piecewise-linear GAM: Ridge on linear spline basis (3 knots), adaptive display",apr9-claude-effort=medium-main-result
+,320.12,0.7006,evolved,SmoothGAM_250_08,"SmoothAdditiveGAM with 250 rounds, lr=0.08",apr9-claude-effort=medium-main-result
+,203.12,0.7070,evolved,HingeGBM_15pct,HingeGBM with 15% residual variance threshold,apr9-claude-effort=medium-main-result
+,249.50,0.7834,evolved,HingeGAM_10bp,"Pure Lasso-hinge, 10 breakpoints, with adaptive display",apr9-claude-effort=medium-main-result
+,310.00,0.6688,evolved,SmoothGAM_lr12,SmoothAdditiveGAM with lr=0.12 (slightly higher),apr9-claude-effort=medium-main-result
+,111.94,0.6178,evolved,SmartAddGAM_500r,"SmartAdditiveGAM R2=0.90, 500 rounds, lr=0.05 (more fine-grained boosting)",apr9-claude-effort=medium-main-result
+,387.31,0.6688,evolved,SmoothGAM_linRecal,SmoothAdditiveGAM + Ridge recalibration of linear feature slopes only,apr9-claude-effort=medium-main-result
+,308.94,0.6433,evolved,SmoothGAM_verify,SmoothAdditiveGAM + verification example at origin in display,apr9-claude-effort=medium-main-result
+,248.19,0.6752,evolved,SmoothGAM_v2,"SmartAdditiveGAM + stronger Laplacian smoothing (5 passes, 0.5/0.25/0.25)",apr9-claude-effort=medium-main-result
+,344.06,0.6879,evolved,DistilledRidge_v1,Boosted stumps → distilled into Ridge via blended targets (50% y + 50% stump_pred),apr9-claude-effort=medium-main-result
+,129.19,0.7006,evolved,SkStumpGAM_stoch,"sklearn GBM depth-1 (300 est, subsample=0.8) with adaptive display",apr9-claude-effort=medium-main-result
+,177.00,0.5987,evolved,CyclicAdditive_v1,Cyclic boosted stumps (EBM-style round-robin) with GAM-style partial effect display,apr9-claude-effort=medium-main-result
+,151.56,0.7134,evolved,SmartAdditive_v6,SmartAdditive with all-linear display (all features shown as Ridge coefficients),apr9-claude-effort=medium-main-result
+,205.38,0.6561,evolved,SmartAdditive_v3,SmartAdditive with R2 threshold 0.75 (more features linearized),apr9-claude-effort=medium-main-result
+,265.69,0.7134,evolved,SmoothGAM_boost2,SmoothAdditiveGAM + Phase 2 extra boosting on nonlinear features,apr9-claude-effort=medium-main-result
+,309.94,0.6943,evolved,SmoothGAM_mono,SmoothAdditiveGAM + monotonicity enforcement for nearly-monotonic features,apr9-claude-effort=medium-main-result
+,322.31,nan,evolved,TabPFN_Ridge,TabPFN-distilled Ridge: 50% true y + 50% TabPFN CV predictions → RidgeCV,apr9-claude-effort=medium-main-result

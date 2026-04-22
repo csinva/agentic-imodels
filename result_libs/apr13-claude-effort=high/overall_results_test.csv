@@ -1,30 +1,41 @@
 commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description
-baseline,12.94,0.5541,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
-baseline,17.25,0.7006,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
-baseline,18.38,0.6433,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
-baseline,23.19,0.7261,baseline,OLS,ordinary least squares linear regression
-baseline,22.12,0.5287,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
-baseline,20.50,0.6051,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
-baseline,7.56,0.4204,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
-baseline,8.06,0.4841,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
-baseline,20.62,0.1911,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
-baseline,15.56,0.4713,baseline,FIGS_mini,small FIGS with up to 8 max_rules
-baseline,14.62,0.4586,baseline,FIGS_large,large FIGS with up to 20 max_rules
-baseline,13.50,0.4968,baseline,RuleFit,RuleFit with up to 20 max_rules
-baseline,14.75,0.6752,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
-baseline,11.69,0.6497,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
-baseline,4.69,0.5605,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
+baseline,18.31,0.4777,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
+baseline,24.50,0.6497,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
+baseline,25.69,0.5924,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
+baseline,32.31,0.6943,baseline,OLS,ordinary least squares linear regression
+baseline,30.69,0.6178,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
+baseline,28.12,0.6433,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
+baseline,10.81,0.5669,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
+baseline,10.94,0.5350,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
+baseline,29.06,0.4140,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
+baseline,22.25,0.5860,baseline,FIGS_mini,small FIGS with up to 8 max_rules
+baseline,20.69,0.5669,baseline,FIGS_large,large FIGS with up to 20 max_rules
+baseline,18.94,0.5478,baseline,RuleFit,RuleFit with up to 20 max_rules
+baseline,20.88,0.6561,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
+baseline,16.81,0.6624,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
+baseline,5.88,0.4904,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
 baseline,nan,0.1720,baseline,TabPFN,"TabPFN foundation model for tabular data (training data capped at 200 samples, 2 ensemble members, low-memory fit mode for CPU latency)"
-,8.38,0.6242,evolved,RidgeRFResid_hi,Ridge display + 0.6x RF residual (100 trees depth-5) — high-rank Pareto point
-,7.88,0.5987,evolved,RidgeRFResid_full,Ridge display + full RF residual correction (100 trees depth-5)
-,18.44,0.6051,evolved,RidgeGBMResid_v3,"Ridge display + scaled GBM correction (0.3x weight, 20 stumps, lr=0.05)"
-,20.19,0.6051,evolved,NormalEqRidge_v1,"Ridge via eigendecomposition with efficient LOO-CV alpha selection, RidgeCV display"
-,12.56,0.6369,evolved,StdRidgeRF_v1,Standardized Ridge (coefficients in original space) + 0.39x RF residual
-,16.06,0.6433,evolved,RidgeRFResid_v1,"Ridge display + scaled RF correction (0.3x weight, 30 trees depth-3)"
-,11.31,0.6242,evolved,RidgeRFSVR_v1,Ridge + 0.25x RF + 0.14x SVR blended residual correction
-,11.69,0.6242,evolved,RidgeRFResid_v7,"Ridge display + scaled RF correction (0.375x weight, 50 trees depth-4)"
-,15.31,0.6369,evolved,RidgeSVRResid_v1,Ridge display + 0.39x SVR RBF residual correction
-,14.38,0.6306,evolved,RidgeRFResid_v2,"Ridge display + scaled RF correction (0.3x weight, 50 trees depth-4)"
-,10.31,0.6242,evolved,RidgeRFResid_v8,"Ridge display + scaled RF correction (0.39x weight, 50 trees depth-4)"
-,12.94,0.6242,evolved,RidgeRFResid_v5,"Ridge display + scaled RF correction (0.35x weight, 50 trees depth-4)"
-,21.12,0.6815,evolved,StochRidge_v1,"Ensemble of Ridge models on random feature subsets, averaged into single linear equation"
+,11.44,0.6497,evolved,RidgeRFResid_hi,Ridge display + 0.6x RF residual (100 trees depth-5) — high-rank Pareto point
+,11.00,0.6561,evolved,RidgeRFResid_full,Ridge display + full RF residual correction (100 trees depth-5)
+,25.75,0.6433,evolved,RidgeGBMResid_v3,"Ridge display + scaled GBM correction (0.3x weight, 20 stumps, lr=0.05)"
+,27.75,0.6688,evolved,NormalEqRidge_v1,"Ridge via eigendecomposition with efficient LOO-CV alpha selection, RidgeCV display"
+,18.56,0.6561,evolved,StdRidgeRF_v1,Standardized Ridge (coefficients in original space) + 0.39x RF residual
+,22.44,0.6242,evolved,RidgeRFResid_v1,"Ridge display + scaled RF correction (0.3x weight, 30 trees depth-3)"
+,16.62,0.6624,evolved,RidgeRFSVR_v1,Ridge + 0.25x RF + 0.14x SVR blended residual correction
+,16.94,0.6561,evolved,RidgeRFResid_v7,"Ridge display + scaled RF correction (0.375x weight, 50 trees depth-4)"
+,22.19,0.6561,evolved,RidgeSVRResid_v1,Ridge display + 0.39x SVR RBF residual correction
+,20.25,0.6561,evolved,RidgeRFResid_v2,"Ridge display + scaled RF correction (0.3x weight, 50 trees depth-4)"
+,15.50,0.6497,evolved,RidgeRFResid_v8,"Ridge display + scaled RF correction (0.39x weight, 50 trees depth-4)"
+,18.31,0.6369,evolved,RidgeRFResid_v5,"Ridge display + scaled RF correction (0.35x weight, 50 trees depth-4)"
+,29.50,0.6688,evolved,StochRidge_v1,"Ensemble of Ridge models on random feature subsets, averaged into single linear equation"
+,26.50,0.6369,evolved,SparsePolyRidge_v1,"Sparse polynomial Ridge: Lasso-selected x+x² features, Ridge refit, linear equation display"
+,25.62,0.5096,evolved,BinnedRidgeGAM_v1,Quantile-binned Ridge GAM: step-function GAM via one-hot bin encoding + Ridge
+,16.00,0.5732,evolved,PiecewiseLinear_v1,Piecewise linear: stump split + separate Ridge in each partition
+,17.75,0.5032,evolved,RidgePlusTree_v1,"Ridge linear base + residual decision tree correction, both fully displayed"
+,10.62,0.6178,evolved,BoostedStumpGAM_v1,Additive model from boosted stumps with per-feature shape function display as GAM
+,17.75,0.5478,evolved,ResidualBoostedRidge_v1,Ridge linear model + greedy threshold correction rules on residuals
+,17.38,0.5860,evolved,CyclicBoostGAM_v1,EBM-style cyclic boosting GAM with adaptive linear/table display per feature
+,11.94,0.6688,evolved,DistillGBM_Ridge_v1,GBM for predictions + distilled Ridge for display (linear approx of GBM)
+,11.31,0.4459,evolved,HingeBasisRidge_v1,Ridge regression on hinge basis functions with data-driven knots from stumps + quantiles
+,30.75,0.6815,evolved,CorrSparseRidge_v1,"Correlation-ranked feature selection + Ridge LOO-CV, sparse OLS-style display"
+,22.25,0.5669,evolved,ThreshAugRidge_v1,"Ridge on original features + stump-discovered threshold indicators, OLS-style display"

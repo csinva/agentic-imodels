@@ -1,25 +1,71 @@
 commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description
-baseline,10.81,0.5541,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
-baseline,15.94,0.7006,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
-baseline,16.75,0.6433,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
-baseline,17.12,0.7261,baseline,OLS,ordinary least squares linear regression
-baseline,16.44,0.5287,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
-baseline,15.00,0.6051,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
-baseline,7.19,0.4204,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
-baseline,6.69,0.4841,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
-baseline,17.88,0.1911,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
-baseline,14.25,0.4713,baseline,FIGS_mini,small FIGS with up to 8 max_rules
-baseline,13.94,0.4586,baseline,FIGS_large,large FIGS with up to 20 max_rules
-baseline,11.31,0.4968,baseline,RuleFit,RuleFit with up to 20 max_rules
-baseline,13.31,0.6752,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
-baseline,10.62,0.6497,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
-baseline,3.69,0.5605,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
+baseline,37.94,0.4777,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
+baseline,49.44,0.6497,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
+baseline,53.00,0.5924,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
+baseline,52.94,0.6943,baseline,OLS,ordinary least squares linear regression
+baseline,49.19,0.6178,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
+baseline,47.56,0.6433,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
+baseline,27.25,0.5669,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
+baseline,22.38,0.5350,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
+baseline,55.06,0.4140,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
+baseline,46.00,0.5860,baseline,FIGS_mini,small FIGS with up to 8 max_rules
+baseline,47.81,0.5669,baseline,FIGS_large,large FIGS with up to 20 max_rules
+baseline,35.00,0.5478,baseline,RuleFit,RuleFit with up to 20 max_rules
+baseline,42.88,0.6561,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
+baseline,37.06,0.6624,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
+baseline,13.50,0.4904,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
 baseline,nan,0.1720,baseline,TabPFN,"TabPFN foundation model for tabular data (training data capped at 200 samples, 2 ensemble members, low-memory fit mode for CPU latency)"
-,10.06,0.5669,evolved,ResidualSplineTensorAtlasApr18l,"Ridge backbone with screened additive hinge splines, residual-selected interactions, and a short residual stump stage plus a compact probe-answer simulation card."
-,11.19,0.6815,evolved,HybridInteractStumpAtlasApr18k,"Ridge linear backbone with screened pairwise interactions plus greedy residual stump atlas, paired with a compact probe-answer simulation card."
-,14.75,0.6178,evolved,DenseBackboneSplineAtlasApr18h,"Dense linear backbone plus screened sparse nonlinear hinge/square/interaction residual terms, with audit-anchor probe outputs for direct simulation."
-,9.69,0.6051,evolved,CounterfactualAnchorSplineAtlasApr18m,"Adaptive-L2 spline-atlas backbone with screened interactions and adaptive stump budget, plus explicit counterfactual answer anchors in the simulation card."
-,13.00,0.5414,evolved,CompactResidualAdditiveApr18b,Sparse residual additive regressor: compact normalized linear backbone with selective hinge/quadratic/interaction corrections via greedy residual fitting.
-,7.81,0.5732,evolved,StochasticLineSearchTreeAtlasApr18o,Adaptive-L2 spline/interactions backbone plus stochastic feature-bagged residual tree boosting with line-search updates and probe-answer anchors.
-,6.38,0.7325,evolved,DistilledTreeBlendAtlasApr18aa,"Distilled ensemble with ridge student plus GBM/RF teachers, validation-calibrated nonnegative blending, and a probe-answer simulation atlas."
-,12.19,0.6815,evolved,LinearStumpAtlasApr18j,"Ridge linear backbone plus greedy residual stump atlas, paired with a compact probe-answer model card for simulation-focused interpretability."
+,33.06,0.4522,evolved,ResidualSplineTensorAtlasApr18l,"Ridge backbone with screened additive hinge splines, residual-selected interactions, and a short residual stump stage plus a compact probe-answer simulation card."
+,40.75,0.6242,evolved,HybridInteractStumpAtlasApr18k,"Ridge linear backbone with screened pairwise interactions plus greedy residual stump atlas, paired with a compact probe-answer simulation card."
+,45.62,0.5605,evolved,DenseBackboneSplineAtlasApr18h,"Dense linear backbone plus screened sparse nonlinear hinge/square/interaction residual terms, with audit-anchor probe outputs for direct simulation."
+,32.62,0.4459,evolved,CounterfactualAnchorSplineAtlasApr18m,"Adaptive-L2 spline-atlas backbone with screened interactions and adaptive stump budget, plus explicit counterfactual answer anchors in the simulation card."
+,42.06,0.4013,evolved,CompactResidualAdditiveApr18b,Sparse residual additive regressor: compact normalized linear backbone with selective hinge/quadratic/interaction corrections via greedy residual fitting.
+,29.12,0.4395,evolved,StochasticLineSearchTreeAtlasApr18o,Adaptive-L2 spline/interactions backbone plus stochastic feature-bagged residual tree boosting with line-search updates and probe-answer anchors.
+,22.81,0.7070,evolved,DistilledTreeBlendAtlasApr18aa,"Distilled ensemble with ridge student plus GBM/RF teachers, validation-calibrated nonnegative blending, and a probe-answer simulation atlas."
+,42.31,0.6242,evolved,LinearStumpAtlasApr18j,"Ridge linear backbone plus greedy residual stump atlas, paired with a compact probe-answer model card for simulation-focused interpretability."
+,47.75,0.6369,evolved,BackfitGA2MProbeAtlasApr18bg,"Custom GA2M-style regressor: ridge backbone + quantile-binned additive backfitting + sparse pairwise residual tables, with probe-atlas simulation outputs."
+,47.81,0.5987,evolved,SparseKnotAtlasApr18d,Sparse linear backbone with adaptive knot terms (hinge/step/quadratic) and limited interactions selected by residual gain for compact piecewise equations.
+,34.12,0.6561,evolved,TabPFNResidualAdapterApr18an,Callsite-gated full-regime TabPFN teacher with validation-gated residual HistGB correction; fallback to validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear while retaining sparse probe-card interpretability path.
+,36.62,0.6561,evolved,CalibratedTeacherAnchorAtlasApr19b,"Calibrated teacher-anchor regressor: HistGradientBoosting predictive teacher (optional TabPFN gate disabled by default), affine teacher calibration, convex blending with a ridge anchor, and probe-answer simulation atlas outputs."
+,48.12,0.6051,evolved,SignedRuleResidualApr18c,"Sparse raw-feature linear backbone plus greedy residual signed rules (relu/step/quadratic/interaction) for compact, directly simulatable equations."
+,45.38,0.0000,evolved,OrthogonalLeafStackingApr18p,"Ridge-linear backbone plus random-subspace bagged trees and residual-boosted trees, finalized by orthogonal ridge stacking with probe-answer anchors."
+,17.69,0.0000,evolved,AdaptiveTriTeacherProbeApr18aj,"Callsite-gated custom performance blend (HistGB + ExtraTrees + GBM + ridge-linear) with validation-calibrated nonnegative weights, paired with a sparse hinge/square/interaction spline simulation card."
+,20.94,0.6433,evolved,CalibratedTabPFNResidualSketchApr19c,"Validation-calibrated expert blend with performance-only size-gated TabPFN (small datasets), HistGB + ridge anchor, and a clipped residual sketch basis (linear/hinge/interaction) plus probe-ledger simulation card."
+,36.12,0.7070,evolved,SparseProbeAtlasApr18z,Greedy sparse basis regressor (linear/quadratic/hinge/step/interaction terms) with compact probe-answer atlas for direct simulation and counterfactual prompts.
+,30.69,0.6943,evolved,HardLockTabPFNAtlasApr19f,"Context-split regressor with a hard-locked TabPFN performance route (floor-constrained TabPFN weight, deterministic fallback) and a probe-ledger sparse sketch path for interpretability."
+,14.62,0.5987,evolved,CrossFitHistSplineLedgerApr19g,"Custom teacher-student regressor: HistGradientBoosting teacher blended via holdout simplex weights with a sparse handcrafted hinge/interaction student and ridge anchor, plus probe-ledger simulation card."
+,25.38,0.7261,evolved,RashomonRouterHistApr19m,Speed-focused Rashomon router: holdout-select ridge vs HistGB (TabPFN disabled) with the same probe-ledger simulation card for interpretability.
+,30.62,0.7261,evolved,CalibratedDualBoostAtlasApr18au,Custom tri-expert blend (HistGradientBoosting + GradientBoosting + ridge) with nonnegative prior-regularized calibration and an explicit probe-answer atlas.
+,39.44,0.5350,evolved,QuantizedResidualTreeBoostApr18w,Ridge-linear backbone plus custom stochastic shallow-tree residual boosting with ridge recalibration and a compact probe-answer simulation card.
+,19.06,0.0000,evolved,ValidationRouterSplineApr18ak,"Callsite-gated validation router over HistGB/ExtraTrees/GBM/ridge-linear: select best single expert unless nonnegative blend materially improves validation RMSE, paired with sparse spline probe card."
+,12.38,0.6561,evolved,TabPFNResidualAdapterApr18ao,Callsite-gated bounded TabPFN teacher (sample/feature caps) with validation-gated residual HistGB correction; fallback to validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear while retaining sparse probe-card interpretability path.
+,14.69,0.0000,evolved,CrossFittedDualBoostProbeApr18ad,"Validation-calibrated convex blend of GBM + HistGB + ridge student, paired with a compact probe-answer simulation atlas."
+,50.50,0.0000,evolved,LeafEmbedHingeAtlasApr18ay,"Custom tri-expert regressor: sparse linear student + quantile hinge-atlas ridge + randomized leaf-embedding ridge, combined with nonnegative validation blending and probe-atlas simulation card."
+,34.62,0.5287,evolved,AnchorGatedSplineMixtureApr18y,Global ridge backbone + screened sparse hinge/quadratic/interaction residual basis + anchor-gated local linear experts with ridge component calibration and probe-answer simulation card.
+,29.81,0.0000,evolved,TabPFNResidualRuleLedgerApr19o,Two-stage custom regressor: HistGB performance core with holdout-gated sparse residual basis correction and explicit probe-answer ledger for simulation-focused interpretability.
+,43.31,0.0000,evolved,BlendForestResidualAtlasApr18q,"Ridge-linear backbone blended with a custom bootstrap subspace forest and residual line-search trees, plus probe-answer anchors."
+,35.50,0.0000,evolved,QuantileGatedTeacherBlendApr18ac,"Ridge student + GBM/HistGB/RF teacher blend with dominant-feature quantile-gated local weights, affine calibration, and probe-answer simulation atlas."
+,22.31,0.0000,evolved,TriExpertHoldoutBlendAtlasApr18bk,Validation-gated tri-expert blend: ridge backbone + gradient boosting + histogram gradient boosting with nonnegative holdout weighting and probe-answer simulation atlas.
+,28.69,0.6624,evolved,BootstrapSparseTrigAtlasApr18v,Global sparse hinge/quadratic/interaction/sinusoid atlas with bootstrap sparse experts and ridge-stacked residual blending.
+,41.81,0.0000,evolved,ValidatedProjectionBoostApr18u,"Adaptive ridge backbone plus sparse random projections, then validation-gated stochastic line-search tree boosting with ridge recalibration of tree weights."
+,41.62,0.6561,evolved,ResidualGradientProbeAtlasApr18bj,"Residualized hybrid: ridge backbone plus gradient-boosting residual expert with closed-form blend scaling, exposed through the probe-answer simulation atlas."
+,43.06,0.4904,evolved,AnchoredResidualRuleApr18f,Ridge-ranked sparse linear backbone with two residual rule terms plus audit-anchor probe predictions/deltas in the model card for direct what-if simulation.
+,27.44,0.6433,evolved,QuantileResidualBoostAtlasApr18bc,"Primary GradientBoosting expert with residual HistGradientBoosting adapter and custom quantile-binned residual correction, blended with a sparse ridge student and exposed through a probe-answer simulation atlas."
+,17.31,0.0000,evolved,TabPFNSparseSplineProbeApr18ah,Callsite-gated TabPFN teacher for performance with a custom sparse hinge/square/interaction spline student and explicit probe-answer simulation card.
+,39.75,0.0000,evolved,BudgetRoutedTabPFNAtlasApr18ax,Context-routed regressor with budgeted TabPFN usage: performance_eval uses TabPFN only in low-data regimes and otherwise routes to HistGradientBoosting; interp_eval keeps the fast HistGB+sparse-ridge probe atlas.
+,41.31,0.0000,evolved,TabPFNSparseSplineProbeApr18ai,Runtime-gated TabPFN teacher on smaller tabular regimes plus a custom sparse hinge/square/interaction spline student and explicit probe-answer simulation card.
+,41.75,0.0000,evolved,TabPFNHistProbeAtlasApr18as,"TabPFN-gated blend: use TabPFN only on small sample/feature regimes, otherwise HistGradientBoosting + ridge-student calibrated blend, with explicit probe-answer simulation atlas."
+,38.69,0.4140,evolved,CounterfactualAnchorForestAtlasApr18n,Adaptive-L2 spline/interactions backbone plus feature-bagged residual tree bank with ridge-stacked tree weights and explicit probe-answer anchors.
+,17.69,0.6879,evolved,TeacherStudentSplineAtlasApr18bh,Validation-blended GBM teacher + ridge student with a compact probe-answer simulation atlas.
+,34.00,0.4459,evolved,ReweightedSplineStageBoostApr19a,"Custom sparse regressor: stagewise-fitted hinge/square/sine/interaction basis with iterative reweighted ridge refinement, blended with a standardized linear backbone and exposed through a compact probe-answer simulation atlas."
+,13.38,0.0000,evolved,TournamentEBMSplineApr18al,"Callsite-gated validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear with narrow top-band blending, paired with sparse spline probe card."
+,48.38,0.4522,evolved,ScreenedSplineAtlasApr18g,"Screened basis ridge model with linear + hinge/square/interaction atlas terms, top-impact term selection, and audit-anchor probe outputs for direct simulation."
+,21.06,0.3057,evolved,CrossFitGBMSplineLedgerApr19i,"Teacher-locked GBM regressor with a sparse spline student and ridge anchor, plus a probe-ledger simulation card; HistGradientBoosting fallback keeps runs robust."
+,40.75,0.0000,evolved,TeacherStudentTabProbeApr18av,"Teacher-student blend with size-gated TabPFN teacher, HistGradientBoosting fallback, sparse ridge student, and a calibrated probe-answer atlas."
+,35.81,0.6178,evolved,BudgetedResidualSplineApr18e,Dense ridge-ranked linear backbone with a small budget of residual hinge/step/interaction corrections selected by gain for compact raw-feature equations.
+,14.38,0.0000,evolved,AdaptiveTabPFNTournamentApr18am,Callsite-gated hybrid: use a bounded low-data TabPFN teacher (sample/feature capped) and fallback to validation tournament over HistGB/ExtraTrees/GBM/EBM/ridge-linear; interpretability path stays sparse spline probe.
+,27.50,0.0000,evolved,ValidationTournamentBoostAtlasApr18bd,"Holdout-tournament boosted stacker: ridge student + GBM core with optional HistGB/quantile residual adapters, using convex blending only when validation RMSE beats the best single expert."
+,49.25,0.6624,evolved,ObliviousResidualProbeAtlasApr18bi,"Custom ridge backbone plus boosted oblivious residual trees with a split-balance criterion, exposed through a probe-answer simulation atlas."
+,44.44,0.0000,evolved,CalibratedSubsampledBoostApr18s,"Adaptive ridge with screened interactions plus robust subsampled residual tree boosting, validation trimming, and post-fit ridge recalibration of tree weights."
+,26.94,0.0000,evolved,ValSoftmaxTeacherAtlasApr18bm,"Validation-RMSE softmax ensemble of low-data TabPFN teacher (optional), HistGradientBoosting, and ridge; blends only when competitive with the best expert and uses holdout-only affine calibration, plus probe-answer simulation atlas."
+,37.12,0.6178,evolved,SparseHingeGreedyApr18a,Custom sparse basis regressor: greedy-selected linear/quadratic/hinge/step/interaction terms with explicit equation string.

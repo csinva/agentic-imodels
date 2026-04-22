@@ -30,3 +30,11 @@ Once you have written the tests, write and run a script to run the tests on all 
 Next, update the paper with these changes, especially Table A6 and Fig 4a. For Fig 4a, include models from multiple different runs.
 
 Finally, delete any code and results related to the previous minor variations of tests you had run (do not delete code related to testing with a different evaluator, i.e. gpt-5.4).
+
+## Followup 2
+
+Rewrite all the tests so that the answer to questions is spread across different features and never is the same as a very similar question in the original set. Also rewrite so that there are more unique tests, e.g. there shouldn't be 6 versions of the most-important-feature test. Aim for no more than 3 repeats of any single test. The total amount of tests must still be 157.
+
+After rewriting the tests, edit your previous a script to run the tests on all the baseline models and all the models in each folder of `../result_libs`. Overwrite the `interpretability_results_test.csv` and a `overall_results_test.csv` file in each folder of `../result_libs`, and use them to save an `interpretability_vs_performance_test.png` into each folder. Run this for all tried models, including the `failure` ones.
+
+Next, update the paper with these changes, especially Table A6 and Fig 4a. For Fig 4a, include models from multiple different runs.

@@ -1,21 +1,65 @@
 commit,mean_rank,frac_interpretability_tests_passed,status,model_name,description
-baseline,8.25,0.5541,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
-baseline,11.88,0.7006,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
-baseline,12.62,0.6433,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
-baseline,13.50,0.7261,baseline,OLS,ordinary least squares linear regression
-baseline,13.06,0.5287,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
-baseline,10.88,0.6051,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
-baseline,4.56,0.4204,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
-baseline,4.88,0.4841,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
-baseline,13.56,0.1911,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
-baseline,10.25,0.4713,baseline,FIGS_mini,small FIGS with up to 8 max_rules
-baseline,10.12,0.4586,baseline,FIGS_large,large FIGS with up to 20 max_rules
-baseline,8.62,0.4968,baseline,RuleFit,RuleFit with up to 20 max_rules
-baseline,9.94,0.6752,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
-baseline,7.56,0.6497,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
-baseline,2.88,0.5605,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
+baseline,19.81,0.4777,baseline,PyGAM,generalized additive model with 10 splines per feature and default settings
+baseline,28.75,0.6497,baseline,DT_mini,small decision tree with up to 8 max_leaf_nodes
+baseline,34.31,0.5924,baseline,DT_large,large decision tree with up to 20 max_leaf_nodes
+baseline,40.06,0.6943,baseline,OLS,ordinary least squares linear regression
+baseline,39.38,0.6178,baseline,LassoCV,Lasso linear model with cross-validation to select the regularization parameter
+baseline,28.19,0.6433,baseline,RidgeCV,Ridge linear model with cross-validation to select the regularization parameter
+baseline,10.75,0.5669,baseline,RF,"random forest with 50 tree estimators, each with max_depth of 5"
+baseline,11.81,0.5350,baseline,GBM,"gradient boosting machine with 100 tree estimators, each with max_depth of 3"
+baseline,37.81,0.4140,baseline,MLP,"multi-layer perceptron with default hidden layer size, ReLU activation, and Adam solver"
+baseline,25.75,0.5860,baseline,FIGS_mini,small FIGS with up to 8 max_rules
+baseline,26.56,0.5669,baseline,FIGS_large,large FIGS with up to 20 max_rules
+baseline,25.56,0.5478,baseline,RuleFit,RuleFit with up to 20 max_rules
+baseline,24.69,0.6561,baseline,HSTree_mini,small HSTree with up to 8 max_leaf_nodes
+baseline,20.56,0.6624,baseline,HSTree_large,large HSTree with up to 20 max_leaf_nodes
+baseline,5.12,0.4904,baseline,EBM,explainable boosting machine (InterpretML) with 3 outer bags and 1000 max rounds
 baseline,nan,0.1720,baseline,TabPFN,"TabPFN foundation model for tabular data (training data capped at 200 samples, 2 ensemble members, low-memory fit mode for CPU latency)"
-,12.38,0.6497,evolved,OLSPlain_v1,Plain OLS on raw features; y = intercept + sum c_i * x_i
-,11.38,0.6497,evolved,ElasticNetClean_v1,"ElasticNetCV on standardized X, report as linear formula in original scale"
-,10.44,0.7006,evolved,DecisionTreeSimple,Baseline interpretable regressor (shallow decision tree)
-,13.25,0.6306,evolved,GreedyForwardOLS_v1,"Greedy forward feature selection (SSE-minimizing) up to 8, then OLS"
+,32.25,0.6879,evolved,OLSPlain_v1,Plain OLS on raw features; y = intercept + sum c_i * x_i
+,30.88,0.6624,evolved,ElasticNetClean_v1,"ElasticNetCV on standardized X, report as linear formula in original scale"
+,28.56,0.6688,evolved,DecisionTreeSimple,Baseline interpretable regressor (shallow decision tree)
+,35.69,0.6624,evolved,GreedyForwardOLS_v1,"Greedy forward feature selection (SSE-minimizing) up to 8, then OLS"
+,35.69,0.6752,evolved,ForwardOLS6_v1,"Greedy forward stepwise: pick 6 features minimizing RSS, OLS refit"
+,26.06,0.5732,evolved,SquaredOLS_v1,"Per-feature {x, x^2} basis, Lasso-select 12, OLS refit; quadratic GAM"
+,33.94,0.6943,evolved,OLSPlain2_v1,"Plain OLS (duplicate of baseline idea, minimal clean formula print)"
+,38.44,0.6688,evolved,ClusteredOLS_v1,"OLS after clustering correlated features (|corr|>0.9), keep 1 per cluster"
+,26.88,0.7134,evolved,DTDepth3_v1,"Plain depth-3 decision tree, min_samples_leaf=8"
+,37.00,0.6624,evolved,SparseOLSTop8_v1,"LassoCV selects top-8 features, OLS refit in original scale"
+,25.88,0.6752,evolved,RidgeCVClean_v1,"RidgeCV on standardized X, report formula in original feature scale"
+,30.75,0.6497,evolved,LassoCVClean_v1,LassoCV with clean linear formula in original scale
+,43.38,0.6624,evolved,SparseOLSTop3_v1,"LassoCV selects top-3 features, refit OLS; very sparse linear formula"
+,51.75,0.6624,evolved,HuberClean_v1,HuberRegressor (outlier-robust) on standardized X; back-transformed to original scale
+,53.75,0.5796,evolved,BinaryMedianOLS_v1,"Median-threshold each feature to 0/1 indicators, OLS on indicators"
+,35.19,0.6433,evolved,OLSRanked_v1,Plain OLS with enhanced __str__ that ranks features by |coef*sd(x)|
+,31.81,0.6879,evolved,LARSOLSBIC_v1,"LassoLarsIC (BIC) feature selection, OLS refit"
+,38.50,0.6624,evolved,GreedyForwardOLS5_v1,"Greedy forward feature selection (SSE-minimizing) up to 5, then OLS"
+,22.69,0.7134,evolved,OMPClean_v1,OrthogonalMatchingPursuit CV; clean linear formula in original scale
+,37.81,0.6624,evolved,GreedyForwardOLS6_v1,"Greedy forward feature selection up to 6, then OLS refit"
+,40.19,0.6688,evolved,TStatOLS_v1,"OLS with t-stat>1.96 feature selection, OLS refit"
+,41.19,0.6688,evolved,ARDLinear_v1,ARD (automatic relevance determination) linear regression
+,36.94,0.6879,evolved,OLSHighlight_v1,Plain OLS with coefficients sorted by |coef*std(x)| for clarity
+,33.50,0.6752,evolved,LassoOLSAll_v1,"LassoCV selects any nonzero features, OLS refit on full support"
+,31.31,0.4904,evolved,SqrtScaleOLS_v1,OLS on sign*sqrt(|x|)-transformed features; tames outliers
+,39.25,0.6688,evolved,GreedyForwardOLS12_v1,"Greedy forward feature selection (SSE-minimizing) up to 12, then OLS"
+,39.00,0.7006,evolved,LARSPath_v1,"Lars with top-5 nonzero coefs, refit OLS in original feature scale"
+,36.62,0.6815,evolved,ThresholdOLS_1pct_v1,"OLS, prune std-coefs below 1% of max, refit OLS"
+,23.69,0.7134,evolved,SparseOLSTop10_v1,"LassoCV selects ≤10 features, OLS refit"
+,42.62,0.6688,evolved,HingeLinearSmall_v1,"Per-feature {x, (x-med)_+} basis, Lasso-select 6, OLS refit"
+,35.19,0.6815,evolved,GreedyForwardOLS_CV_v1,"Greedy forward feature selection with 3-fold CV early-stopping (patience=2), OLS refit"
+,37.62,0.6752,evolved,MinMaxOLS_v1,"OLS after min-max scaling each feature to [0,1]; coefs back-transformed to original scale"
+,52.12,0.6497,evolved,HuberLinear_v1,Robust Huber regression; clean linear formula output
+,26.88,0.6115,evolved,WinsorOLS_v1,"OLS after winsorizing each feature to [5th, 95th] percentile"
+,20.94,0.6178,evolved,HingeLinear_v1,"Linear + ReLU hinges at median, Lasso-select top-10, OLS refit"
+,24.69,0.7134,evolved,LARSOLS_v1,"LassoLarsIC (AIC) feature selection, OLS refit"
+,47.06,0.6688,evolved,LowDimOLS_v1,OLS after dropping features with var < 1% of max variance
+,45.38,0.6561,evolved,SparseOLSTop5_v1,"LassoCV selects top-5 features, refit OLS; clear sparse linear formula"
+,39.88,0.6369,evolved,ThresholdOLS_5pct_v1,"Full OLS, then prune features with |std-coef|<5% of max, refit OLS"
+,19.00,0.5287,evolved,HingeGAM_v1,"GAM with per-feature {x, (x-med)_+, (med-x)_+} basis, Lasso-select 10, OLS refit; grouped per-feature output"
+,28.38,0.6369,evolved,BoostedStumps30_v1,"Stagewise boosting of 30 depth-1 stumps (lr=0.1), additive per-feature output"
+,14.88,0.5669,evolved,QuartileGAM_v1,"Piecewise-linear GAM: {x, (x-q25)_+, (x-q50)_+, (x-q75)_+} per feature, Lasso-select 12, OLS refit"
+,25.69,0.7134,evolved,BayesianRidge_v1,BayesianRidge linear regression with standardized features
+,38.88,0.6752,evolved,CenteredOLS_v1,Plain centered OLS; clean y = intercept + sum c_i*x_i output
+,43.06,0.6369,evolved,TopCorrOLS_v1,"Top-6 features by |correlation with y|, OLS refit"
+,26.69,0.7134,evolved,ElasticNetLow01_v1,"ElasticNetCV with low l1_ratio=0.05-0.5, mostly ridge regularization"
+,21.69,0.5414,evolved,LinearResidualTree_v1,OLS base + depth-3 decision tree on residuals for correction
+,27.69,0.7134,evolved,TinyDTDepth2_v1,Depth-2 decision tree (4 leaves)
