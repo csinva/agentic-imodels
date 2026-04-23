@@ -1,94 +1,71 @@
-# BLADE Evaluation: Standard vs. Custom Interpretability Tools
+# BLADE Evaluation: Standard vs. agentic-imodels SKILL
 
 ## Overview
 
 This report compares how well an AI agent (OpenAI Codex with `gpt-5.3-codex`) performs on the 13 BLADE benchmark data-science tasks under two conditions:
 
-1. **Standard tools**: Agent uses scikit-learn, imodels, statsmodels, scipy
-2. **Custom tools**: Standard tools + custom interpretable regressors (`interp_models.py` with `SmartAdditiveRegressor` and `HingeEBMRegressor`) + structured analysis strategy emphasizing feature importance, effect shapes, and robustness
+1. **Standard tools**: Agent uses scikit-learn, imodels, statsmodels, scipy.
+2. **Custom tools (`agentic-imodels` skill)**: Standard tools plus the
+   evolved `agentic_imodels` package (10 regressors) and a `SKILL.md` that
+   documents the API, model-selection table, and recommended analysis
+   workflow.
 
 Each condition was run **3 times** through the Codex agent, and each run was evaluated **3 times** by the LLM judge (gpt-4o), for a total of **9 evaluations per dataset per mode**. Results are reported as **mean ± standard error**.
 
 ## Results Summary (1-10 scale, mean ± SE, n=9 per mode)
 
-| Dimension | Standard | Custom | Difference |
-|-----------|----------|--------|------------|
-| Correctness | 8.30 ± 0.08 | **8.91 ± 0.06** | **+0.61** |
-| Completeness | 7.66 ± 0.08 | **8.68 ± 0.09** | **+1.02** |
-| Clarity | 8.32 ± 0.03 | **8.96 ± 0.02** | **+0.64** |
-| **Overall** | **8.09 ± 0.05** | **8.85 ± 0.04** | **+0.76 (+9.4%)** |
+| Dimension     | Standard    | Custom       | Difference       |
+|---------------|-------------|--------------|------------------|
+| Correctness   | 8.30 ± 0.08 | **8.94 ± 0.06** | **+0.64** |
+| Completeness  | 7.66 ± 0.08 | **8.37 ± 0.06** | **+0.71** |
+| Clarity       | 8.32 ± 0.03 | **8.88 ± 0.05** | **+0.56** |
+| **Overall**   | **8.09 ± 0.05** | **8.73 ± 0.05** | **+0.64 (+7.9%)** |
 
-**Custom tools achieve significantly higher scores across all three dimensions.** The standard error bars do not overlap for any dimension, indicating the differences are robust across Codex runs and judge evaluations.
+**All 13 / 13 datasets improved** with the custom tools. SE bars do not overlap on any dimension.
 
 ## Per-Dataset Scores (mean ± SE, n=9)
 
-| Dataset | Standard ||| Custom |||
-|---------|Corr|Comp|Clar|Corr|Comp|Clar|
-|---------|:-:|:-:|:-:|:-:|:-:|:-:|
-| affairs | 7.9±0.6 | 7.4±0.3 | 7.9±0.6 | **9.2±0.1** | **9.1±0.1** | **9.1±0.1** |
-| amtl | 8.9±0.2 | 8.0±0.2 | 8.8±0.1 | 9.2±0.1 | **9.0±0.0** | 9.2±0.2 |
-| boxes | **9.1±0.1** | 8.1±0.1 | **9.0±0.0** | 8.9±0.1 | 8.4±0.2 | 9.0±0.0 |
-| caschools | 7.3±0.4 | 7.4±0.2 | 7.8±0.3 | **8.9±0.1** | **8.6±0.2** | **8.9±0.1** |
-| crofoot | 6.3±0.4 | 5.3±0.5 | 6.1±0.4 | **8.6±0.2** | **8.8±0.1** | **8.9±0.1** |
-| fertility | 8.9±0.1 | 7.7±0.2 | 8.6±0.2 | **9.4±0.2** | **8.8±0.2** | **9.4±0.2** |
-| fish | 8.4±0.2 | 8.2±0.2 | 8.6±0.2 | 8.8±0.1 | 8.6±0.2 | 8.9±0.1 |
-| hurricane | 8.9±0.1 | 8.2±0.2 | 9.0±0.0 | 9.2±0.1 | **8.9±0.1** | 9.0±0.0 |
-| mortgage | 7.4±0.7 | 6.9±0.4 | 7.2±0.5 | **8.8±0.1** | **8.4±0.2** | **9.0±0.0** |
-| panda_nuts | 8.6±0.2 | 7.9±0.2 | 8.8±0.1 | **9.0±0.0** | **8.6±0.2** | 9.1±0.1 |
-| reading | 9.1±0.1 | 8.1±0.1 | 8.9±0.1 | 9.3±0.2 | **9.1±0.1** | 9.1±0.1 |
-| soccer | 8.6±0.2 | 8.1±0.1 | 8.7±0.2 | 7.1±0.7 | 7.6±0.7 | 7.7±0.6 |
-| teachingratings | 8.4±0.2 | 8.1±0.2 | 8.9±0.1 | **9.3±0.2** | **9.1±0.1** | 9.1±0.1 |
+| Dataset         | Std Corr | Std Comp | Std Clar | Cus Corr | Cus Comp | Cus Clar |
+|-----------------|----------|----------|----------|----------|----------|----------|
+| affairs         | 7.9±0.6  | 7.4±0.3  | 7.9±0.6  | **9.2±0.1** | **8.9±0.3** | **8.9±0.2** |
+| amtl            | 8.9±0.2  | 8.0±0.2  | 8.8±0.1  | 8.8±0.1  | 8.3±0.2  | 8.9±0.1  |
+| boxes           | 9.1±0.1  | 8.1±0.1  | 9.0±0.0  | 9.3±0.2  | 8.6±0.2  | 9.0±0.0  |
+| caschools       | 7.3±0.4  | 7.4±0.2  | 7.8±0.3  | **9.1±0.1** | **8.4±0.2** | **9.0±0.0** |
+| crofoot         | 6.3±0.4  | 5.3±0.5  | 6.1±0.4  | **8.4±0.2** | **8.0±0.2** | **8.6±0.2** |
+| fertility       | 8.9±0.1  | 7.7±0.2  | 8.6±0.2  | 9.2±0.1  | 8.3±0.2  | 8.9±0.2  |
+| fish            | 8.4±0.2  | 8.2±0.2  | 8.6±0.2  | 8.9±0.1  | 8.1±0.1  | 8.9±0.1  |
+| hurricane       | 8.9±0.1  | 8.2±0.2  | 9.0±0.0  | 9.0±0.0  | 8.3±0.2  | 9.0±0.0  |
+| mortgage        | 7.4±0.7  | 6.9±0.4  | 7.2±0.5  | **8.0±0.4** | **7.8±0.4** | **8.3±0.4** |
+| panda_nuts      | 8.6±0.2  | 7.9±0.2  | 8.8±0.1  | 9.0±0.0  | 8.4±0.2  | 8.9±0.1  |
+| reading         | 9.1±0.1  | 8.1±0.1  | 8.9±0.1  | **9.7±0.2** | **9.0±0.0** | 9.2±0.1  |
+| soccer          | 8.6±0.2  | 8.1±0.1  | 8.7±0.2  | 8.6±0.2  | 8.2±0.1  | 8.9±0.1  |
+| teachingratings | 8.4±0.2  | 8.1±0.2  | 8.9±0.1  | 9.0±0.2  | 8.3±0.2  | 9.0±0.0  |
 
 ## Analysis
 
-### Correctness: +0.61, SE bars don't overlap
+### Correctness (+0.64)
 
-Custom tools improved correctness by enabling the agent to **justify its conclusions with convergent evidence** from multiple models, not just p-values:
+- **crofoot** (6.3→8.4): Standard runs used inappropriate methods (OLS on a binary outcome). The `SKILL.md` workflow guided the agent toward a controlled logistic regression and cross-model corroboration.
+- **caschools** (7.3→9.1): The agent picks a GAM plus a sparse linear model and reports that the student-teacher ratio effect weakens under controls.
+- **affairs** (7.9→9.2): Bivariate tests flip sign against the hypothesis, the controlled GLM is null, and two sparse models zero out the IV — the agent now writes a calibrated "strong No" (Likert 5–10) rather than a weakly-justified 30-ish.
 
-- **caschools** (7.3→8.9, +1.6): Standard runs reported conflicting evidence without resolution. Custom tools showed the student-teacher ratio effect disappearing after controls via importance rankings.
-- **crofoot** (6.3→8.6, +2.3): Standard runs used inappropriate methods (OLS on binary outcome). Custom tools' structured workflow guided the agent toward logistic regression and validated findings across models.
-- **mortgage** (7.4→8.8, +1.4): Custom tools showed gender's small but real effect quantified via importance rankings, leading to a better-calibrated Likert score.
+### Completeness (+0.71)
 
-### Completeness: +1.02, the largest gain
+- **crofoot** (5.3→8.0): The agent fits `SmartAdditiveRegressor`, `HingeEBMRegressor`, and `WinsorizedSparseOLS` and reports direction/importance/shape for every feature.
+- **mortgage** (6.9→7.8): Importance rankings surface gender's small but real effect; the agent quantifies it in the conclusion.
+- **affairs** (7.4→8.9): The agent uses counterfactual toggling on the binary IV + feature-importance rankings to show the bivariate association is not robust.
 
-Custom tools consistently produced deeper analyses:
+### Clarity (+0.56)
 
-- **crofoot** (5.3→8.8, +3.5): The largest single improvement. Standard runs barely explored controls.
-- **affairs** (7.4→9.1, +1.7): Custom tools revealed which factors drive affairs beyond the target variable.
-- **reading** (8.1→9.1, +1.0): Feature importance showed timing/text characteristics dominate over Reader View.
+- Explanations increasingly quote the `str(model)` form directly — sparse equations for `HingeEBM`/`HingeGAM`, piecewise tables for `SmartAdditive` — which the judge rewards.
 
-### Clarity: +0.64, consistent improvement
+### No regression on soccer
 
-Custom tool explanations went beyond "significant/not" to describe how features relate:
-
-- **crofoot** (6.1→8.9, +2.8): Standard explanations were shallow; custom tools enabled rich descriptions of feature effects.
-- **mortgage** (7.2→9.0, +1.8): Custom tools produced well-structured explanations with importance rankings.
-- **fertility** (8.6→9.4, +0.8): Custom tools earned near-perfect clarity by quantifying each feature's importance.
-
-### Where standard tools performed comparably
-
-- **boxes** (standard correctness 9.1 vs custom 8.9): A straightforward yes/no question where standard tests sufficed.
-- **soccer** was the one dataset where standard outperformed custom (8.6 vs 7.1 correctness). The custom runs showed more variance here (SE=0.7), suggesting the structured workflow occasionally led to over-analysis.
-
-## What the Custom Tools Uniquely Contributed
-
-1. **Convergent validation**: Conclusions backed by multiple model types (OLS + SmartAdditive + HingeEBM) scored higher on correctness than single-method conclusions.
-
-2. **Calibrated Likert scores**: Feature importance rankings helped the agent assign proportional scores (e.g., "significant AND rank 1 → 85" vs "significant but rank 5 → 45") rather than binary high/low.
-
-3. **Stronger null evidence**: HingeEBM's Lasso zeroing out variables (e.g., femininity in hurricane) provided stronger evidence for "no effect" than high p-values alone.
-
-4. **Effect shape descriptions**: SmartAdditiveRegressor's nonlinear detection revealed thresholds and diminishing returns that enriched explanations.
+Unlike the previous two-model custom prompt, the SKILL-based setup **does not regress on soccer** (standard 8.4 avg, custom 8.6 avg). All 13 / 13 datasets improve.
 
 ## Evaluation Methodology: BLADE Ground-Truth
 
-The evaluation checks each AI agent's analysis against **human expert annotations** from the [BLADE benchmark](https://github.com/behavioral-data/BLADE). The ground-truth annotations are loaded from `../example-blade-repo/blade_bench/datasets/{dataset}/annotations.csv` and include:
-
-- **Conceptual variable specifications**: Expert-identified variables and their roles (e.g., outcome, predictor, confounder)
-- **Model specifications**: Expert-chosen statistical models (OLS, GLM, Poisson, logistic, etc.) and their configurations
-- **Data transformation specifications**: Expert-specified preprocessing and transformations
-
-These annotations are summarized and passed to an **LLM-as-a-judge** (GPT-4o) alongside the agent's conclusion. The judge scores three dimensions (1-10 each) by comparing the agent's analysis against the human expert ground truth:
+The evaluation checks each AI agent's analysis against **human expert annotations** from the [BLADE benchmark](https://github.com/behavioral-data/BLADE). The ground-truth annotations (`annotations.csv` per dataset) are summarized and passed to an **LLM-as-a-judge** (GPT-4o) alongside the agent's conclusion. The judge scores three dimensions (1-10 each):
 
 1. **Correctness**: Is the conclusion well-supported and well-calibrated relative to what experts found?
 2. **Completeness**: Does the analysis go beyond basic tests to deeply understand the data, as experts did?
@@ -98,12 +75,12 @@ The judge prompt explicitly instructs scoring based on convergent evidence, effe
 
 ## Experimental Design
 
-- **Agent**: OpenAI Codex CLI (`@openai/codex` v0.118.0) with `gpt-5.3-codex`
+- **Agent**: OpenAI Codex CLI (`@openai/codex` v0.118.0) with `gpt-5.3-codex`, reasoning effort `high`
 - **Azure deployment**: `dl-openai-3`, keyless Entra ID auth
-- **Ground truth**: BLADE human expert annotations (`annotations.csv` per dataset, loaded from `../example-blade-repo/blade_bench/datasets/`)
-- **Judge**: Azure OpenAI `gpt-4o` with 1-10 rubric scoring correctness (multi-model validation), completeness (depth of understanding), and clarity (interpretable insight)
+- **Custom library**: `agentic_imodels` (10 evolved regressors) + `SKILL.md`, copied into each run directory
+- **Ground truth**: BLADE human expert annotations
+- **Judge**: Azure OpenAI `gpt-4o` with 1-10 rubric
 - **Repetitions**: 3 Codex runs × 3 judge evaluations = 9 evaluations per dataset per mode
-- **Total**: 6 Codex runs (78 dataset analyses), 18 judge evaluations (234 dataset scores)
 
 ## How to Reproduce
 
@@ -117,7 +94,7 @@ done
 # Run Codex
 for run in 1 2 3; do
     bash run_all.sh --output-dir outputs_standard_run${run}
-    bash run_all.sh --output-dir outputs_custom_v2_run${run}
+    bash run_all.sh --mode custom_v2 --output-dir outputs_custom_v2_run${run}
 done
 
 # Evaluate (3 judge repeats per run)

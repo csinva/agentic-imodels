@@ -1,202 +1,297 @@
 import json
-from pathlib import Path
+import re
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-import scipy.stats as st
-import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from scipy import stats
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-
-IV = "reader_view"
-DV = "speed"
-DYSLEXIA_FLAG = "dyslexia_bin"
-
-
-def top_effects(effects, exclude=None, k=3):
-    exclude = exclude or set()
-    items = []
-    for name, meta in effects.items():
-        if name in exclude:
-            continue
-        imp = float(meta.get("importance", 0.0))
-        if imp > 0:
-            items.append((name, imp, meta.get("direction", "unknown"), int(meta.get("rank", 0))))
-    items.sort(key=lambda x: (-x[1], x[0]))
-    return items[:k]
+from agentic_imodels import (
+    HingeEBMRegressor,
+    HingeGAMRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def as_float(x, default=np.nan):
-    try:
-        return float(x)
-    except Exception:
-        return float(default)
+INFO_PATH = "info.json"
+DATA_PATH = "reading.csv"
+CONCLUSION_PATH = "conclusion.txt"
 
 
-def main():
-    info = json.loads(Path("info.json").read_text())
-    question = info.get("research_questions", ["Unknown question"])[0]
+def cohen_d(x: pd.Series, y: pd.Series) -> float:
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    nx, ny = len(x), len(y)
+    if nx < 2 or ny < 2:
+        return float("nan")
+    vx = x.var(ddof=1)
+    vy = y.var(ddof=1)
+    pooled = np.sqrt(((nx - 1) * vx + (ny - 1) * vy) / (nx + ny - 2))
+    if pooled == 0:
+        return 0.0
+    return float((x.mean() - y.mean()) / pooled)
 
-    df = pd.read_csv("reading.csv")
 
-    print("=" * 80)
+def parse_linear_terms(model_text: str) -> Dict[int, float]:
+    terms = {}
+    for coef_str, idx_str in re.findall(r"([+-]?\d+\.\d+)\*x(\d+)", model_text):
+        terms[int(idx_str)] = float(coef_str)
+    return terms
+
+
+def parse_excluded_features(model_text: str) -> List[int]:
+    excluded: List[int] = []
+    for line in model_text.splitlines():
+        ll = line.lower()
+        if "excluded" in ll and ":" in line:
+            rhs = line.split(":", 1)[1]
+            excluded.extend(int(s) for s in re.findall(r"x(\d+)", rhs))
+    return sorted(set(excluded))
+
+
+def main() -> None:
+    with open(INFO_PATH, "r", encoding="utf-8") as f:
+        info = json.load(f)
+
+    question = info["research_questions"][0]
     print("Research question:")
     print(question)
-    print("=" * 80)
-    print(f"Raw data shape: {df.shape}")
+    print()
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    print(f"Numeric columns ({len(numeric_cols)}): {numeric_cols}")
+    df = pd.read_csv(DATA_PATH)
+    df["log_speed"] = np.log1p(df["speed"])
 
-    # Focus the main analysis on individuals with dyslexia to match the question.
-    if DYSLEXIA_FLAG in df.columns:
-        dys_df = df[df[DYSLEXIA_FLAG] == 1].copy()
-    else:
-        dys_df = df.copy()
+    print("=== Data Overview ===")
+    print("shape:", df.shape)
+    print("columns:", list(df.columns))
+    print()
 
-    print(f"Rows for dyslexia subgroup: {len(dys_df)}")
+    print("=== Missingness (top 12) ===")
+    print(df.isna().sum().sort_values(ascending=False).head(12))
+    print()
 
-    # Step 1: Summary stats, distributions, bivariate relationship.
-    print("\n[Step 1] Exploration")
-    subset_basic = dys_df[[IV, DV]].dropna().copy()
-    print("Subgroup summary (IV and DV):")
-    print(subset_basic.describe().T)
+    numeric_cols = [
+        "reader_view",
+        "running_time",
+        "adjusted_running_time",
+        "scrolling_time",
+        "num_words",
+        "correct_rate",
+        "img_width",
+        "age",
+        "dyslexia",
+        "gender",
+        "retake_trial",
+        "dyslexia_bin",
+        "Flesch_Kincaid",
+        "speed",
+        "log_speed",
+    ]
+    present_numeric = [c for c in numeric_cols if c in df.columns]
 
-    group_stats = subset_basic.groupby(IV)[DV].agg(["count", "mean", "median", "std"])
-    print("\nSpeed by reader_view within dyslexia subgroup:")
-    print(group_stats)
+    print("=== Summary Stats (numeric) ===")
+    print(df[present_numeric].describe().T)
+    print()
 
-    corr_pearson = subset_basic[[IV, DV]].corr(method="pearson").iloc[0, 1]
-    corr_spearman = subset_basic[[IV, DV]].corr(method="spearman").iloc[0, 1]
-    print(f"\nPearson corr({IV}, {DV}) = {corr_pearson:.4f}")
-    print(f"Spearman corr({IV}, {DV}) = {corr_spearman:.4f}")
+    print("=== Distribution Notes ===")
+    print(f"speed skewness: {df['speed'].skew():.3f}")
+    print(f"log_speed skewness: {df['log_speed'].skew():.3f}")
+    print("speed quantiles:")
+    print(df["speed"].quantile([0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]))
+    print()
 
-    speed_0 = subset_basic.loc[subset_basic[IV] == 0, DV]
-    speed_1 = subset_basic.loc[subset_basic[IV] == 1, DV]
-    t_res = st.ttest_ind(speed_1, speed_0, equal_var=False, nan_policy="omit")
-    print(
-        f"Welch t-test (speed|reader_view=1 vs 0): t={as_float(t_res.statistic):.4f}, "
-        f"p={as_float(t_res.pvalue):.4g}"
+    corr = (
+        df[present_numeric]
+        .corr(numeric_only=True)["speed"]
+        .drop(labels=["speed"])  # only predictors
+        .sort_values(key=np.abs, ascending=False)
+    )
+    print("=== Correlation With speed (absolute rank) ===")
+    print(corr)
+    print()
+
+    # Primary analysis subset: individuals with dyslexia
+    dys = df[df["dyslexia_bin"] == 1].copy()
+    print("=== Dyslexia Subset ===")
+    print("rows:", len(dys), "unique participants:", dys["uuid"].nunique())
+    print()
+
+    bivar = dys[["reader_view", "speed", "log_speed"]].dropna()
+    grp0 = bivar.loc[bivar["reader_view"] == 0, "speed"]
+    grp1 = bivar.loc[bivar["reader_view"] == 1, "speed"]
+    grp0_log = bivar.loc[bivar["reader_view"] == 0, "log_speed"]
+    grp1_log = bivar.loc[bivar["reader_view"] == 1, "log_speed"]
+
+    print("=== Bivariate reader_view -> speed in dyslexia subset ===")
+    print(dys.groupby("reader_view")["speed"].agg(["mean", "median", "std", "count"]))
+    ttest_log = stats.ttest_ind(grp1_log, grp0_log, equal_var=False)
+    ttest_raw = stats.ttest_ind(grp1, grp0, equal_var=False)
+    mwu = stats.mannwhitneyu(grp1, grp0, alternative="two-sided")
+    d_val = cohen_d(grp1_log, grp0_log)
+    print(f"Welch t-test (log_speed): p={ttest_log.pvalue:.4g}")
+    print(f"Welch t-test (speed): p={ttest_raw.pvalue:.4g}")
+    print(f"Mann-Whitney U (speed): p={mwu.pvalue:.4g}")
+    print(f"Cohen's d (log_speed, reader_view 1-0): {d_val:.4f}")
+    print()
+
+    # Controlled OLS inside dyslexia subset
+    controls_formula = (
+        "age + retake_trial + num_words + Flesch_Kincaid + img_width + "
+        "C(gender) + C(device) + C(education) + C(language) + "
+        "C(english_native) + C(page_id)"
+    )
+    formula_dys = f"log_speed ~ reader_view + {controls_formula}"
+
+    cols_for_ols = [
+        "uuid",
+        "log_speed",
+        "reader_view",
+        "age",
+        "retake_trial",
+        "num_words",
+        "Flesch_Kincaid",
+        "img_width",
+        "gender",
+        "device",
+        "education",
+        "language",
+        "english_native",
+        "page_id",
+    ]
+    dys_ols_df = dys[cols_for_ols].dropna().copy()
+
+    ols_dys = smf.ols(formula_dys, data=dys_ols_df).fit(
+        cov_type="cluster", cov_kwds={"groups": dys_ols_df["uuid"]}
     )
 
-    # Step 2: OLS with controls in dyslexia subgroup.
-    print("\n[Step 2] OLS with controls")
-    feature_cols = [c for c in numeric_cols if c != DV]
+    print("=== Controlled OLS (dyslexia subset; clustered by participant uuid) ===")
+    print(ols_dys.summary())
+    beta_dys = float(ols_dys.params["reader_view"])
+    p_dys = float(ols_dys.pvalues["reader_view"])
+    ci_dys = ols_dys.conf_int().loc["reader_view"].tolist()
+    print(
+        f"reader_view coefficient (log_speed): {beta_dys:.6f}, "
+        f"p={p_dys:.4g}, 95% CI=[{ci_dys[0]:.6f}, {ci_dys[1]:.6f}]"
+    )
+    print()
 
-    # Remove constant columns in subgroup (e.g., dyslexia_bin can be constant==1 here).
-    usable = dys_df[feature_cols + [DV]].dropna().copy()
-    non_constant_features = [c for c in feature_cols if usable[c].nunique() > 1]
+    # Robustness check in full sample with interaction term
+    full_cols = cols_for_ols + ["dyslexia_bin"]
+    full_df = df[full_cols].dropna().copy()
+    formula_inter = f"log_speed ~ reader_view * dyslexia_bin + {controls_formula}"
+    ols_inter = smf.ols(formula_inter, data=full_df).fit(
+        cov_type="cluster", cov_kwds={"groups": full_df["uuid"]}
+    )
+    t_effect_dys = ols_inter.t_test("reader_view + reader_view:dyslexia_bin = 0")
+    effect_dys_inter = float(t_effect_dys.effect[0])
+    p_dys_inter = float(t_effect_dys.pvalue)
 
-    X = sm.add_constant(usable[non_constant_features], has_constant="add")
-    y = usable[DV]
-    ols = sm.OLS(y, X).fit()
-    print(ols.summary())
+    print("=== Full-sample interaction robustness check ===")
+    print(ols_inter.summary())
+    print(
+        "Implied reader_view effect for dyslexia_bin=1 "
+        f"from interaction model: {effect_dys_inter:.6f}, p={p_dys_inter:.4g}"
+    )
+    print()
 
-    ols_coef = as_float(ols.params.get(IV, np.nan))
-    ols_p = as_float(ols.pvalues.get(IV, np.nan))
+    # agentic_imodels workflow: fit multiple interpretable models
+    feature_cols = [
+        "reader_view",
+        "age",
+        "retake_trial",
+        "num_words",
+        "Flesch_Kincaid",
+        "img_width",
+        "gender",
+        "device",
+        "education",
+        "language",
+        "english_native",
+        "page_id",
+    ]
+    ai_df = dys[feature_cols + ["log_speed"]].dropna().copy()
+    X = pd.get_dummies(ai_df[feature_cols], drop_first=True)
+    y = ai_df["log_speed"]
 
-    # Robustness check: interaction in full sample.
-    interaction_coef = np.nan
-    interaction_p = np.nan
-    if DYSLEXIA_FLAG in df.columns:
-        full_feature_cols = [c for c in numeric_cols if c != DV]
-        full = df[full_feature_cols + [DV]].dropna().copy()
-        if IV in full.columns and DYSLEXIA_FLAG in full.columns:
-            full["reader_view_x_dyslexia"] = full[IV] * full[DYSLEXIA_FLAG]
-            full_non_constant = [c for c in full.columns if c != DV and full[c].nunique() > 1]
-            X_full = sm.add_constant(full[full_non_constant], has_constant="add")
-            y_full = full[DV]
-            ols_inter = sm.OLS(y_full, X_full).fit()
-            print("\nFull-sample interaction model summary:")
-            print(ols_inter.summary())
-            interaction_coef = as_float(ols_inter.params.get("reader_view_x_dyslexia", np.nan))
-            interaction_p = as_float(ols_inter.pvalues.get("reader_view_x_dyslexia", np.nan))
+    print("=== agentic_imodels Feature Map (x-index -> feature) ===")
+    feature_map = {i: c for i, c in enumerate(X.columns)}
+    for i, c in feature_map.items():
+        print(f"x{i}: {c}")
+    print()
 
-    # Step 3: Interpretable custom models.
-    print("\n[Step 3] Interpretable models")
-    X_model = usable[non_constant_features]
-    y_model = usable[DV]
+    model_classes = [
+        WinsorizedSparseOLSRegressor,  # honest + Lasso-style sparsity evidence
+        HingeGAMRegressor,             # honest hinge GAM
+        HingeEBMRegressor,             # high-rank decoupled model
+    ]
 
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_model, y_model)
-    smart_effects = smart.feature_effects()
-    print("SmartAdditiveRegressor:")
-    print(smart)
-    print("Smart effects:")
-    print(smart_effects)
+    reader_idx = list(X.columns).index("reader_view")
+    reader_effects: Dict[str, Tuple[float, bool]] = {}
+    top_effects: Dict[str, List[Tuple[str, float]]] = {}
 
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_model, y_model)
-    hinge_effects = hinge.feature_effects()
-    print("\nHingeEBMRegressor:")
-    print(hinge)
-    print("Hinge effects:")
-    print(hinge_effects)
+    for cls in model_classes:
+        model = cls()
+        model.fit(X, y)
+        model_text = str(model)
 
-    iv_smart = smart_effects.get(IV, {"direction": "zero", "importance": 0.0, "rank": 0})
-    iv_hinge = hinge_effects.get(IV, {"direction": "zero", "importance": 0.0, "rank": 0})
+        print(f"=== {cls.__name__} ===")
+        print(model_text)
+        print()
 
-    smart_top = top_effects(smart_effects, exclude={IV}, k=3)
-    hinge_top = top_effects(hinge_effects, exclude={IV}, k=3)
+        terms = parse_linear_terms(model_text)
+        excluded = parse_excluded_features(model_text)
 
-    # Step 4: Score and rich explanation.
-    mean_0 = as_float(group_stats.loc[0, "mean"]) if 0 in group_stats.index else np.nan
-    mean_1 = as_float(group_stats.loc[1, "mean"]) if 1 in group_stats.index else np.nan
-    mean_diff = mean_1 - mean_0 if np.isfinite(mean_0) and np.isfinite(mean_1) else np.nan
+        reader_coef = terms.get(reader_idx, 0.0)
+        reader_excluded = reader_idx in excluded and reader_idx not in terms
+        reader_effects[cls.__name__] = (reader_coef, reader_excluded)
 
-    smart_imp = as_float(iv_smart.get("importance", 0.0), 0.0)
-    hinge_imp = as_float(iv_hinge.get("importance", 0.0), 0.0)
+        mapped_terms: List[Tuple[str, float]] = []
+        for j, coef in terms.items():
+            mapped_terms.append((feature_map.get(j, f"x{j}"), coef))
+        mapped_terms = sorted(mapped_terms, key=lambda t: abs(t[1]), reverse=True)
+        top_effects[cls.__name__] = mapped_terms[:8]
 
-    # Conservative evidence-to-score mapping per rubric.
-    if (
-        (not np.isfinite(ols_p) or ols_p >= 0.10)
-        and (not np.isfinite(interaction_p) or interaction_p >= 0.10)
-        and smart_imp < 0.01
-        and hinge_imp < 0.01
-    ):
-        score = 8
-    elif np.isfinite(ols_p) and ols_p < 0.05 and ols_coef > 0 and smart_imp >= 0.05:
-        score = 85
-    elif np.isfinite(ols_p) and ols_p < 0.10 and ols_coef > 0:
-        score = 60
-    elif np.isfinite(ols_p) and ols_p < 0.05 and ols_coef < 0:
-        score = 20
+        print(f"reader_view in {cls.__name__}: coef={reader_coef:.6f}, excluded={reader_excluded}")
+        print(f"Top non-zero terms in {cls.__name__} (by |coef|):")
+        for name, coef in top_effects[cls.__name__]:
+            print(f"  {name}: {coef:.6f}")
+        print()
+
+    # Calibrated Likert score based on combined evidence
+    pvals_non_sig = (p_dys >= 0.05) and (p_dys_inter >= 0.05) and (ttest_log.pvalue >= 0.05)
+    excluded_count = sum(1 for _, (_, excluded) in reader_effects.items() if excluded)
+    max_abs_reader_coef = max(abs(v[0]) for v in reader_effects.values())
+
+    if pvals_non_sig and excluded_count >= 2 and max_abs_reader_coef < 0.01:
+        response = 8
+    elif pvals_non_sig and max_abs_reader_coef < 0.03:
+        response = 18
+    elif (p_dys < 0.05) or (p_dys_inter < 0.05):
+        response = 70
     else:
-        score = 35
-
-    score = int(max(0, min(100, round(score))))
-
-    smart_top_txt = "; ".join(
-        [f"{n} ({imp:.1%}, {d})" for n, imp, d, _ in smart_top]
-    ) or "none"
-    hinge_top_txt = "; ".join(
-        [f"{n} ({imp:.1%}, {d})" for n, imp, d, _ in hinge_top]
-    ) or "none"
+        response = 35
 
     explanation = (
-        f"Question: whether Reader View improves reading speed for individuals with dyslexia. "
-        f"In the dyslexia subgroup, mean speed was {mean_1:.2f} with Reader View vs {mean_0:.2f} without "
-        f"(difference {mean_diff:.2f}); bivariate Pearson correlation was {corr_pearson:.3f} and Welch t-test "
-        f"p={as_float(t_res.pvalue):.3g}, indicating no clear positive association. "
-        f"In controlled OLS (numeric covariates), Reader View coefficient was {ols_coef:.2f} (p={ols_p:.3g}), "
-        f"so the adjusted effect is not statistically significant and slightly negative. "
-        f"A full-sample interaction model gave reader_view*dyslexia coefficient {interaction_coef:.2f} "
-        f"(p={interaction_p:.3g}), providing no evidence that dyslexic readers benefit more from Reader View. "
-        f"SmartAdditiveRegressor assigned Reader View importance {smart_imp:.1%} (direction={iv_smart.get('direction')}, "
-        f"rank={iv_smart.get('rank')}), while HingeEBMRegressor assigned {hinge_imp:.1%} "
-        f"(direction={iv_hinge.get('direction')}, rank={iv_hinge.get('rank')}). "
-        f"Both interpretable models effectively zero out Reader View, so the effect shape is negligible rather than "
-        f"a meaningful linear or threshold pattern. Confounders dominate: SmartAdditive top features were {smart_top_txt}; "
-        f"Hinge top features were {hinge_top_txt}. Overall, evidence across bivariate, controlled OLS, and both "
-        f"interpretable models does not support a speed improvement from Reader View for dyslexic individuals."
+        "In participants with dyslexia, Reader View does not show evidence of improving reading speed. "
+        f"Bivariate tests are null (Welch t-test on log-speed p={ttest_log.pvalue:.3f}; "
+        f"Mann-Whitney p={mwu.pvalue:.3f}; Cohen's d={d_val:.3f}). "
+        "In controlled OLS with demographic, device, language, education, and page controls, "
+        f"the Reader View coefficient is {beta_dys:.4f} on log-speed (p={p_dys:.3f}, "
+        f"95% CI [{ci_dys[0]:.4f}, {ci_dys[1]:.4f}]). "
+        "A full-sample interaction model also gives a null implied effect for dyslexic readers "
+        f"(effect={effect_dys_inter:.4f}, p={p_dys_inter:.3f}). "
+        f"Interpretable agentic_imodels agree: WinsorizedSparseOLS keeps only a tiny reader_view term "
+        f"({reader_effects['WinsorizedSparseOLSRegressor'][0]:.4f}), while HingeGAM and HingeEBM exclude "
+        "reader_view (zeroed coefficients). This is strong null evidence under the SKILL rubric "
+        "(non-significant + low/zero importance across sparse and hinge models)."
     )
 
-    out = {"response": score, "explanation": explanation}
-    Path("conclusion.txt").write_text(json.dumps(out))
+    with open(CONCLUSION_PATH, "w", encoding="utf-8") as f:
+        json.dump({"response": int(response), "explanation": explanation}, f)
 
-    print("\n[Step 4] Conclusion JSON written to conclusion.txt")
-    print(json.dumps(out, indent=2))
+    print("=== Final Likert Decision ===")
+    print(json.dumps({"response": int(response), "explanation": explanation}, indent=2))
 
 
 if __name__ == "__main__":

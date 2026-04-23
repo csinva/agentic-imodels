@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+mortgage,ok,72,8,9,9,"The AI agent reaches a defensible conclusion supported by logistic regression and interpretable models, justifying the Likert score. Completeness is high with controls for confounders and use of different models to explore effects. Clarity is strong, detailing the direction and magnitude of the gender effect, and explaining evidence with a well-structured narrative."

@@ -1,247 +1,306 @@
 import json
-from pathlib import Path
+import warnings
 
 import numpy as np
 import pandas as pd
+import patsy
 import statsmodels.api as sm
 from scipy import stats
+from sklearn.metrics import mean_squared_error, r2_score
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+from agentic_imodels import (
+    HingeEBMRegressor,
+    HingeGAMRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def safe_float(x):
-    try:
-        return float(x)
-    except Exception:
+def safe_corr(a, b):
+    if np.std(a) < 1e-12 or np.std(b) < 1e-12:
         return np.nan
+    return float(np.corrcoef(a, b)[0, 1])
 
 
-def direction_sign(direction: str) -> int:
-    d = (direction or "").lower()
-    if "positive" in d or "increasing" in d:
-        return 1
-    if "negative" in d or "decreasing" in d:
-        return -1
-    return 0
+def counterfactual_effect(model, X, feature, low, high):
+    x_low = X.copy()
+    x_high = X.copy()
+    x_low[feature] = low
+    x_high[feature] = high
+    pred_low = model.predict(x_low.values)
+    pred_high = model.predict(x_high.values)
+    return float(np.mean(pred_high - pred_low))
 
 
-def get_effect(effects: dict, feature: str) -> dict:
-    eff = effects.get(feature, {}) if effects else {}
-    return {
-        "direction": eff.get("direction", "zero"),
-        "importance": safe_float(eff.get("importance", 0.0)),
-        "rank": int(eff.get("rank", 0) or 0),
-    }
+def extract_hinge_ebm_effective_coefs(model):
+    coefs = model.lasso_.coef_
+    n_sel = len(model.selected_)
+    eff = {}
+    for i in range(n_sel):
+        j_orig = int(model.selected_[i])
+        eff[j_orig] = float(coefs[i])
+    for idx, (feat_idx, _, direction) in enumerate(model.hinge_info_):
+        j_orig = int(model.selected_[feat_idx])
+        c = float(coefs[n_sel + idx])
+        if abs(c) < 1e-8:
+            continue
+        if direction == "pos":
+            eff[j_orig] = eff.get(j_orig, 0.0) + c
+        else:
+            eff[j_orig] = eff.get(j_orig, 0.0) - c
+    return eff
 
 
-def summarize_top_features(effects: dict, k: int = 3):
-    rows = []
-    for name, info in (effects or {}).items():
-        imp = safe_float(info.get("importance", 0.0))
-        rank = int(info.get("rank", 0) or 0)
-        direction = info.get("direction", "zero")
-        if imp > 0 and rank > 0:
-            rows.append((rank, name, imp, direction))
-    rows.sort(key=lambda x: x[0])
-    return rows[:k]
-
-
-def score_response(
-    ols_coef,
-    ols_p,
-    bivar_diff,
-    smart_human_imp,
-    smart_human_dir,
-    hinge_human_imp,
-    hinge_human_dir,
-):
-    # Base scoring by controlled regression (primary evidence)
-    if ols_p < 0.01:
-        score = 90 if ols_coef > 0 else 10
-    elif ols_p < 0.05:
-        score = 80 if ols_coef > 0 else 20
-    elif ols_p < 0.10:
-        score = 65 if ols_coef > 0 else 35
-    else:
-        score = 50
-
-    # Adjust for interpretable model support/contradiction
-    smart_sign = direction_sign(smart_human_dir)
-    hinge_sign = direction_sign(hinge_human_dir)
-
-    if smart_human_imp >= 0.10 and smart_sign > 0:
-        score += 10
-    elif smart_human_imp >= 0.10 and smart_sign < 0:
-        score -= 10
-    elif smart_human_imp < 0.05:
-        score -= 8
-
-    if hinge_human_imp >= 0.10 and hinge_sign > 0:
-        score += 10
-    elif hinge_human_imp >= 0.10 and hinge_sign < 0:
-        score -= 10
-    elif hinge_human_imp == 0 or hinge_human_dir == "zero":
-        score -= 8
-
-    # If controlled effect is null but raw bivariate is positive, keep a weak-to-moderate score
-    if ols_p >= 0.10 and bivar_diff > 0:
-        score = min(score, 35)
-        score = max(score, 18)
-
-    # If controlled effect is null and both interpretable models show weak/zero human importance
-    if (
-        ols_p >= 0.10
-        and smart_human_imp < 0.08
-        and (hinge_human_imp == 0 or hinge_human_dir == "zero")
-    ):
-        score = 22 if bivar_diff > 0 else 8
-
-    return int(max(0, min(100, round(score))))
+def top_features_from_dict(feature_names, coef_dict, k=5):
+    pairs = []
+    for j, v in coef_dict.items():
+        name = feature_names[j]
+        pairs.append((name, float(v)))
+    pairs.sort(key=lambda t: abs(t[1]), reverse=True)
+    return pairs[:k]
 
 
 def main():
-    info = json.loads(Path("info.json").read_text())
-    question = info.get("research_questions", ["Unknown question"])[0]
+    warnings.filterwarnings("ignore", category=FutureWarning)
+
+    with open("info.json", "r", encoding="utf-8") as f:
+        info = json.load(f)
+
+    question = info["research_questions"][0]
+    print("Research question:")
+    print(question)
+    print("\nLoading amtl.csv ...")
 
     df = pd.read_csv("amtl.csv")
-
-    # Define DV and IV from the research question context
-    # DV: frequency of AMTL (num_amtl / sockets)
-    # IV: human status vs. non-human primates
-    df = df.copy()
-    df = df[df["sockets"] > 0].copy()
-    df["amtl_rate"] = df["num_amtl"] / df["sockets"]
     df["is_human"] = (df["genus"] == "Homo sapiens").astype(int)
+    df["amtl_rate"] = df["num_amtl"] / df["sockets"]
+    df["non_amtl"] = df["sockets"] - df["num_amtl"]
 
-    print("=== Research Question ===")
-    print(question)
-    print("\nIdentified DV: amtl_rate (num_amtl / sockets)")
-    print("Identified IV: is_human (1=Homo sapiens, 0=Pan/Pongo/Papio)")
-
-    print("\n=== Step 1: Exploration ===")
-    numeric_cols = [
-        "amtl_rate",
-        "num_amtl",
-        "sockets",
-        "age",
-        "stdev_age",
-        "prob_male",
-        "is_human",
-    ]
-    print("Numeric summary:")
-    print(df[numeric_cols].describe().T)
-
+    print("\n=== Data overview ===")
+    print(f"Rows: {len(df)}, Columns: {df.shape[1]}")
+    print("\nMissing values per column:")
+    print(df.isna().sum().to_string())
+    print("\nNumeric summary:")
+    print(
+        df[
+            [
+                "num_amtl",
+                "sockets",
+                "amtl_rate",
+                "age",
+                "stdev_age",
+                "prob_male",
+                "is_human",
+            ]
+        ]
+        .describe()
+        .T.round(4)
+        .to_string()
+    )
     print("\nGenus counts:")
-    print(df["genus"].value_counts())
-
+    print(df["genus"].value_counts().to_string())
     print("\nTooth class counts:")
-    print(df["tooth_class"].value_counts())
+    print(df["tooth_class"].value_counts().to_string())
+    print("\nAMTL rate by genus:")
+    print(df.groupby("genus")["amtl_rate"].mean().sort_values(ascending=False).round(4).to_string())
+    print("\nAMTL rate by tooth class:")
+    print(df.groupby("tooth_class")["amtl_rate"].mean().sort_values(ascending=False).round(4).to_string())
 
-    # Bivariate results for primary question
-    human_rate = df.loc[df["is_human"] == 1, "amtl_rate"]
-    nonhuman_rate = df.loc[df["is_human"] == 0, "amtl_rate"]
-    bivar_diff = float(human_rate.mean() - nonhuman_rate.mean())
-    bivar_corr = float(df[["amtl_rate", "is_human"]].corr().iloc[0, 1])
-    t_stat, t_p = stats.ttest_ind(human_rate, nonhuman_rate, equal_var=False, nan_policy="omit")
-
-    print("\nBivariate human vs non-human comparison:")
-    print(f"mean(amtl_rate | human=1)={human_rate.mean():.4f}")
-    print(f"mean(amtl_rate | human=0)={nonhuman_rate.mean():.4f}")
-    print(f"difference={bivar_diff:.4f}")
-    print(f"corr(amtl_rate, is_human)={bivar_corr:.4f}")
-    print(f"Welch t-test: t={t_stat:.3f}, p={t_p:.4g}")
-
-    # Controls: age, sex proxy, tooth class; plus sockets and stdev_age as measurement controls
-    tooth_dummies = pd.get_dummies(df["tooth_class"], prefix="tooth", drop_first=True, dtype=float)
-    X_base = pd.concat(
-        [df[["is_human", "age", "prob_male", "sockets", "stdev_age"]], tooth_dummies], axis=1
+    corr_df = pd.DataFrame(
+        {
+            "amtl_rate": df["amtl_rate"],
+            "is_human": df["is_human"],
+            "age": df["age"],
+            "prob_male": df["prob_male"],
+            "stdev_age": df["stdev_age"],
+            "num_amtl": df["num_amtl"],
+            "sockets": df["sockets"],
+        }
     )
-    y = df["amtl_rate"]
+    print("\nCorrelation matrix (numeric):")
+    print(corr_df.corr().round(3).to_string())
 
-    model_df = pd.concat([y, X_base], axis=1).dropna()
-    y_model = model_df["amtl_rate"]
-    X_model = model_df.drop(columns=["amtl_rate"])
-
-    print("\n=== Step 2: Controlled OLS ===")
-    X_ols = sm.add_constant(X_model)
-    ols_model = sm.OLS(y_model, X_ols).fit()
-    print(ols_model.summary())
-
-    ols_coef = float(ols_model.params.get("is_human", np.nan))
-    ols_p = float(ols_model.pvalues.get("is_human", np.nan))
-
-    print("\n=== Step 3: Interpretable Models ===")
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_model, y_model)
-    smart_effects = smart.feature_effects()
-
-    print("SmartAdditiveRegressor model:")
-    print(smart)
-    print("SmartAdditive feature effects:")
-    print(smart_effects)
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_model, y_model)
-    hinge_effects = hinge.feature_effects()
-
-    print("\nHingeEBMRegressor model:")
-    print(hinge)
-    print("HingeEBM feature effects:")
-    print(hinge_effects)
-
-    human_smart = get_effect(smart_effects, "is_human")
-    human_hinge = get_effect(hinge_effects, "is_human")
-
-    # Pull some shape detail for age from SmartAdditive
-    age_shape_note = ""
-    if "age" in X_model.columns:
-        age_idx = list(X_model.columns).index("age")
-        if hasattr(smart, "shape_functions_") and age_idx in smart.shape_functions_:
-            thresholds, intervals = smart.shape_functions_[age_idx]
-            if len(thresholds) > 0 and len(intervals) >= 2:
-                age_shape_note = (
-                    f"Age shows a nonlinear pattern with thresholds around "
-                    f"{thresholds[0]:.1f} and {thresholds[-1]:.1f} years; "
-                    f"predicted AMTL is much higher at older ages."
-                )
-
-    top_smart = summarize_top_features(smart_effects, k=3)
-    top_hinge = summarize_top_features(hinge_effects, k=3)
-
-    response = score_response(
-        ols_coef=ols_coef,
-        ols_p=ols_p,
-        bivar_diff=bivar_diff,
-        smart_human_imp=human_smart["importance"],
-        smart_human_dir=human_smart["direction"],
-        hinge_human_imp=human_hinge["importance"],
-        hinge_human_dir=human_hinge["direction"],
+    print("\n=== Bivariate tests ===")
+    human = df["is_human"] == 1
+    t_res = stats.ttest_ind(
+        df.loc[human, "amtl_rate"],
+        df.loc[~human, "amtl_rate"],
+        equal_var=False,
+    )
+    print(
+        "Welch t-test on per-row AMTL rate (human vs non-human): "
+        f"t={t_res.statistic:.3f}, p={t_res.pvalue:.3e}"
     )
 
-    smart_top_text = "; ".join(
-        [f"{name} (rank {rank}, importance {imp:.1%}, {direction})" for rank, name, imp, direction in top_smart]
+    contingency = np.array(
+        [
+            [df.loc[human, "num_amtl"].sum(), df.loc[human, "non_amtl"].sum()],
+            [df.loc[~human, "num_amtl"].sum(), df.loc[~human, "non_amtl"].sum()],
+        ],
+        dtype=float,
     )
-    hinge_top_text = "; ".join(
-        [f"{name} (rank {rank}, importance {imp:.1%}, {direction})" for rank, name, imp, direction in top_hinge]
+    chi2, chi_p, _, _ = stats.chi2_contingency(contingency)
+    print(
+        "Chi-square on aggregated sockets (human vs non-human): "
+        f"chi2={chi2:.3f}, p={chi_p:.3e}"
     )
+
+    y_counts = np.column_stack([df["num_amtl"].values, df["non_amtl"].values])
+
+    X_biv = patsy.dmatrix("is_human", data=df, return_type="dataframe")
+    glm_biv = sm.GLM(y_counts, X_biv, family=sm.families.Binomial()).fit(
+        cov_type="cluster", cov_kwds={"groups": df["specimen"]}
+    )
+    print("\nBivariate binomial GLM summary:")
+    print(glm_biv.summary())
+
+    print("\n=== Controlled classical model ===")
+    X_ctrl = patsy.dmatrix(
+        "is_human + age + prob_male + C(tooth_class)",
+        data=df,
+        return_type="dataframe",
+    )
+    glm_ctrl = sm.GLM(y_counts, X_ctrl, family=sm.families.Binomial()).fit(
+        cov_type="cluster", cov_kwds={"groups": df["specimen"]}
+    )
+    print(glm_ctrl.summary())
+
+    beta_h = float(glm_ctrl.params["is_human"])
+    p_h = float(glm_ctrl.pvalues["is_human"])
+    ci_h = glm_ctrl.conf_int().loc["is_human"].astype(float).values
+    or_h = float(np.exp(beta_h))
+    or_ci = np.exp(ci_h)
+    print(
+        "\nHuman effect (controlled GLM): "
+        f"log-odds={beta_h:.4f}, OR={or_h:.3f}, p={p_h:.3e}, "
+        f"95% OR CI=[{or_ci[0]:.3f}, {or_ci[1]:.3f}]"
+    )
+
+    print("\n=== Interpretable agentic_imodels ===")
+    X_model = pd.get_dummies(
+        df[["is_human", "age", "prob_male", "tooth_class"]],
+        columns=["tooth_class"],
+        drop_first=True,
+    )
+    feature_names = list(X_model.columns)
+    y_model = df["amtl_rate"].values
+
+    models = [
+        ("WinsorizedSparseOLSRegressor", WinsorizedSparseOLSRegressor(max_features=8)),
+        ("HingeGAMRegressor", HingeGAMRegressor()),
+        ("HingeEBMRegressor", HingeEBMRegressor()),
+    ]
+
+    fitted = {}
+    for name, model in models:
+        model.fit(X_model.values, y_model)
+        pred = model.predict(X_model.values)
+        rmse = mean_squared_error(y_model, pred) ** 0.5
+        r2 = r2_score(y_model, pred)
+        fitted[name] = model
+
+        print(f"\n{name} train RMSE={rmse:.4f}, R^2={r2:.4f}")
+        print(model)
+
+    print("\n=== Feature direction/magnitude checks ===")
+    model_effects = {}
+    for name, model in fitted.items():
+        eff_human = counterfactual_effect(model, X_model, "is_human", 0, 1)
+        eff_age = counterfactual_effect(
+            model,
+            X_model,
+            "age",
+            float(np.percentile(X_model["age"], 25)),
+            float(np.percentile(X_model["age"], 75)),
+        )
+        model_effects[name] = {"is_human": eff_human, "age_q75_minus_q25": eff_age}
+        print(
+            f"{name}: mean prediction delta human(1)-human(0)={eff_human:+.4f}; "
+            f"age(Q75-Q25) delta={eff_age:+.4f}"
+        )
+
+    wso = fitted["WinsorizedSparseOLSRegressor"]
+    kept = {feature_names[i]: float(c) for i, c in zip(wso.support_, wso.ols_coef_)}
+    zeroed = [f for f in feature_names if f not in kept]
+    print("\nWinsorizedSparseOLS kept coefficients:")
+    print(json.dumps(kept, indent=2))
+    print("WinsorizedSparseOLS zeroed features:", ", ".join(zeroed))
+
+    hgam = fitted["HingeGAMRegressor"]
+    hgam_slopes = {}
+    for j, (slope, _, _) in hgam.linear_approx_.items():
+        hgam_slopes[feature_names[int(j)]] = float(slope)
+    hgam_importance = {
+        feature_names[i]: float(v) for i, v in enumerate(hgam.feature_importances_)
+    }
+    print("\nHingeGAM linear slopes:")
+    print(json.dumps(hgam_slopes, indent=2))
+    print("HingeGAM importances (range of partial effect):")
+    print(json.dumps(hgam_importance, indent=2))
+
+    hebm = fitted["HingeEBMRegressor"]
+    hebm_eff = extract_hinge_ebm_effective_coefs(hebm)
+    hebm_named = {feature_names[k]: float(v) for k, v in hebm_eff.items()}
+    print("\nHingeEBM effective displayed coefficients:")
+    print(json.dumps(hebm_named, indent=2))
+
+    print("\nTop displayed features by model:")
+    print(
+        "HingeGAM:",
+        top_features_from_dict(feature_names, {i: v for i, v in enumerate(hgam.feature_importances_)}),
+    )
+    print("HingeEBM:", top_features_from_dict(feature_names, hebm_eff))
+
+    print("\n=== Synthesis ===")
+    positive_models = sum(1 for m in model_effects.values() if m["is_human"] > 1e-4)
+    near_zero_models = sum(1 for m in model_effects.values() if abs(m["is_human"]) <= 1e-4)
+    negative_models = sum(1 for m in model_effects.values() if m["is_human"] < -1e-4)
+
+    # Calibrated Likert score per SKILL.md guidance.
+    if p_h < 1e-3 and or_h > 3:
+        score = 82
+    elif p_h < 1e-2 and or_h > 2:
+        score = 74
+    elif p_h < 5e-2:
+        score = 62
+    else:
+        score = 28
+
+    if positive_models == len(model_effects):
+        score += 8
+    elif positive_models >= 2:
+        score += 2
+    else:
+        score -= 8
+
+    if "is_human" in zeroed:
+        score -= 6
+    if near_zero_models > 0:
+        score -= 2
+    if negative_models > 0:
+        score -= 8
+
+    score = int(max(0, min(100, round(score))))
 
     explanation = (
-        f"Raw AMTL frequency is higher in humans (mean difference={bivar_diff:.3f}; "
-        f"corr={bivar_corr:.3f}; Welch t-test p={t_p:.3g}), but after controlling for age, sex proxy, "
-        f"tooth class, sockets, and age uncertainty, the human indicator is near zero in OLS "
-        f"(coef={ols_coef:.4f}, p={ols_p:.3g}). In SmartAdditive, is_human has only modest influence "
-        f"(importance={human_smart['importance']:.1%}, rank={human_smart['rank']}, direction={human_smart['direction']}), "
-        f"while stronger drivers are {smart_top_text}. In HingeEBM, is_human is effectively excluded "
-        f"(importance={human_hinge['importance']:.1%}, direction={human_hinge['direction']}), with top effects {hinge_top_text}. "
-        f"{age_shape_note} Overall, the apparent human/non-human difference is largely explained by confounding, especially age, "
-        f"so evidence that modern humans intrinsically have higher AMTL frequency is weak."
+        f"Bivariate evidence indicates higher AMTL in humans (binomial GLM p={glm_biv.pvalues['is_human']:.2e}; "
+        f"chi-square p={chi_p:.2e}). In the controlled binomial model (age, sex probability, tooth class), "
+        f"the human indicator remains positive and significant (log-odds={beta_h:.2f}, OR={or_h:.2f}, "
+        f"95% CI {or_ci[0]:.2f}-{or_ci[1]:.2f}, p={p_h:.2e}). Interpretable models are mostly consistent but not "
+        f"unanimous: HingeGAM and HingeEBM both assign positive human effects "
+        f"({model_effects['HingeGAMRegressor']['is_human']:+.3f}, "
+        f"{model_effects['HingeEBMRegressor']['is_human']:+.3f} predicted rate delta for human=1 vs 0), while "
+        f"WinsorizedSparseOLS zeroes out is_human, which is notable null evidence under strong sparsity pressure. "
+        f"Age is a robust positive predictor across models, and posterior teeth generally show higher AMTL than anterior. "
+        f"Overall this supports a real positive human-vs-nonhuman difference after controls, with some shrinkage-related "
+        f"uncertainty in one sparse model."
     )
 
-    output = {"response": response, "explanation": explanation}
-    Path("conclusion.txt").write_text(json.dumps(output))
+    result = {"response": score, "explanation": explanation}
+    with open("conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(result, f)
 
-    print("\n=== Step 4: Conclusion JSON ===")
-    print(json.dumps(output, indent=2))
+    print("\nWrote conclusion.txt:")
+    print(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

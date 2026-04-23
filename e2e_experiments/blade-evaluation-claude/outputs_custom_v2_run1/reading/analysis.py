@@ -1,133 +1,179 @@
-import json
+"""
+Research question: Does 'Reader View' improve reading speed for individuals with dyslexia?
+"""
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+
 import numpy as np
 import pandas as pd
+from scipy import stats
 import statsmodels.api as sm
 import warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+# ── 1. Load data ──────────────────────────────────────────────────────────────
+df = pd.read_csv("reading.csv")
+print("Shape:", df.shape)
+print(df[["reader_view","dyslexia","dyslexia_bin","speed"]].describe())
+print("\nDyslexia distribution:\n", df["dyslexia"].value_counts())
+print("Reader-view distribution:\n", df["reader_view"].value_counts())
 
-# Load data
-df = pd.read_csv('reading.csv')
-print(f"Shape: {df.shape}")
-print(df[['reader_view', 'dyslexia', 'dyslexia_bin', 'speed']].describe())
+# Log-transform speed (heavy right skew)
+df["log_speed"] = np.log1p(df["speed"])
 
-# The research question: Does Reader View improve reading speed for dyslexic individuals?
-# DV: speed, IV: reader_view, focus: dyslexia population
+# ── 2. Bivariate: reader_view × speed among dyslexic readers ─────────────────
+dys = df[df["dyslexia_bin"] == 1].copy()
+nondys = df[df["dyslexia_bin"] == 0].copy()
 
-# Filter to dyslexic individuals only (dyslexia_bin == 1)
-df_dys = df[df['dyslexia_bin'] == 1].copy()
-print(f"\nDyslexic participants rows: {len(df_dys)}")
-print(f"reader_view=0 count: {(df_dys['reader_view']==0).sum()}, reader_view=1 count: {(df_dys['reader_view']==1).sum()}")
+print("\n=== Dyslexic readers: mean log_speed by reader_view ===")
+print(dys.groupby("reader_view")["log_speed"].agg(["mean","std","count"]))
 
-# Log-transform speed (highly skewed)
-df['log_speed'] = np.log1p(df['speed'])
-df_dys['log_speed'] = np.log1p(df_dys['speed'])
+t_stat, p_biv_dys = stats.ttest_ind(
+    dys[dys["reader_view"]==1]["log_speed"].dropna(),
+    dys[dys["reader_view"]==0]["log_speed"].dropna(),
+)
+print(f"Bivariate t-test (dyslexic): t={t_stat:.3f}, p={p_biv_dys:.4f}")
 
-# Bivariate: reader_view effect on speed among dyslexic readers
-rv0 = df_dys[df_dys['reader_view']==0]['speed']
-rv1 = df_dys[df_dys['reader_view']==1]['speed']
-print(f"\nDyslexic readers - speed without Reader View: mean={rv0.mean():.1f}, median={rv0.median():.1f}")
-print(f"Dyslexic readers - speed with Reader View: mean={rv1.mean():.1f}, median={rv1.median():.1f}")
+print("\n=== Non-dyslexic readers: mean log_speed by reader_view ===")
+print(nondys.groupby("reader_view")["log_speed"].agg(["mean","std","count"]))
+t_stat2, p_biv_nondys = stats.ttest_ind(
+    nondys[nondys["reader_view"]==1]["log_speed"].dropna(),
+    nondys[nondys["reader_view"]==0]["log_speed"].dropna(),
+)
+print(f"Bivariate t-test (non-dyslexic): t={t_stat2:.3f}, p={p_biv_nondys:.4f}")
 
-from scipy import stats
-t_stat, p_val = stats.ttest_ind(rv1, rv0)
-print(f"t-test: t={t_stat:.3f}, p={p_val:.4f}")
+# ── 3. OLS with controls: full dataset, interaction term ─────────────────────
+# Encode categoricals
+df["device_enc"] = pd.Categorical(df["device"]).codes
+df["education_enc"] = pd.Categorical(df["education"]).codes
+df["english_native_enc"] = (df["english_native"] == "Y").astype(int)
 
-# OLS on dyslexic subset with controls
-numeric_cols = ['reader_view', 'age', 'gender', 'num_words', 'Flesch_Kincaid', 'correct_rate', 'img_width']
-df_dys_clean = df_dys[numeric_cols + ['log_speed']].dropna()
-X_ols = df_dys_clean[numeric_cols]
-X_ols = sm.add_constant(X_ols)
-model = sm.OLS(df_dys_clean['log_speed'], X_ols).fit()
-print("\n=== OLS on dyslexic subset (DV=log_speed) ===")
-print(model.summary())
+ctrl_cols = ["age","device_enc","education_enc","english_native_enc",
+             "retake_trial","Flesch_Kincaid","num_words"]
 
-# Also run on full dataset with interaction term
-df_full = df[numeric_cols + ['dyslexia_bin', 'log_speed']].dropna()
-df_full['rv_x_dyslexia'] = df_full['reader_view'] * df_full['dyslexia_bin']
-feature_cols_full = ['reader_view', 'dyslexia_bin', 'rv_x_dyslexia', 'age', 'gender', 'num_words', 'Flesch_Kincaid', 'correct_rate', 'img_width']
-X_full = sm.add_constant(df_full[feature_cols_full])
-model_full = sm.OLS(df_full['log_speed'], X_full).fit()
-print("\n=== OLS full dataset with interaction (rv x dyslexia) ===")
-print(model_full.summary())
+# Interaction: reader_view * dyslexia_bin
+df["rv_x_dys"] = df["reader_view"] * df["dyslexia_bin"]
+df_clean = df[["log_speed","reader_view","dyslexia_bin","rv_x_dys"] + ctrl_cols].dropna()
 
-# Interpretable models on dyslexic subset
-X_interp = df_dys_clean[numeric_cols]
-y_interp = df_dys_clean['log_speed']
+X_full = sm.add_constant(df_clean[["reader_view","dyslexia_bin","rv_x_dys"] + ctrl_cols])
+ols_full = sm.OLS(df_clean["log_speed"], X_full).fit()
+print("\n=== OLS full dataset with interaction ===")
+print(ols_full.summary())
+
+# ── 4. OLS within dyslexic subset only ───────────────────────────────────────
+dys_clean = df[df["dyslexia_bin"]==1][["log_speed","reader_view"]+ctrl_cols].dropna()
+X_dys = sm.add_constant(dys_clean[["reader_view"]+ctrl_cols])
+ols_dys = sm.OLS(dys_clean["log_speed"], X_dys).fit()
+print("\n=== OLS (dyslexic readers only, controlled) ===")
+print(ols_dys.summary())
+
+p_val_controlled_dys = ols_dys.pvalues["reader_view"]
+coef_controlled_dys  = ols_dys.params["reader_view"]
+print(f"\nreader_view coef={coef_controlled_dys:.4f}, p={p_val_controlled_dys:.4f}")
+
+# ── 5. Interpretable models: SmartAdditiveRegressor and HingeGAMRegressor ────
+from agentic_imodels import SmartAdditiveRegressor, HingeGAMRegressor
+
+num_cols = ["reader_view","dyslexia_bin","rv_x_dys","age",
+            "device_enc","education_enc","english_native_enc",
+            "retake_trial","Flesch_Kincaid","num_words"]
+
+df_model = df[["log_speed"] + num_cols].dropna()
+X_m = df_model[num_cols].astype(float)
+y_m = df_model["log_speed"].values
+
+print("\n=== SmartAdditiveRegressor (full data) ===")
+smart = SmartAdditiveRegressor()
+smart.fit(X_m, y_m)
+print(smart)
+
+print("\n=== HingeGAMRegressor (full data) ===")
+hinge = HingeGAMRegressor()
+hinge.fit(X_m, y_m)
+print(hinge)
+
+# Also fit on dyslexic subset
+dys_model = df[df["dyslexia_bin"]==1][["log_speed"] + num_cols].dropna()
+X_dys_m = dys_model[num_cols].astype(float)
+y_dys_m = dys_model["log_speed"].values
 
 print("\n=== SmartAdditiveRegressor (dyslexic subset) ===")
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_interp, y_interp)
-print(smart)
-smart_effects = smart.feature_effects()
-print("Feature effects:", smart_effects)
+smart_dys = SmartAdditiveRegressor()
+smart_dys.fit(X_dys_m, y_dys_m)
+print(smart_dys)
 
-print("\n=== HingeEBMRegressor (dyslexic subset) ===")
-hinge = HingeEBMRegressor(n_knots=3)
-hinge.fit(X_interp, y_interp)
-print(hinge)
-hinge_effects = hinge.feature_effects()
-print("Feature effects:", hinge_effects)
+print("\n=== HingeGAMRegressor (dyslexic subset) ===")
+hinge_dys = HingeGAMRegressor()
+hinge_dys.fit(X_dys_m, y_dys_m)
+print(hinge_dys)
 
-# Gather key numbers for conclusion
-rv_coef = model.params.get('reader_view', np.nan)
-rv_pval = model.pvalues.get('reader_view', np.nan)
-interaction_coef = model_full.params.get('rv_x_dyslexia', np.nan)
-interaction_pval = model_full.pvalues.get('rv_x_dyslexia', np.nan)
+# ── 6. Summary statistics for conclusion ─────────────────────────────────────
+print("\n=== SUMMARY ===")
+print(f"Bivariate p (dyslexic, reader_view effect on log_speed): {p_biv_dys:.4f}")
+print(f"Controlled OLS p (dyslexic only): {p_val_controlled_dys:.4f}, coef={coef_controlled_dys:.4f}")
+interaction_p = ols_full.pvalues.get("rv_x_dys", float("nan"))
+interaction_coef = ols_full.params.get("rv_x_dys", float("nan"))
+print(f"Interaction (reader_view × dyslexia) in full model: coef={interaction_coef:.4f}, p={interaction_p:.4f}")
 
-smart_rv = smart_effects.get('reader_view', {})
-hinge_rv = hinge_effects.get('reader_view', {})
+rv_coef_full = ols_full.params["reader_view"]
+rv_p_full = ols_full.pvalues["reader_view"]
+print(f"Main reader_view effect (full model): coef={rv_coef_full:.4f}, p={rv_p_full:.4f}")
 
-print(f"\nSummary:")
-print(f"  OLS (dyslexic subset) reader_view coef={rv_coef:.4f}, p={rv_pval:.4f}")
-print(f"  Full OLS interaction coef={interaction_coef:.4f}, p={interaction_pval:.4f}")
-print(f"  Smart model reader_view: {smart_rv}")
-print(f"  Hinge model reader_view: {hinge_rv}")
+# ── 7. Write conclusion ───────────────────────────────────────────────────────
+import json
 
-# Build conclusion
-rv_direction = "positive" if rv_coef > 0 else "negative"
-speed_diff_pct = (rv1.mean() - rv0.mean()) / rv0.mean() * 100
+# Interpretation logic:
+# - Does reader_view improve speed for DYSLEXIC individuals?
+# - Check: bivariate effect in dyslexic subset, controlled OLS in dyslexic subset,
+#   interaction term in full model
+# - Corroborate with interpretable model feature importance
 
-# Score: consider significance in OLS and models
-# reader_view effect on dyslexic readers
-sig_ols = rv_pval < 0.05
-sig_bivariate = p_val < 0.05
-smart_importance = smart_rv.get('importance', 0)
-hinge_importance = hinge_rv.get('importance', 0)
+sig_biv = p_biv_dys < 0.05
+sig_controlled = p_val_controlled_dys < 0.05
+sig_interaction = interaction_p < 0.05
+positive_direction = coef_controlled_dys > 0
 
-# Determine score
-if sig_ols and sig_bivariate and smart_importance > 0.05:
-    score = 75
-elif sig_ols or sig_bivariate:
-    score = 55
-elif smart_importance > 0.05 or hinge_importance > 0.05:
-    score = 35
+# Calibrate score
+if sig_controlled and positive_direction and sig_biv:
+    base_score = 70
+elif sig_controlled and not sig_biv:
+    base_score = 55
+elif sig_biv and not sig_controlled:
+    base_score = 45
+elif not sig_controlled and not sig_biv:
+    base_score = 20
 else:
-    score = 15
+    base_score = 30
 
-# Adjust based on direction
-if rv_direction == "negative":
-    # Reader View slows down dyslexic readers — answer is No
-    score = 100 - score
+# Adjust for interaction significance
+if sig_interaction:
+    base_score = min(base_score + 10, 100)
+
+# Adjust for direction
+if not positive_direction:
+    base_score = max(5, base_score - 30)
+
+score = int(base_score)
 
 explanation = (
-    f"Among individuals with dyslexia (n={len(df_dys_clean)} observations), Reader View {'increased' if rv_coef>0 else 'decreased'} "
-    f"log-reading speed by {abs(rv_coef):.3f} units (OLS coef={rv_coef:.3f}, p={rv_pval:.4f}). "
-    f"Bivariate: dyslexic readers had mean speed {rv0.mean():.1f} wpm without vs {rv1.mean():.1f} wpm with Reader View "
-    f"({speed_diff_pct:+.1f}%, t-test p={p_val:.4f}). "
-    f"The full-sample OLS interaction (reader_view x dyslexia) coef={interaction_coef:.3f} (p={interaction_pval:.4f}). "
-    f"SmartAdditive model: reader_view importance={smart_importance:.3f}, direction={smart_rv.get('direction','unknown')}; "
-    f"HingeEBM: importance={hinge_importance:.3f}, direction={hinge_rv.get('direction','unknown')}. "
-    f"Other important predictors include num_words and Flesch_Kincaid (text complexity). "
-    f"The effect {'is' if sig_ols else 'is not'} statistically significant in the controlled OLS model, "
-    f"and {'holds' if smart_importance > 0.05 else 'is weak'} in the interpretable models."
+    f"The research question asks whether Reader View improves reading speed for individuals with dyslexia. "
+    f"Bivariate t-test on dyslexic readers: t={t_stat:.3f}, p={p_biv_dys:.4f}. "
+    f"Controlled OLS (dyslexic subset, controlling for age, device, education, English nativity, retake, Flesch-Kincaid, num_words): "
+    f"reader_view coef={coef_controlled_dys:.4f}, p={p_val_controlled_dys:.4f}. "
+    f"Interaction term (reader_view × dyslexia_bin) in full model: coef={interaction_coef:.4f}, p={interaction_p:.4f}. "
+    f"The SmartAdditiveRegressor and HingeGAMRegressor were fitted on both the full dataset and dyslexic subset — "
+    f"their printed forms show whether reader_view receives nonzero importance/coefficient. "
+    f"A positive, statistically significant controlled effect in dyslexic readers {'was' if sig_controlled else 'was NOT'} found "
+    f"(p={'<0.05' if sig_controlled else '>0.05'}). "
+    f"The interaction term {'was' if sig_interaction else 'was NOT'} significant. "
+    f"Direction is {'positive (Reader View increases speed)' if positive_direction else 'negative or null (Reader View does not increase speed)'}. "
+    f"Based on these results, the Likert score is calibrated to {score}/100."
 )
 
 result = {"response": score, "explanation": explanation}
-print(f"\nFinal result: {result}")
+print("\nConclusion:", json.dumps(result, indent=2))
 
-with open('conclusion.txt', 'w') as f:
+with open("conclusion.txt", "w") as f:
     json.dump(result, f)
 
-print("conclusion.txt written.")
+print("\nconclustion.txt written successfully.")

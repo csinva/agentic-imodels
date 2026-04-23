@@ -3,305 +3,237 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from scipy.stats import pointbiserialr
+from scipy import stats
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
-warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-def fmt(x, nd=4):
-    if x is None:
-        return "nan"
-    try:
-        xv = float(x)
-    except Exception:
-        return str(x)
-    if np.isnan(xv) or np.isinf(xv):
-        return "nan"
-    return f"{xv:.{nd}f}"
+def clip01(x: float) -> int:
+    return int(np.clip(np.round(x), 0, 100))
 
 
-def p_sig_label(p):
-    if p is None or np.isnan(p):
-        return "unavailable"
-    if p < 0.01:
-        return "strong"
-    if p < 0.05:
-        return "significant"
-    if p < 0.10:
-        return "marginal"
-    return "weak"
+def active_features_hinge_ebm(model: HingeEBMRegressor) -> set[int]:
+    """Recover which original feature indices are active in stage-1 hinge-lasso."""
+    coefs = np.asarray(model.lasso_.coef_)
+    n_selected = len(model.selected_)
+    active = set()
+    for idx, coef in enumerate(coefs):
+        if abs(coef) < 1e-6:
+            continue
+        if idx < n_selected:
+            active.add(int(model.selected_[idx]))
+        else:
+            feat_idx, _knot, _direction = model.hinge_info_[idx - n_selected]
+            active.add(int(model.selected_[feat_idx]))
+    return active
 
 
-def safe_pointbiserial(y, x):
-    try:
-        r, p = pointbiserialr(y, x)
-        return float(r), float(p)
-    except Exception:
-        return np.nan, np.nan
-
-
-def safe_logit(formula, data):
-    model = smf.logit(formula, data=data)
-    res = model.fit(disp=False, maxiter=200)
-    return res
-
-
-def get_effect(effects, feature):
-    e = effects.get(feature, {})
-    return {
-        "direction": e.get("direction", "zero"),
-        "importance": float(e.get("importance", 0.0) or 0.0),
-        "rank": int(e.get("rank", 0) or 0),
-    }
-
-
-def threshold_summary_from_smart(model, feature_names, feature):
-    if feature not in feature_names:
-        return ""
-    j = feature_names.index(feature)
-    if not hasattr(model, "shape_functions_") or j not in model.shape_functions_:
-        return ""
-
-    thresholds, intervals = model.shape_functions_[j]
-    thresholds = [float(t) for t in thresholds]
-    intervals = [float(v) for v in intervals]
-    if not thresholds or not intervals:
-        return ""
-
-    i_max = int(np.argmax(intervals))
-    i_min = int(np.argmin(intervals))
-
-    def region(idx):
-        if idx == 0:
-            return f"<= {thresholds[0]:.1f}"
-        if idx == len(thresholds):
-            return f"> {thresholds[-1]:.1f}"
-        return f"({thresholds[idx-1]:.1f}, {thresholds[idx]:.1f}]"
-
-    return (
-        f"strongest positive region at {feature} {region(i_max)} and most negative region at "
-        f"{feature} {region(i_min)}"
-    )
-
-
-def main():
+def main() -> None:
     with open("info.json", "r", encoding="utf-8") as f:
         info = json.load(f)
 
-    question = info.get("research_questions", ["Unknown research question"])[0].strip()
+    question = info["research_questions"][0]
+    print("Research question:")
+    print(question)
+    print("\nLoading data...\n")
+
     df = pd.read_csv("crofoot.csv")
 
-    # Research-aligned engineered variables
-    # Positive rel_group_size means focal group is larger.
-    # Positive loc_advantage means contest is relatively closer to focal group's range center.
-    df["rel_group_size"] = df["n_focal"] - df["n_other"]
-    df["loc_advantage"] = df["dist_other"] - df["dist_focal"]
+    # Features aligned with the research question.
+    df["size_diff"] = df["n_focal"] - df["n_other"]
+    df["size_ratio"] = df["n_focal"] / df["n_other"]
+    df["dist_diff"] = df["dist_other"] - df["dist_focal"]
+    df["dist_ratio"] = df["dist_other"] / df["dist_focal"]
+    df["male_diff"] = df["m_focal"] - df["m_other"]
+    df["female_diff"] = df["f_focal"] - df["f_other"]
 
-    dv = "win"
-    iv_size = "rel_group_size"
-    iv_loc = "loc_advantage"
+    print("Data shape:", df.shape)
+    print("Missing values by column:")
+    print(df.isna().sum())
 
-    print("=== RESEARCH QUESTION ===")
-    print(question)
-    print("DV:", dv)
-    print("IVs:", iv_size, "(relative group size),", iv_loc, "(relative contest location)")
-
-    print("\n=== STEP 1: EXPLORATION ===")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    print("Numeric columns:", numeric_cols)
+    print("\nOutcome distribution (win):")
+    print(df["win"].value_counts().sort_index())
+    print("Win rate:", round(float(df["win"].mean()), 4))
 
     print("\nSummary statistics:")
-    print(df[numeric_cols].describe().T)
+    print(df.describe(include="all").T)
 
-    print("\nWin distribution:")
-    print(df[dv].value_counts(dropna=False).sort_index())
-    print(df[dv].value_counts(normalize=True, dropna=False).sort_index())
-
-    print("\nCorrelations with DV (win):")
-    corr_with_dv = df[numeric_cols].corr(numeric_only=True)[dv].sort_values(ascending=False)
-    print(corr_with_dv)
-
-    size_r, size_p_bi = safe_pointbiserial(df[dv], df[iv_size])
-    loc_r, loc_p_bi = safe_pointbiserial(df[dv], df[iv_loc])
-    print("\nPoint-biserial correlations:")
-    print(f"{iv_size}: r={fmt(size_r)}, p={fmt(size_p_bi)}")
-    print(f"{iv_loc}: r={fmt(loc_r)}, p={fmt(loc_p_bi)}")
-
-    print("\n=== STEP 2: CONTROLLED STATISTICAL MODELS ===")
-    # Main controlled model with group-level controls.
-    formula_main = "win ~ rel_group_size + loc_advantage + focal + other"
-    logit_main = safe_logit(formula_main, df)
-    print("Main logistic model:", formula_main)
-    print(logit_main.summary())
-
-    # Robustness model: decompose location into the two raw distance terms.
-    formula_alt = "win ~ rel_group_size + dist_focal + dist_other + focal + other"
-    logit_alt = safe_logit(formula_alt, df)
-    print("\nRobustness logistic model:", formula_alt)
-    print(logit_alt.summary())
-
-    size_coef = float(logit_main.params.get(iv_size, np.nan))
-    size_p = float(logit_main.pvalues.get(iv_size, np.nan))
-    loc_coef = float(logit_main.params.get(iv_loc, np.nan))
-    loc_p = float(logit_main.pvalues.get(iv_loc, np.nan))
-
-    dist_focal_coef = float(logit_alt.params.get("dist_focal", np.nan))
-    dist_focal_p = float(logit_alt.pvalues.get("dist_focal", np.nan))
-    dist_other_coef = float(logit_alt.params.get("dist_other", np.nan))
-    dist_other_p = float(logit_alt.pvalues.get("dist_other", np.nan))
-
-    print("\n=== STEP 3: INTERPRETABLE MODELS ===")
-    feature_cols = [c for c in numeric_cols if c != dv]
-    X = df[feature_cols]
-    y = df[dv]
-
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X, y)
-    smart_effects = smart.feature_effects()
-    print("SmartAdditiveRegressor:")
-    print(smart)
-    print("Smart feature effects:")
-    print(smart_effects)
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X, y)
-    hinge_effects = hinge.feature_effects()
-    print("\nHingeEBMRegressor:")
-    print(hinge)
-    print("Hinge feature effects:")
-    print(hinge_effects)
-
-    smart_size = get_effect(smart_effects, iv_size)
-    smart_loc = get_effect(smart_effects, iv_loc)
-    hinge_size = get_effect(hinge_effects, iv_size)
-    hinge_loc = get_effect(hinge_effects, iv_loc)
-    hinge_dist_focal = get_effect(hinge_effects, "dist_focal")
-    hinge_dist_other = get_effect(hinge_effects, "dist_other")
-
-    top_confounders = [
-        (k, v) for k, v in smart_effects.items() if k not in {iv_size, iv_loc} and float(v.get("importance", 0) or 0) > 0
+    print("\nCorrelations with win (Pearson):")
+    corr_cols = [
+        "win",
+        "size_diff",
+        "size_ratio",
+        "dist_diff",
+        "dist_ratio",
+        "male_diff",
+        "female_diff",
+        "dyad",
     ]
-    top_confounders.sort(key=lambda kv: float(kv[1].get("importance", 0) or 0), reverse=True)
-    top_confounders = top_confounders[:3]
+    print(df[corr_cols].corr(numeric_only=True)["win"].sort_values(ascending=False))
 
-    size_shape = threshold_summary_from_smart(smart, feature_cols, iv_size)
-    loc_shape = threshold_summary_from_smart(smart, feature_cols, iv_loc)
-
-    # Score synthesis (0-100), balancing consistency across methods.
-    score = 5
-
-    # Relative group size evidence.
-    if size_p < 0.01:
-        score += 30
-    elif size_p < 0.05:
-        score += 22
-    elif size_p < 0.10:
-        score += 14
-    elif size_p < 0.20:
-        score += 8
-    else:
-        score += 3
-
-    if size_p_bi < 0.10:
-        score += 8
-    elif size_p_bi < 0.20:
-        score += 4
-    else:
-        score += 1
-
-    if smart_size["importance"] >= 0.10:
-        score += 8
-    elif smart_size["importance"] >= 0.05:
-        score += 5
-    else:
-        score += 2
-
-    if hinge_size["importance"] > 0:
-        score += 5
-    else:
-        score -= 2
-
-    # Location evidence.
-    if loc_p < 0.01:
-        score += 26
-    elif loc_p < 0.05:
-        score += 18
-    elif loc_p < 0.10:
-        score += 10
-    elif loc_p < 0.20:
-        score += 6
-    else:
-        score += 2
-
-    if loc_p_bi < 0.10:
-        score += 8
-    elif loc_p_bi < 0.20:
-        score += 4
-    else:
-        score += 1
-
-    if smart_loc["importance"] >= 0.20:
-        score += 12
-    elif smart_loc["importance"] >= 0.10:
-        score += 8
-    elif smart_loc["importance"] >= 0.05:
-        score += 4
-    else:
-        score += 1
-
-    if hinge_loc["importance"] > 0:
-        score += 5
-    else:
-        # Hinge may use raw distance components instead of the engineered difference.
-        if (hinge_dist_focal["importance"] + hinge_dist_other["importance"]) >= 0.20:
-            score += 4
-        else:
-            score -= 2
-
-    if (dist_focal_p < 0.10) or (dist_other_p < 0.10):
-        score += 5
-
-    # Mild inconsistency penalty.
-    if loc_p > 0.20 and smart_loc["importance"] >= 0.20:
-        score -= 2
-
-    response = int(max(0, min(100, round(score))))
-
-    confounder_text = ", ".join(
-        [
-            f"{name} (importance={100*float(meta.get('importance', 0) or 0):.1f}%, rank={int(meta.get('rank', 0) or 0)})"
-            for name, meta in top_confounders
-        ]
+    print("\nBivariate tests:")
+    pb_size = stats.pointbiserialr(df["win"], df["size_diff"])
+    pb_dist = stats.pointbiserialr(df["win"], df["dist_diff"])
+    t_size = stats.ttest_ind(
+        df.loc[df["win"] == 1, "size_diff"],
+        df.loc[df["win"] == 0, "size_diff"],
+        equal_var=False,
     )
-    if not confounder_text:
-        confounder_text = "none with meaningful importance"
+    t_dist = stats.ttest_ind(
+        df.loc[df["win"] == 1, "dist_diff"],
+        df.loc[df["win"] == 0, "dist_diff"],
+        equal_var=False,
+    )
+    print(f"Point-biserial(win, size_diff): r={pb_size.statistic:.3f}, p={pb_size.pvalue:.4f}")
+    print(f"Point-biserial(win, dist_diff): r={pb_dist.statistic:.3f}, p={pb_dist.pvalue:.4f}")
+    print(f"Welch t-test size_diff by win: t={t_size.statistic:.3f}, p={t_size.pvalue:.4f}")
+    print(f"Welch t-test dist_diff by win: t={t_dist.statistic:.3f}, p={t_dist.pvalue:.4f}")
+
+    print("\nClassical regression tests (Binomial GLM / logit link):")
+    glm_base = smf.glm("win ~ size_diff + dist_diff", data=df, family=sm.families.Binomial()).fit()
+    glm_ctrl = smf.glm(
+        "win ~ size_diff + dist_diff + male_diff + female_diff",
+        data=df,
+        family=sm.families.Binomial(),
+    ).fit()
+    glm_dyad = smf.glm(
+        "win ~ size_diff + dist_diff + C(dyad)",
+        data=df,
+        family=sm.families.Binomial(),
+    ).fit()
+
+    print("\n--- GLM: win ~ size_diff + dist_diff ---")
+    print(glm_base.summary())
+    print("\n--- GLM: + male/female composition controls ---")
+    print(glm_ctrl.summary())
+    print("\n--- GLM: + dyad fixed effects ---")
+    print(glm_dyad.summary())
+
+    # Interpretable models focused on the research variables and a structural control.
+    model_features = ["size_diff", "dist_diff", "dyad"]
+    X = df[model_features].to_numpy(dtype=float)
+    y = df["win"].to_numpy(dtype=float)
+
+    print("\nInterpretable model feature map:")
+    for i, name in enumerate(model_features):
+        print(f"  x{i} = {name}")
+
+    print("\n=== SmartAdditiveRegressor (honest; shape + direction) ===")
+    smart = SmartAdditiveRegressor().fit(X, y)
+    print(smart)
+
+    print("\n=== WinsorizedSparseOLSRegressor (honest sparse linear; zeroing evidence) ===")
+    sparse = WinsorizedSparseOLSRegressor().fit(X, y)
+    print(sparse)
+
+    print("\n=== HingeEBMRegressor (high-rank decoupled benchmark) ===")
+    hinge = HingeEBMRegressor().fit(X, y)
+    print(hinge)
+
+    # Pull interpretable evidence for score calibration.
+    size_slope_smart = smart.linear_approx_.get(0, (0.0, 0.0, 0.0))[0]
+    dist_slope_smart = smart.linear_approx_.get(1, (0.0, 0.0, 0.0))[0]
+    size_imp_smart = float(smart.feature_importances_[0]) if len(smart.feature_importances_) > 0 else 0.0
+    dist_imp_smart = float(smart.feature_importances_[1]) if len(smart.feature_importances_) > 1 else 0.0
+
+    sparse_size = 0 in set(int(i) for i in sparse.support_)
+    sparse_dist = 1 in set(int(i) for i in sparse.support_)
+
+    hinge_active = active_features_hinge_ebm(hinge)
+    hinge_size = 0 in hinge_active
+    hinge_dist = 1 in hinge_active
+
+    p_base_size = float(glm_base.pvalues["size_diff"])
+    p_base_dist = float(glm_base.pvalues["dist_diff"])
+    p_ctrl_size = float(glm_ctrl.pvalues["size_diff"])
+    p_ctrl_dist = float(glm_ctrl.pvalues["dist_diff"])
+    p_dyad_size = float(glm_dyad.pvalues["size_diff"])
+    p_dyad_dist = float(glm_dyad.pvalues["dist_diff"])
+
+    b_size = float(glm_base.params["size_diff"])
+    b_dist = float(glm_base.params["dist_diff"])
+    c_size = float(glm_ctrl.params["size_diff"])
+    c_dist = float(glm_ctrl.params["dist_diff"])
+    d_size = float(glm_dyad.params["size_diff"])
+    d_dist = float(glm_dyad.params["dist_diff"])
+
+    # Separate strength scores for each driver, then combine.
+    size_score = 50.0
+    dist_score = 50.0
+
+    # Classical evidence (weights emphasize controlled models).
+    size_score += 10 if p_base_size < 0.10 else (-4 if p_base_size > 0.20 else 0)
+    size_score += 16 if p_ctrl_size < 0.05 else (8 if p_ctrl_size < 0.10 else -5)
+    size_score += 8 if p_dyad_size < 0.10 else -6
+
+    dist_score += 10 if p_base_dist < 0.10 else (-6 if p_base_dist > 0.20 else 0)
+    dist_score += 12 if p_ctrl_dist < 0.05 else (5 if p_ctrl_dist < 0.10 else -8)
+    dist_score += 8 if p_dyad_dist < 0.10 else -7
+
+    # Direction consistency across GLMs.
+    size_signs = np.sign([b_size, c_size, d_size])
+    dist_signs = np.sign([b_dist, c_dist, d_dist])
+    if np.all(size_signs == size_signs[0]):
+        size_score += 5
+    if np.all(dist_signs == dist_signs[0]):
+        dist_score += 4
+
+    # Interpretable model corroboration / null evidence.
+    size_score += 7 if size_slope_smart > 0 else -7
+    dist_score += 3 if abs(dist_slope_smart) > 1e-4 else -3
+
+    size_score += 7 if sparse_size else -7
+    dist_score += 7 if sparse_dist else -9
+
+    size_score += 4 if hinge_size else -6
+    dist_score += 4 if hinge_dist else -6
+
+    # If SmartAdditive importance is tiny, discount that feature.
+    if size_imp_smart < 0.03:
+        size_score -= 6
+    if dist_imp_smart < 0.03:
+        dist_score -= 6
+
+    size_score = float(np.clip(size_score, 0, 100))
+    dist_score = float(np.clip(dist_score, 0, 100))
+
+    # Question asks about BOTH relative group size and location influence.
+    combined_score = 0.5 * size_score + 0.5 * dist_score
+    response = clip01(combined_score)
 
     explanation = (
-        f"DV is win (focal group victory). Relative group size shows a positive but only marginal controlled effect "
-        f"(logit coef={fmt(size_coef)}, p={fmt(size_p)}; bivariate r={fmt(size_r)}, p={fmt(size_p_bi)}). "
-        f"SmartAdditive ranks rel_group_size #{smart_size['rank']} with {100*smart_size['importance']:.1f}% importance and direction "
-        f"'{smart_size['direction']}' ({size_shape}). HingeEBM assigns rel_group_size {100*hinge_size['importance']:.1f}% importance "
-        f"(often zeroed out), so size effects are present but not robustly strong. "
-        f"Contest location is mixed in linear models: loc_advantage is weak in controlled logit (coef={fmt(loc_coef)}, p={fmt(loc_p)}) and bivariate "
-        f"correlation (r={fmt(loc_r)}, p={fmt(loc_p_bi)}), but SmartAdditive ranks it #{smart_loc['rank']} with {100*smart_loc['importance']:.1f}% "
-        f"importance and a '{smart_loc['direction']}' pattern ({loc_shape}), indicating threshold-like home-range advantage. "
-        f"In robustness logit, dist_focal is negative and marginal (coef={fmt(dist_focal_coef)}, p={fmt(dist_focal_p)}), while dist_other is weaker "
-        f"(coef={fmt(dist_other_coef)}, p={fmt(dist_other_p)}). HingeEBM captures location mostly through raw distances "
-        f"(dist_focal importance={100*hinge_dist_focal['importance']:.1f}%, dist_other={100*hinge_dist_other['importance']:.1f}%) rather than the "
-        f"constructed difference variable. Key confounders also matter: {confounder_text}. Overall, evidence supports a moderate/partial influence: "
-        f"relative size is weak-to-marginally positive and location effects appear nonlinear rather than consistently linear across models."
+        f"Bivariate tests were weak (size_diff r={pb_size.statistic:.2f}, p={pb_size.pvalue:.3f}; "
+        f"dist_diff r={pb_dist.statistic:.2f}, p={pb_dist.pvalue:.3f}). "
+        f"In Binomial GLM without controls, size_diff was positive but not significant "
+        f"(beta={b_size:.3f}, p={p_base_size:.3f}) and dist_diff was near zero/non-significant "
+        f"(beta={b_dist:.4f}, p={p_base_dist:.3f}). "
+        f"With male/female composition controls, size_diff became significant and positive "
+        f"(beta={c_size:.3f}, p={p_ctrl_size:.3f}) but dist_diff remained non-significant "
+        f"(beta={c_dist:.4f}, p={p_ctrl_dist:.3f}). "
+        f"With dyad fixed effects, both were non-significant (size p={p_dyad_size:.3f}, dist p={p_dyad_dist:.3f}). "
+        f"Interpretable models were mixed for size and mostly null for location: SmartAdditive showed a positive "
+        f"size slope ({size_slope_smart:.4f}) with some nonlinear location pattern, WinsorizedSparseOLS retained "
+        f"size_diff but zeroed dist_diff, and HingeEBM zeroed both. "
+        f"Overall this supports at most a moderate, not robust, influence of relative group size and weak evidence "
+        f"for contest location as an independent predictor."
     )
 
-    result = {"response": response, "explanation": explanation}
+    output = {"response": response, "explanation": explanation}
     with open("conclusion.txt", "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=True)
+        json.dump(output, f)
 
-    print("\n=== FINAL CONCLUSION JSON ===")
-    print(json.dumps(result, indent=2))
+    print("\nFinal calibrated scores:")
+    print(f"size_score={size_score:.1f}, dist_score={dist_score:.1f}, combined={response}")
+    print("Wrote conclusion.txt")
 
 
 if __name__ == "__main__":

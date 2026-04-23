@@ -26,4 +26,13 @@ dependencies = [
     "weasyprint>=68.1",
     "tabpfn>=7.0.0",
     "pypdf2>=3.0.1",
+    "agentic-imodels",
 ]
+
+[tool.uv.workspace]
+members = [
+    "result_libs_processed/agentic-imodels",
+]
+
+[tool.uv.sources]
+agentic-imodels = { workspace = true }

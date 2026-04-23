@@ -1,216 +1,211 @@
 import json
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from scipy import stats
 
-from interp_models import HingeEBMRegressor, SmartAdditiveRegressor
-
-
-def fit_ols(df: pd.DataFrame, dv: str, features: List[str], label: str):
-    data = df[[dv] + features].dropna()
-    X = sm.add_constant(data[features], has_constant="add")
-    y = data[dv]
-    model = sm.OLS(y, X).fit()
-    print(f"\n=== OLS: {label} ===")
-    print(model.summary())
-    return model
+from agentic_imodels import (
+    HingeEBMRegressor,
+    HingeGAMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def safe_effect(effects: Dict, feature: str):
-    if feature not in effects:
-        return {"direction": "zero", "importance": 0.0, "rank": 0}
-    e = effects[feature]
-    return {
-        "direction": str(e.get("direction", "zero")),
-        "importance": float(e.get("importance", 0.0)),
-        "rank": int(e.get("rank", 0) or 0),
-    }
+def effective_coef_hinge_ebm(model: HingeEBMRegressor, feature_idx: int) -> float:
+    """Replicate the model's displayed effective coefficient logic for one feature."""
+    coefs = model.lasso_.coef_
+    n_sel = len(model.selected_)
+    effective: Dict[int, float] = {}
+
+    for i in range(n_sel):
+        j_orig = int(model.selected_[i])
+        effective[j_orig] = float(coefs[i])
+
+    for idx, (feat_idx, _knot, direction) in enumerate(model.hinge_info_):
+        j_orig = int(model.selected_[feat_idx])
+        c = float(coefs[n_sel + idx])
+        if abs(c) < 1e-6:
+            continue
+        if direction == "pos":
+            effective[j_orig] = effective.get(j_orig, 0.0) + c
+        else:
+            effective[j_orig] = effective.get(j_orig, 0.0) - c
+
+    return float(effective.get(feature_idx, 0.0))
 
 
-def smart_shape_summary(model: SmartAdditiveRegressor, feature: str) -> str:
-    if feature not in model.feature_names_:
-        return "feature unavailable in SmartAdditive model"
-
-    j = model.feature_names_.index(feature)
-    if j not in model.shape_functions_:
-        return "no learned nonlinear pattern for this feature"
-
-    thresholds, intervals = model.shape_functions_[j]
-    if not intervals:
-        return "no learned shape"
-
-    max_idx = int(np.argmax(intervals))
-    min_idx = int(np.argmin(intervals))
-
-    def interval_label(idx: int) -> str:
-        if len(thresholds) == 0:
-            return "all values"
-        if idx == 0:
-            return f"<= {thresholds[0]:.2f}"
-        if idx == len(thresholds):
-            return f"> {thresholds[-1]:.2f}"
-        return f"({thresholds[idx - 1]:.2f}, {thresholds[idx]:.2f}]"
-
-    return (
-        f"highest contribution around {feature} {interval_label(max_idx)} ({intervals[max_idx]:+.2f}), "
-        f"lowest around {feature} {interval_label(min_idx)} ({intervals[min_idx]:+.2f})"
-    )
+def bounded_int(x: float, lo: int = 0, hi: int = 100) -> int:
+    return int(max(lo, min(hi, round(x))))
 
 
-def evidence_strength(coef: float, pval: float) -> float:
-    if coef >= 0:
-        return 0.0
-    if pval < 0.01:
-        return 1.0
-    if pval < 0.05:
-        return 0.8
-    if pval < 0.10:
-        return 0.4
-    return 0.0
-
-
-def model_effect_strength(direction: str, importance: float) -> float:
-    if "decreasing" not in direction and direction != "negative":
-        return 0.0
-    if importance >= 0.10:
-        return 1.0
-    if importance >= 0.05:
-        return 0.7
-    if importance >= 0.02:
-        return 0.4
-    if importance > 0:
-        return 0.2
-    return 0.0
-
-
-def main():
+def main() -> None:
     with open("info.json", "r", encoding="utf-8") as f:
         info = json.load(f)
-
-    question = info.get("research_questions", ["Unknown question"])[0]
-    print("Research question:")
-    print(question)
+    question = info["research_questions"][0]
+    print("Research question:", question)
 
     df = pd.read_csv("caschools.csv")
+    df["avg_score"] = (df["read"] + df["math"]) / 2.0
+    df["str_ratio"] = df["students"] / df["teachers"]
+    df["computer_per_student"] = df["computer"] / df["students"]
+    df["is_kk08"] = (df["grades"] == "KK-08").astype(int)
 
-    # Build IV and DV for the question.
-    iv = "student_teacher_ratio"
     dv = "avg_score"
-    df[iv] = df["students"] / df["teachers"]
-    df[dv] = (df["read"] + df["math"]) / 2.0
-
-    print("\n=== Step 1: Exploration ===")
-    cols_for_summary = [
-        iv,
-        dv,
-        "students",
-        "teachers",
+    iv = "str_ratio"
+    controls: List[str] = [
         "calworks",
         "lunch",
-        "english",
         "income",
+        "english",
         "expenditure",
-        "computer",
+        "computer_per_student",
+        "is_kk08",
     ]
-    print("Summary statistics:")
-    print(df[cols_for_summary].describe().T)
+    features = [iv] + controls
 
-    print("\nDistribution quantiles (IV and DV):")
-    print(df[[iv, dv]].quantile([0.01, 0.10, 0.25, 0.50, 0.75, 0.90, 0.99]))
+    analysis_cols = [dv] + features
+    analysis_df = df[analysis_cols].copy()
 
-    corr = df[[iv, dv, "lunch", "income", "english", "calworks", "expenditure", "computer"]].corr()[dv]
-    print("\nCorrelations with DV:")
-    print(corr.sort_values(ascending=False))
+    print("\n=== Data overview ===")
+    print("Rows, columns:", analysis_df.shape)
+    print("Missing values:\n", analysis_df.isna().sum().to_string())
+    print("\nSummary statistics:\n", analysis_df.describe().to_string())
+    print("\nSkewness (distribution shape):\n", analysis_df.skew().to_string())
 
-    # Step 2: OLS models with increasing controls.
-    m1 = fit_ols(df, dv, [iv], "Bivariate")
-    core_controls = [iv, "lunch", "income", "english"]
-    m2 = fit_ols(df, dv, core_controls, "Core controls")
-    full_controls = [iv, "lunch", "income", "english", "expenditure", "computer", "calworks", "students"]
-    m3 = fit_ols(df, dv, full_controls, "Extended controls")
+    corr = analysis_df.corr(numeric_only=True)
+    print("\nCorrelation matrix:\n", corr.round(3).to_string())
+    corr_to_dv = corr[dv].drop(dv).sort_values(key=lambda s: s.abs(), ascending=False)
+    print("\nTop absolute correlations with avg_score:\n", corr_to_dv.round(3).to_string())
 
-    # Step 3: Interpretable models.
-    print("\n=== Step 3: Interpretable Models ===")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    # Exclude identifiers and direct components of the constructed DV.
-    exclude = {"rownames", "district", dv, "read", "math"}
-    interp_features = [c for c in numeric_cols if c not in exclude]
-    X_interp = df[interp_features]
-    y = df[dv]
+    pearson_r, pearson_p = stats.pearsonr(analysis_df[iv], analysis_df[dv])
+    spearman_rho, spearman_p = stats.spearmanr(analysis_df[iv], analysis_df[dv])
+    print(
+        "\nBivariate association (student-teacher ratio vs avg score):",
+        f"Pearson r={pearson_r:.3f} (p={pearson_p:.3g}),",
+        f"Spearman rho={spearman_rho:.3f} (p={spearman_p:.3g})",
+    )
 
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y)
-    smart_effects = smart.feature_effects()
-    print("\nSmartAdditiveRegressor model:")
+    print("\n=== Classical tests (statsmodels OLS) ===")
+    X_biv = sm.add_constant(analysis_df[[iv]])
+    ols_biv = sm.OLS(analysis_df[dv], X_biv).fit()
+    print("\nBivariate OLS summary:")
+    print(ols_biv.summary())
+
+    X_ctrl = sm.add_constant(analysis_df[[iv] + controls])
+    ols_ctrl = sm.OLS(analysis_df[dv], X_ctrl).fit()
+    print("\nControlled OLS summary:")
+    print(ols_ctrl.summary())
+
+    X = analysis_df[features]
+    y = analysis_df[dv]
+
+    print("\n=== Interpretable models (agentic_imodels) ===")
+    smart = SmartAdditiveRegressor()
+    smart.fit(X, y)
+    print("\n--- SmartAdditiveRegressor ---")
     print(smart)
-    print("\nSmartAdditive feature effects:")
-    print(smart_effects)
 
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y)
-    hinge_effects = hinge.feature_effects()
-    print("\nHingeEBMRegressor model:")
-    print(hinge)
-    print("\nHingeEBM feature effects:")
-    print(hinge_effects)
+    hinge_gam = HingeGAMRegressor()
+    hinge_gam.fit(X, y)
+    print("\n--- HingeGAMRegressor ---")
+    print(hinge_gam)
 
-    iv_smart = safe_effect(smart_effects, iv)
-    iv_hinge = safe_effect(hinge_effects, iv)
+    hinge_ebm = HingeEBMRegressor()
+    hinge_ebm.fit(X, y)
+    print("\n--- HingeEBMRegressor ---")
+    print(hinge_ebm)
 
-    # Important confounders from model importances.
-    smart_ranked = sorted(
-        [(k, float(v.get("importance", 0.0)), str(v.get("direction", "")), int(v.get("rank", 0) or 0))
-         for k, v in smart_effects.items() if k != iv],
-        key=lambda x: x[1],
-        reverse=True,
+    sparse_ols = WinsorizedSparseOLSRegressor(max_features=8)
+    sparse_ols.fit(X, y)
+    print("\n--- WinsorizedSparseOLSRegressor ---")
+    print(sparse_ols)
+
+    smart_iv_importance = float(smart.feature_importances_[0])
+    smart_total_importance = float(np.sum(smart.feature_importances_))
+    smart_iv_rel_importance = (
+        smart_iv_importance / smart_total_importance if smart_total_importance > 0 else 0.0
     )
-    hinge_ranked = sorted(
-        [(k, float(v.get("importance", 0.0)), str(v.get("direction", "")), int(v.get("rank", 0) or 0))
-         for k, v in hinge_effects.items() if k != iv],
-        key=lambda x: x[1],
-        reverse=True,
+    smart_iv_slope = float(smart.linear_approx_.get(0, (0.0, 0.0, 0.0))[0])
+
+    hinge_iv_importance = float(hinge_gam.feature_importances_[0])
+    hinge_iv_inactive = hinge_iv_importance < 1e-9
+    hinge_ebm_iv_coef = effective_coef_hinge_ebm(hinge_ebm, 0)
+    sparse_ols_iv_coef = (
+        float(sparse_ols.ols_coef_[list(sparse_ols.support_).index(0)])
+        if 0 in set(int(i) for i in sparse_ols.support_)
+        else 0.0
     )
 
-    top_smart = smart_ranked[:3]
-    top_hinge = hinge_ranked[:3]
+    biv_beta = float(ols_biv.params[iv])
+    biv_p = float(ols_biv.pvalues[iv])
+    ctrl_beta = float(ols_ctrl.params[iv])
+    ctrl_p = float(ols_ctrl.pvalues[iv])
+    ctrl_ci_low, ctrl_ci_high = map(float, ols_ctrl.conf_int().loc[iv].tolist())
 
-    # Scoring rubric weighted toward controlled robustness.
-    score = 0.0
-    score += 20.0 * evidence_strength(float(m1.params[iv]), float(m1.pvalues[iv]))
-    score += 25.0 * evidence_strength(float(m2.params[iv]), float(m2.pvalues[iv]))
-    score += 35.0 * evidence_strength(float(m3.params[iv]), float(m3.pvalues[iv]))
-    score += 10.0 * model_effect_strength(iv_smart["direction"], iv_smart["importance"])
-    score += 10.0 * model_effect_strength(iv_hinge["direction"], iv_hinge["importance"])
-    score_int = int(np.clip(round(score), 0, 100))
+    # Calibrated to SKILL.md guidance:
+    # strong robust evidence -> high score; weak/inconsistent evidence -> 15-40.
+    score = 45.0
 
-    shape_text = smart_shape_summary(smart, iv)
+    if biv_beta < 0 and biv_p < 0.05:
+        score += 15
+    elif biv_p >= 0.05:
+        score -= 8
+
+    if ctrl_beta < 0 and ctrl_p < 0.05:
+        score += 30
+    elif ctrl_beta < 0 and ctrl_p >= 0.05:
+        score -= 12
+    else:
+        score -= 15
+
+    if ctrl_p >= 0.10:
+        score -= 6
+    if abs(ctrl_beta) < 0.25:
+        score -= 5
+
+    if smart_iv_rel_importance < 0.10:
+        score -= 6
+    if smart_iv_slope < 0:
+        score += 2
+
+    if hinge_iv_inactive:
+        score -= 8
+    if abs(hinge_ebm_iv_coef) < 0.10:
+        score -= 6
+    elif hinge_ebm_iv_coef < -0.10:
+        score += 3
+
+    if sparse_ols_iv_coef < -0.15:
+        score += 3
+    elif abs(sparse_ols_iv_coef) < 0.10:
+        score -= 2
+
+    response = bounded_int(score, 0, 100)
 
     explanation = (
-        f"Bivariate evidence supports the hypothesis: {iv} is negatively correlated with {dv} "
-        f"(r={df[iv].corr(df[dv]):.3f}) and the unadjusted OLS slope is {m1.params[iv]:.3f} "
-        f"(p={m1.pvalues[iv]:.3g}). After core socioeconomic controls (lunch, income, english), "
-        f"the association remains negative but smaller ({m2.params[iv]:.3f}, p={m2.pvalues[iv]:.3g}). "
-        f"With extended controls (including expenditure, computer, calworks, students), it stays negative "
-        f"but is not statistically robust ({m3.params[iv]:.3f}, p={m3.pvalues[iv]:.3g}). "
-        f"SmartAdditive ranks {iv} at #{iv_smart['rank']} with {iv_smart['importance']:.1%} importance and "
-        f"{iv_smart['direction']} shape; {shape_text}. HingeEBM gives {iv} direction={iv_hinge['direction']} "
-        f"with {iv_hinge['importance']:.1%} importance, effectively shrinking it toward zero relative to stronger predictors. "
-        f"The dominant confounders are socioeconomic variables: SmartAdditive top features are "
-        f"{top_smart[0][0]} ({top_smart[0][1]:.1%}), {top_smart[1][0]} ({top_smart[1][1]:.1%}), "
-        f"{top_smart[2][0]} ({top_smart[2][1]:.1%}); HingeEBM top features are "
-        f"{top_hinge[0][0]} ({top_hinge[0][1]:.1%}), {top_hinge[1][0]} ({top_hinge[1][1]:.1%}), "
-        f"{top_hinge[2][0]} ({top_hinge[2][1]:.1%}). Overall, lower student-teacher ratio shows a directionally "
-        f"favorable but only partially robust relationship with performance once confounders are controlled."
+        f"Bivariate evidence suggests a negative association (Pearson r={pearson_r:.3f}, "
+        f"bivariate OLS beta={biv_beta:.3f}, p={biv_p:.3g}), but this largely disappears after "
+        f"controlling for socioeconomic and resource variables (controlled OLS beta={ctrl_beta:.3f}, "
+        f"95% CI [{ctrl_ci_low:.3f}, {ctrl_ci_high:.3f}], p={ctrl_p:.3g}). "
+        f"In interpretable models, the student-teacher ratio effect is weak: SmartAdditive assigns "
+        f"low relative importance ({smart_iv_rel_importance:.1%}) with only a small slope "
+        f"({smart_iv_slope:.3f}), HingeGAM effectively zeros it out (importance={hinge_iv_importance:.4f}), "
+        f"and HingeEBM's displayed coefficient is near zero ({hinge_ebm_iv_coef:.3f}). "
+        f"WinsorizedSparseOLS keeps a small negative coefficient ({sparse_ols_iv_coef:.3f}), but it is much "
+        f"smaller than dominant predictors like lunch/income/english. Overall, evidence for a robust "
+        f"independent association is weak-to-moderate, so the answer leans 'No'."
     )
 
-    payload = {"response": score_int, "explanation": explanation}
+    result = {"response": response, "explanation": explanation}
     with open("conclusion.txt", "w", encoding="utf-8") as f:
-        json.dump(payload, f)
+        json.dump(result, f, ensure_ascii=True)
 
-    print("\n=== Final conclusion payload ===")
-    print(json.dumps(payload, indent=2))
+    print("\n=== Final calibrated conclusion ===")
+    print(json.dumps(result, indent=2))
+    print("\nWrote conclusion.txt")
 
 
 if __name__ == "__main__":

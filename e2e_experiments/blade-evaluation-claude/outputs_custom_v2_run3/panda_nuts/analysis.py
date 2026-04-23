@@ -1,120 +1,119 @@
 import json
-import warnings
-warnings.filterwarnings('ignore')
-
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+from scipy import stats
+from agentic_imodels import SmartAdditiveRegressor, HingeGAMRegressor
 
-df = pd.read_csv('panda_nuts.csv')
+# Load data
+df = pd.read_csv("panda_nuts.csv")
 print("Shape:", df.shape)
 print(df.head())
+print("\nSummary stats:")
 print(df.describe())
-print(df.dtypes)
+print("\nValue counts - sex:", df['sex'].value_counts().to_dict())
+print("Value counts - help:", df['help'].value_counts().to_dict())
+print("Value counts - hammer:", df['hammer'].value_counts().to_dict())
 
-# Define efficiency as nuts_opened / seconds
+# Compute nut-cracking efficiency (nuts per second)
 df['efficiency'] = df['nuts_opened'] / df['seconds']
+print("\nEfficiency stats:", df['efficiency'].describe())
 
 # Encode categoricals
-df['sex_bin'] = (df['sex'] == 'm').astype(int)
-df['help_bin'] = (df['help'].str.lower() == 'y').astype(int)
+df['sex_m'] = (df['sex'] == 'm').astype(int)
+df['help_y'] = (df['help'] == 'y').astype(int)
 
-print("\nEfficiency stats:")
-print(df['efficiency'].describe())
+print("\n--- Bivariate tests ---")
+eff_male = df[df['sex_m'] == 1]['efficiency']
+eff_female = df[df['sex_m'] == 0]['efficiency']
+t_sex, p_sex = stats.ttest_ind(eff_male, eff_female)
+print(f"Sex effect (t-test): t={t_sex:.3f}, p={p_sex:.3f}, male_mean={eff_male.mean():.4f}, female_mean={eff_female.mean():.4f}")
 
-print("\nCorrelations with efficiency:")
-print(df[['age', 'sex_bin', 'help_bin', 'efficiency']].corr()['efficiency'])
+eff_help = df[df['help_y'] == 1]['efficiency']
+eff_nohelp = df[df['help_y'] == 0]['efficiency']
+t_help, p_help = stats.ttest_ind(eff_help, eff_nohelp)
+print(f"Help effect (t-test): t={t_help:.3f}, p={p_help:.3f}, help_mean={eff_help.mean():.4f}, nohelp_mean={eff_nohelp.mean():.4f}")
 
-# OLS with controls
-feature_cols = ['age', 'sex_bin', 'help_bin', 'seconds']
-X = sm.add_constant(df[feature_cols])
-model = sm.OLS(df['efficiency'], X).fit()
-print("\n--- OLS Summary ---")
-print(model.summary())
+r_age, p_age = stats.pearsonr(df['age'], df['efficiency'])
+print(f"Age-efficiency correlation: r={r_age:.3f}, p={p_age:.3f}")
 
-# SmartAdditiveRegressor
-numeric_cols = ['age', 'sex_bin', 'help_bin', 'seconds']
-X_df = df[numeric_cols]
-y = df['efficiency']
+print("\n--- OLS with controls ---")
+X_ols = sm.add_constant(df[['age', 'sex_m', 'help_y', 'seconds']])
+ols = sm.OLS(df['efficiency'], X_ols).fit()
+print(ols.summary())
 
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_df, y)
-print("\n--- SmartAdditiveRegressor ---")
-print(smart)
-smart_effects = smart.feature_effects()
-print("Feature effects:", smart_effects)
+print("\n--- OLS without session_duration control ---")
+X_ols2 = sm.add_constant(df[['age', 'sex_m', 'help_y']])
+ols2 = sm.OLS(df['efficiency'], X_ols2).fit()
+print(ols2.summary())
 
-# HingeEBMRegressor
-hinge = HingeEBMRegressor(n_knots=3)
-hinge.fit(X_df, y)
-print("\n--- HingeEBMRegressor ---")
-print(hinge)
-hinge_effects = hinge.feature_effects()
-print("Feature effects:", hinge_effects)
+# Interpretable models
+X_interp = df[['age', 'sex_m', 'help_y', 'seconds']].copy()
+y_interp = df['efficiency'].copy()
 
-# Summarize key stats for conclusion
-ols_age_coef = model.params.get('age', None)
-ols_age_pval = model.pvalues.get('age', None)
-ols_sex_coef = model.params.get('sex_bin', None)
-ols_sex_pval = model.pvalues.get('sex_bin', None)
-ols_help_coef = model.params.get('help_bin', None)
-ols_help_pval = model.pvalues.get('help_bin', None)
+print("\n=== SmartAdditiveRegressor ===")
+sar = SmartAdditiveRegressor()
+sar.fit(X_interp, y_interp)
+print(sar)
 
-print(f"\nOLS age: coef={ols_age_coef:.4f}, p={ols_age_pval:.4f}")
-print(f"OLS sex: coef={ols_sex_coef:.4f}, p={ols_sex_pval:.4f}")
-print(f"OLS help: coef={ols_help_coef:.4f}, p={ols_help_pval:.4f}")
+print("\n=== HingeGAMRegressor ===")
+hgr = HingeGAMRegressor()
+hgr.fit(X_interp, y_interp)
+print(hgr)
 
-# Determine response score
-sig_count = sum([
-    ols_age_pval < 0.05,
-    ols_sex_pval < 0.05,
-    ols_help_pval < 0.05
-])
-any_significant = sig_count > 0
+# Summarize findings
+print("\n--- Summary ---")
+age_coef = ols2.params['age']
+age_pval = ols2.pvalues['age']
+sex_coef = ols2.params['sex_m']
+sex_pval = ols2.pvalues['sex_m']
+help_coef = ols2.params['help_y']
+help_pval = ols2.pvalues['help_y']
 
-# Age importance from smart model
-age_imp = smart_effects.get('age', {}).get('importance', 0)
-help_imp = smart_effects.get('help_bin', {}).get('importance', 0)
-sex_imp = smart_effects.get('sex_bin', {}).get('importance', 0)
+print(f"Age: coef={age_coef:.4f}, p={age_pval:.4f}")
+print(f"Sex(male): coef={sex_coef:.4f}, p={sex_pval:.4f}")
+print(f"Help: coef={help_coef:.4f}, p={help_pval:.4f}")
 
-print(f"\nSmartAdditive importances: age={age_imp:.3f}, help={help_imp:.3f}, sex={sex_imp:.3f}")
+# Compute Likert score
+# Research question asks about age, sex, AND help collectively.
+# We'll assess overall evidence.
+effects = []
+sig_count = 0
+for coef, pval, name in [(age_coef, age_pval, 'age'), (sex_coef, sex_pval, 'sex'), (help_coef, help_pval, 'help')]:
+    if pval < 0.05:
+        sig_count += 1
+        print(f"  {name}: SIGNIFICANT, coef={coef:.4f}")
+    else:
+        print(f"  {name}: not significant (p={pval:.4f})")
 
-# Score logic
-if sig_count >= 2:
-    score = 80
+# Determine score: if most variables are significant with reasonable effect size, score high
+# The question is about influence collectively
+if sig_count == 3:
+    score = 85
+elif sig_count == 2:
+    score = 70
 elif sig_count == 1:
-    score = 60
+    score = 45
 else:
     score = 20
 
-# Also weight by importance
-avg_imp = (age_imp + help_imp + sex_imp) / 3
-if avg_imp > 0.2:
-    score = min(score + 10, 100)
-
+# Fine-tune based on direction/magnitude
 explanation = (
-    f"The analysis examines how age, sex, and help influence nut-cracking efficiency "
-    f"(nuts opened per second) in western chimpanzees. "
-    f"OLS regression (controlling for session duration): "
-    f"age coef={ols_age_coef:.3f} (p={ols_age_pval:.3f}), "
-    f"sex coef={ols_sex_coef:.3f} (p={ols_sex_pval:.3f}), "
-    f"help coef={ols_help_coef:.3f} (p={ols_help_pval:.3f}). "
-    f"{sig_count} of 3 predictors are significant at p<0.05. "
-    f"SmartAdditiveRegressor importances: age={age_imp:.3f}, help_bin={help_imp:.3f}, sex_bin={sex_imp:.3f}. "
-    f"Age direction: {smart_effects.get('age', {}).get('direction', 'unknown')}, "
-    f"help direction: {smart_effects.get('help_bin', {}).get('direction', 'unknown')}, "
-    f"sex direction: {smart_effects.get('sex_bin', {}).get('direction', 'unknown')}. "
-    f"HingeEBM importances: age={hinge_effects.get('age', {}).get('importance', 0):.3f}, "
-    f"help={hinge_effects.get('help_bin', {}).get('importance', 0):.3f}, "
-    f"sex={hinge_effects.get('sex_bin', {}).get('importance', 0):.3f}. "
-    f"Together these models indicate that age and/or help are the dominant factors in efficiency, "
-    f"with the effect being {'robust across models' if sig_count > 0 else 'weak and inconsistent'}."
+    f"Research question: How do age, sex, and help influence nut-cracking efficiency (nuts/second). "
+    f"OLS without controls: age (beta={age_coef:.4f}, p={age_pval:.3f}), "
+    f"sex_male (beta={sex_coef:.4f}, p={sex_pval:.3f}), "
+    f"help (beta={help_coef:.4f}, p={help_pval:.3f}). "
+    f"Age correlation with efficiency: r={r_age:.3f} (p={p_age:.3f}). "
+    f"Bivariate: sex p={p_sex:.3f}, help p={p_help:.3f}. "
+    f"Significant predictors: {sig_count}/3. "
+    f"SmartAdditiveRegressor and HingeGAMRegressor were fitted to characterize directions and shapes. "
+    f"Overall: {'Strong' if sig_count >= 2 else 'Weak'} evidence that age, sex, and help collectively influence nut-cracking efficiency."
 )
 
 result = {"response": score, "explanation": explanation}
-with open('conclusion.txt', 'w') as f:
+print("\nResult:", result)
+
+with open("conclusion.txt", "w") as f:
     json.dump(result, f)
 
-print("\nWrote conclusion.txt")
-print(json.dumps(result, indent=2))
+print("\nconclusion.txt written.")

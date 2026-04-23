@@ -1,260 +1,290 @@
 import json
 import warnings
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
+from scipy import stats
+import statsmodels.formula.api as smf
+from sklearn.model_selection import KFold, cross_val_score
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=FutureWarning)
-
-
-def fmt_float(x, nd=4):
-    return float(np.round(float(x), nd))
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def top_effects(effects, k=5):
-    ranked = sorted(
-        [(name, info) for name, info in effects.items()],
-        key=lambda kv: float(kv[1].get("importance", 0.0)),
-        reverse=True,
-    )
-    return ranked[:k]
+warnings.filterwarnings("ignore")
 
 
-def significant_controls(model, exclude=None, alpha=0.05):
-    exclude = set(exclude or [])
-    pvals = model.pvalues
-    params = model.params
-    out = []
-    for name in pvals.index:
-        if name in exclude:
+def effective_coefs_hinge_ebm(model: HingeEBMRegressor) -> Tuple[Dict[int, float], float]:
+    """Replicate the effective linearized coefficients used by HingeEBMRegressor.__str__."""
+    n_sel = len(model.selected_)
+    coefs = model.lasso_.coef_
+    intercept = float(model.lasso_.intercept_)
+
+    effective_coefs: Dict[int, float] = {}
+    for i in range(n_sel):
+        j_orig = int(model.selected_[i])
+        effective_coefs[j_orig] = float(coefs[i])
+
+    for idx, (feat_idx, knot, direction) in enumerate(model.hinge_info_):
+        j_orig = int(model.selected_[feat_idx])
+        c = float(coefs[n_sel + idx])
+        if abs(c) < 1e-6:
             continue
-        p = float(pvals[name])
-        if p < alpha:
-            out.append((name, float(params[name]), p))
-    out.sort(key=lambda x: x[2])
-    return out
+        if direction == "pos":
+            effective_coefs[j_orig] = effective_coefs.get(j_orig, 0.0) + c
+            intercept -= c * float(knot)
+        else:
+            effective_coefs[j_orig] = effective_coefs.get(j_orig, 0.0) - c
+            intercept += c * float(knot)
+
+    return effective_coefs, intercept
 
 
-def smart_beauty_shape_summary(model, feature_name="beauty"):
-    if not hasattr(model, "shape_functions_"):
-        return None
-    if feature_name not in model.feature_names_:
-        return None
-
-    j = model.feature_names_.index(feature_name)
-    if j not in model.shape_functions_:
-        return None
-
-    thresholds, intervals = model.shape_functions_[j]
-    if len(intervals) == 0:
-        return None
-
-    crossing = None
-    for i in range(1, len(intervals)):
-        if intervals[i - 1] <= 0 < intervals[i]:
-            if i - 1 < len(thresholds):
-                crossing = thresholds[i - 1]
-            break
-
-    return {
-        "low_effect": float(intervals[0]),
-        "high_effect": float(intervals[-1]),
-        "crossing": None if crossing is None else float(crossing),
-        "min_effect": float(min(intervals)),
-        "max_effect": float(max(intervals)),
-    }
+def monotonicity_label(intervals: np.ndarray, tol: float = 1e-6) -> str:
+    diffs = np.diff(intervals)
+    if np.all(diffs >= -tol):
+        return "monotone increasing"
+    if np.all(diffs <= tol):
+        return "monotone decreasing"
+    return "non-monotone"
 
 
-def compute_score(biv_coef, biv_p, ctrl_coef, ctrl_p, smart_info, hinge_info):
-    if ctrl_p < 0.01 and ctrl_coef > 0:
-        score = 82
-    elif ctrl_p < 0.05 and ctrl_coef > 0:
-        score = 68
-    elif ctrl_coef > 0:
-        score = 50
-    else:
-        score = 20
-
-    smart_imp = float(smart_info.get("importance", 0.0)) if smart_info else 0.0
-    smart_dir = (smart_info or {}).get("direction", "")
-    if smart_imp >= 0.2 and ("increasing" in smart_dir or smart_dir == "positive"):
-        score += 6
-    elif smart_imp >= 0.05:
-        score += 3
-
-    hinge_imp = float(hinge_info.get("importance", 0.0)) if hinge_info else 0.0
-    hinge_dir = (hinge_info or {}).get("direction", "")
-    if hinge_imp >= 0.1 and hinge_dir == "positive":
-        score += 4
-    elif hinge_imp == 0:
-        score -= 4
-
-    if biv_p >= 0.05:
-        score -= 8
-
-    if abs(biv_coef) > 1e-12:
-        rel_change = abs(ctrl_coef - biv_coef) / abs(biv_coef)
-        if rel_change > 0.5:
-            score -= 6
-
-    return int(np.clip(round(score), 0, 100))
-
-
-def main():
+def main() -> None:
     with open("info.json", "r", encoding="utf-8") as f:
         info = json.load(f)
 
-    research_question = info["research_questions"][0]
+    research_q = info["research_questions"][0]
     print("=== Research Question ===")
-    print(research_question)
+    print(research_q)
 
     df = pd.read_csv("teachingratings.csv")
+    print("\n=== Data Overview ===")
+    print(f"Rows: {len(df)}, Columns: {df.shape[1]}")
+    print("Columns:", list(df.columns))
 
-    iv = "beauty"
-    dv = "eval"
-    print("\n=== Variables ===")
-    print(f"Dependent variable (DV): {dv}")
-    print(f"Independent variable (IV): {iv}")
+    print("\n=== Missingness ===")
+    print(df.isna().sum())
 
-    # Step 1: exploration
-    print("\n=== Step 1: Exploration ===")
-    print(f"Dataset shape: {df.shape}")
+    numeric_cols_all = df.select_dtypes(include=[np.number]).columns.tolist()
+    print("\n=== Numeric Summary Statistics ===")
+    print(df[numeric_cols_all].describe().T)
 
-    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-    cat_cols = [c for c in df.columns if c not in numeric_cols]
+    print("\n=== Outcome Distribution (eval) ===")
+    print(df["eval"].describe())
+    print("Skew(eval):", float(df["eval"].skew()))
+    print("Kurtosis(eval):", float(df["eval"].kurtosis()))
 
-    print("\nNumeric summary:")
-    print(df[numeric_cols].describe().T)
-
-    print("\nCategorical distributions:")
-    for c in cat_cols:
-        print(f"\n{c}:")
-        print(df[c].value_counts(dropna=False))
-
-    print("\nCorrelations with eval (numeric):")
-    corr_with_eval = df[numeric_cols].corr(numeric_only=True)[dv].sort_values(ascending=False)
+    print("\n=== Correlations with eval (numeric features) ===")
+    corr_with_eval = df[numeric_cols_all].corr()["eval"].sort_values(ascending=False)
     print(corr_with_eval)
 
-    biv_corr = df[[iv, dv]].corr().iloc[0, 1]
-    print(f"\nBivariate correlation ({iv}, {dv}): {biv_corr:.4f}")
+    cat_cols = ["minority", "gender", "credits", "division", "native", "tenure"]
+    print("\n=== Mean eval by categorical controls ===")
+    for c in cat_cols:
+        print(f"\n{c}:")
+        print(df.groupby(c)["eval"].agg(["mean", "count"]).sort_index())
 
-    X_biv = sm.add_constant(df[[iv]])
-    biv_model = sm.OLS(df[dv], X_biv).fit()
-    print("\nBivariate OLS (eval ~ beauty):")
-    print(biv_model.summary())
+    # Bivariate tests
+    r, r_p = stats.pearsonr(df["beauty"], df["eval"])
+    print("\n=== Bivariate Test: beauty vs eval ===")
+    print(f"Pearson r = {r:.4f}, p = {r_p:.4g}")
 
-    # Step 2: controlled OLS
-    print("\n=== Step 2: Controlled OLS ===")
-    controls_numeric = ["age", "students", "allstudents"]
-    controls_categorical = ["minority", "gender", "credits", "division", "native", "tenure"]
-    model_cols = [iv] + controls_numeric + controls_categorical
+    bivar_ols = smf.ols("eval ~ beauty", data=df).fit(cov_type="HC3")
+    print("\nBivariate OLS (HC3 robust SE):")
+    print(bivar_ols.summary())
 
-    X_ctrl = pd.get_dummies(df[model_cols], columns=controls_categorical, drop_first=True, dtype=float)
-    X_ctrl = sm.add_constant(X_ctrl).astype(float)
-    ctrl_model = sm.OLS(df[dv], X_ctrl).fit()
-
-    print(ctrl_model.summary())
-
-    # Step 3: Interpretable models
-    print("\n=== Step 3: Interpretable Models ===")
-
-    # As requested: include all numeric columns first
-    all_numeric_predictors = [c for c in numeric_cols if c != dv]
-    X_all = df[all_numeric_predictors]
-    y = df[dv]
-
-    print("\nUsing ALL numeric predictors:", all_numeric_predictors)
-    smart_all = SmartAdditiveRegressor(n_rounds=200)
-    smart_all.fit(X_all, y)
-    smart_all_effects = smart_all.feature_effects()
-    print("\nSmartAdditiveRegressor (all numeric):")
-    print(smart_all)
-    print("Top effects:", top_effects(smart_all_effects, k=6))
-
-    hinge_all = HingeEBMRegressor(n_knots=3)
-    hinge_all.fit(X_all, y)
-    hinge_all_effects = hinge_all.feature_effects()
-    print("\nHingeEBMRegressor (all numeric):")
-    print(hinge_all)
-    print("Top effects:", top_effects(hinge_all_effects, k=6))
-
-    # Substantive numeric model excluding identifier-like numeric columns
-    substantive_numeric = [c for c in all_numeric_predictors if c not in {"rownames", "prof"}]
-    X_sub = df[substantive_numeric]
-
-    print("\nUsing substantive numeric predictors (excluding identifier columns rownames/prof):", substantive_numeric)
-    smart_sub = SmartAdditiveRegressor(n_rounds=200)
-    smart_sub.fit(X_sub, y)
-    smart_sub_effects = smart_sub.feature_effects()
-    print("\nSmartAdditiveRegressor (substantive numeric):")
-    print(smart_sub)
-    print("Top effects:", top_effects(smart_sub_effects, k=6))
-
-    hinge_sub = HingeEBMRegressor(n_knots=3)
-    hinge_sub.fit(X_sub, y)
-    hinge_sub_effects = hinge_sub.feature_effects()
-    print("\nHingeEBMRegressor (substantive numeric):")
-    print(hinge_sub)
-    print("Top effects:", top_effects(hinge_sub_effects, k=6))
-
-    # Step 4: rich conclusion
-    print("\n=== Step 4: Conclusion Synthesis ===")
-    biv_coef = float(biv_model.params[iv])
-    biv_p = float(biv_model.pvalues[iv])
-    ctrl_coef = float(ctrl_model.params[iv])
-    ctrl_p = float(ctrl_model.pvalues[iv])
-
-    smart_beauty = smart_sub_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0})
-    hinge_beauty = hinge_sub_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0})
-    shape = smart_beauty_shape_summary(smart_sub, feature_name=iv)
-
-    sig_ctrl = significant_controls(ctrl_model, exclude={"const", iv}, alpha=0.05)
-    sig_ctrl_text = ", ".join(
-        [f"{name} (coef={coef:+.3f}, p={p:.3g})" for name, coef, p in sig_ctrl[:6]]
+    # Controlled OLS with relevant controls
+    formula_controls = (
+        "eval ~ beauty + age + students + allstudents + "
+        "C(minority) + C(gender) + C(credits) + C(division) + C(native) + C(tenure)"
     )
-    if not sig_ctrl_text:
-        sig_ctrl_text = "none at p<0.05"
+    controlled_ols = smf.ols(formula_controls, data=df).fit(cov_type="HC3")
+    print("\n=== Controlled OLS (HC3 robust SE) ===")
+    print(controlled_ols.summary())
 
-    score = compute_score(
-        biv_coef=biv_coef,
-        biv_p=biv_p,
-        ctrl_coef=ctrl_coef,
-        ctrl_p=ctrl_p,
-        smart_info=smart_beauty,
-        hinge_info=hinge_beauty,
-    )
+    beauty_beta = float(controlled_ols.params["beauty"])
+    beauty_p = float(controlled_ols.pvalues["beauty"])
+    beauty_ci_lo, beauty_ci_hi = controlled_ols.conf_int().loc["beauty"].tolist()
 
-    smart_imp_pct = 100.0 * float(smart_beauty.get("importance", 0.0))
-    hinge_imp_pct = 100.0 * float(hinge_beauty.get("importance", 0.0))
+    # Prepare encoded features for agentic_imodels (no categorical handling built-in)
+    numeric_model_cols = ["beauty", "age", "students", "allstudents"]
+    X_df = pd.get_dummies(df[numeric_model_cols + cat_cols], drop_first=True, dtype=float)
+    y = df["eval"].astype(float).to_numpy()
+    X = X_df.to_numpy(dtype=float)
+    feature_names = list(X_df.columns)
+    beauty_idx = feature_names.index("beauty")
 
-    if shape is not None:
-        crossing_text = (
-            f"with a sign-change threshold around beauty={shape['crossing']:.2f}" if shape["crossing"] is not None else "without a clear sign-change threshold"
-        )
-        shape_text = (
-            f"SmartAdditive shows a {smart_beauty.get('direction', 'nonlinear')} shape: low beauty bins contribute about {shape['low_effect']:+.3f} to eval and high beauty bins about {shape['high_effect']:+.3f}, {crossing_text}."
-        )
+    print("\n=== Modeling Matrix for agentic_imodels ===")
+    print(f"X shape: {X.shape}, y shape: {y.shape}")
+    print("Feature names:")
+    print(feature_names)
+
+    models = {
+        "SmartAdditiveRegressor": SmartAdditiveRegressor(),
+        "HingeEBMRegressor": HingeEBMRegressor(),
+        "WinsorizedSparseOLSRegressor": WinsorizedSparseOLSRegressor(),
+    }
+
+    fitted = {}
+    cv = KFold(n_splits=5, shuffle=True, random_state=42)
+
+    print("\n=== agentic_imodels Fits and Printed Forms ===")
+    for name, model in models.items():
+        model.fit(X, y)
+        fitted[name] = model
+        print(f"\n--- {name} ---")
+        print(model)
+
+        r2_cv = cross_val_score(model, X, y, cv=cv, scoring="r2")
+        mse_cv = -cross_val_score(model, X, y, cv=cv, scoring="neg_mean_squared_error")
+        rmse_cv = np.sqrt(mse_cv)
+        print(f"CV R^2 mean={np.mean(r2_cv):.4f}, sd={np.std(r2_cv):.4f}")
+        print(f"CV RMSE mean={np.mean(rmse_cv):.4f}, sd={np.std(rmse_cv):.4f}")
+
+    # Extract beauty effect from each interpretable model
+    smart = fitted["SmartAdditiveRegressor"]
+    smart_total_imp = float(np.sum(smart.feature_importances_))
+    smart_beauty_imp = float(smart.feature_importances_[beauty_idx])
+    smart_beauty_imp_share = smart_beauty_imp / smart_total_imp if smart_total_imp > 1e-12 else 0.0
+    smart_rank = int(np.where(np.argsort(-smart.feature_importances_) == beauty_idx)[0][0] + 1)
+
+    if beauty_idx in smart.linear_approx_:
+        s_slope, _, s_r2 = smart.linear_approx_[beauty_idx]
+        if s_r2 > 0.70:
+            smart_shape = "approximately linear"
+            smart_direction = "positive" if s_slope > 0 else "negative" if s_slope < 0 else "zero"
+        else:
+            thresholds, intervals = smart.shape_functions_[beauty_idx]
+            smart_shape = f"piecewise ({monotonicity_label(np.array(intervals))})"
+            smart_direction = monotonicity_label(np.array(intervals))
     else:
-        shape_text = "SmartAdditive did not return a stable per-feature shape summary for beauty."
+        s_slope, s_r2 = 0.0, 0.0
+        smart_shape = "excluded"
+        smart_direction = "zero"
+
+    hinge = fitted["HingeEBMRegressor"]
+    hinge_eff, _ = effective_coefs_hinge_ebm(hinge)
+    hinge_beauty_coef = float(hinge_eff.get(beauty_idx, 0.0))
+    hinge_active = abs(hinge_beauty_coef) > 1e-6
+    hinge_active_sorted = sorted(
+        [(j, c) for j, c in hinge_eff.items() if abs(c) > 1e-6],
+        key=lambda t: abs(t[1]),
+        reverse=True,
+    )
+    hinge_rank = (
+        next((i + 1 for i, (j, _) in enumerate(hinge_active_sorted) if j == beauty_idx), None)
+        if hinge_active_sorted
+        else None
+    )
+
+    wins = fitted["WinsorizedSparseOLSRegressor"]
+    support = list(wins.support_)
+    wins_beauty_included = beauty_idx in support
+    wins_coef_map = {int(j): float(c) for j, c in zip(wins.support_, wins.ols_coef_)}
+    wins_beauty_coef = float(wins_coef_map.get(beauty_idx, 0.0))
+    wins_rank = (
+        next(
+            (i + 1 for i, (j, _) in enumerate(sorted(wins_coef_map.items(), key=lambda t: abs(t[1]), reverse=True)) if j == beauty_idx),
+            None,
+        )
+        if wins_coef_map
+        else None
+    )
+
+    print("\n=== Interpretable Model Synthesis for beauty ===")
+    print(
+        f"SmartAdditive: direction={smart_direction}, shape={smart_shape}, "
+        f"slope={s_slope:.4f}, approx_R2={s_r2:.3f}, importance_share={smart_beauty_imp_share:.3f}, rank={smart_rank}/{len(feature_names)}"
+    )
+    print(
+        f"HingeEBM: active={hinge_active}, effective_coef={hinge_beauty_coef:.4f}, "
+        f"rank={hinge_rank if hinge_rank is not None else 'excluded'}"
+    )
+    print(
+        f"WinsorizedSparseOLS: included={wins_beauty_included}, coef={wins_beauty_coef:.4f}, "
+        f"rank={wins_rank if wins_rank is not None else 'excluded'}"
+    )
+
+    # Calibrated Likert score (0-100) using significance + robustness + model ranking/zeroing
+    score = 50
+
+    # Controlled OLS significance/magnitude anchor
+    if beauty_p < 0.001:
+        score += 20
+    elif beauty_p < 0.01:
+        score += 15
+    elif beauty_p < 0.05:
+        score += 10
+    elif beauty_p < 0.10:
+        score += 5
+    else:
+        score -= 15
+
+    if beauty_beta > 0:
+        score += 5
+    elif beauty_beta < 0:
+        score -= 5
+
+    # Bivariate corroboration
+    if r_p < 0.05 and np.sign(r) == np.sign(beauty_beta):
+        score += 4
+
+    # SmartAdditive importance + direction
+    if smart_beauty_imp_share >= 0.15:
+        score += 10
+    elif smart_beauty_imp_share >= 0.07:
+        score += 6
+    elif smart_beauty_imp_share >= 0.03:
+        score += 2
+    else:
+        score -= 5
+
+    if s_slope != 0 and np.sign(s_slope) == np.sign(beauty_beta):
+        score += 5
+    elif s_slope != 0 and np.sign(s_slope) != np.sign(beauty_beta):
+        score -= 5
+
+    # Hinge zeroing / sign robustness
+    if hinge_active:
+        if np.sign(hinge_beauty_coef) == np.sign(beauty_beta):
+            score += 8
+        else:
+            score -= 8
+    else:
+        score -= 10
+
+    # Lasso-zeroing evidence from WinsorizedSparseOLS
+    if wins_beauty_included:
+        if np.sign(wins_beauty_coef) == np.sign(beauty_beta):
+            score += 10
+        else:
+            score -= 10
+    else:
+        score -= 15
+
+    score = int(np.clip(round(score), 0, 100))
 
     explanation = (
-        f"Beauty shows a robust positive association with teaching evaluations. Bivariate OLS gives coef={biv_coef:.3f} (p={biv_p:.3g}), and after controlling for instructor/course confounders the effect remains and slightly strengthens (coef={ctrl_coef:.3f}, p={ctrl_p:.3g}). "
-        f"Magnitude is meaningful relative to 1-5 eval scale and persists across models. {shape_text} "
-        f"In the substantive SmartAdditive model, beauty is rank {int(smart_beauty.get('rank', 0))} with importance {smart_imp_pct:.1f}%. "
-        f"In the substantive HingeEBM model, beauty is {hinge_beauty.get('direction', 'zero')} with importance {hinge_imp_pct:.1f}% (rank {int(hinge_beauty.get('rank', 0))}). "
-        f"Important confounders in controlled OLS include {sig_ctrl_text}. These covariates matter, but they do not remove the beauty effect, so evidence supports a strong 'Yes'."
+        f"Research question: {research_q} Controlled OLS with HC3 robust SE gives beauty beta={beauty_beta:.3f} "
+        f"(95% CI [{beauty_ci_lo:.3f}, {beauty_ci_hi:.3f}], p={beauty_p:.4g}), while bivariate association is "
+        f"r={r:.3f} (p={r_p:.4g}). In interpretable models, SmartAdditive estimates a {smart_direction} beauty effect "
+        f"with {smart_shape} form (slope={s_slope:.3f}, importance share={smart_beauty_imp_share:.3f}, rank={smart_rank}), "
+        f"HingeEBM {'retains' if hinge_active else 'drops'} beauty (effective coef={hinge_beauty_coef:.3f}), and "
+        f"WinsorizedSparseOLS {'retains' if wins_beauty_included else 'drops'} beauty "
+        f"(coef={wins_beauty_coef:.3f}). Overall evidence is "
+        f"{'strong and robust' if score >= 75 else 'moderate' if score >= 40 else 'weak/inconsistent'}, "
+        f"so the calibrated Likert response is {score}."
     )
 
-    out = {"response": int(score), "explanation": explanation}
+    out = {"response": score, "explanation": explanation}
     with open("conclusion.txt", "w", encoding="utf-8") as f:
         json.dump(out, f)
 
-    print("\nWrote conclusion.txt")
+    print("\n=== Final Conclusion JSON ===")
     print(json.dumps(out, indent=2))
 
 

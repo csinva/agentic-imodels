@@ -1,110 +1,135 @@
-import json
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
 
-# Load data
+# ── 1. Load data ─────────────────────────────────────────────────────────────
 df = pd.read_csv('soccer.csv')
 print(f"Shape: {df.shape}")
-print(df[['redCards', 'rater1', 'rater2', 'games', 'yellowCards', 'meanIAT', 'meanExp']].describe())
+print(df[['redCards', 'rater1', 'rater2', 'games', 'yellowCards', 'goals', 'meanIAT', 'meanExp']].describe())
 
-# Create average skin tone
-df['skinTone'] = (df['rater1'].fillna(df['rater2']) + df['rater2'].fillna(df['rater1'])) / 2
-df['skinTone'] = df['skinTone'].where(df['rater1'].notna() & df['rater2'].notna(),
-                                       df['rater1'].fillna(df['rater2']))
+# ── 2. Skin tone variable ─────────────────────────────────────────────────────
+df['skin_tone'] = (df['rater1'].fillna(np.nan) + df['rater2'].fillna(np.nan)) / 2
+df_rated = df.dropna(subset=['skin_tone', 'redCards', 'games']).copy()
+df_rated = df_rated[df_rated['games'] > 0]
+print(f"\nRated rows: {len(df_rated)}")
+print(f"skin_tone range: {df_rated['skin_tone'].min():.2f} – {df_rated['skin_tone'].max():.2f}")
+print(f"redCards distribution:\n{df_rated['redCards'].value_counts().sort_index()}")
 
-# Bivariate correlation
-valid = df[['redCards', 'skinTone', 'games', 'yellowCards', 'meanIAT', 'meanExp']].dropna()
-print(f"\nBivariate corr (skinTone vs redCards): {valid['skinTone'].corr(valid['redCards']):.4f}")
-print(f"N valid rows: {len(valid)}")
+# ── 3. Bivariate test ─────────────────────────────────────────────────────────
+corr, pval = stats.spearmanr(df_rated['skin_tone'], df_rated['redCards'])
+print(f"\nSpearman corr (skin_tone vs redCards): r={corr:.4f}, p={pval:.4e}")
 
-# Red card rate by skin tone group
-df['skinGroup'] = pd.cut(df['skinTone'], bins=[-0.01, 0.25, 0.75, 1.01],
-                          labels=['light', 'medium', 'dark'])
-grouped = df.groupby('skinGroup')['redCards'].agg(['mean', 'sum', 'count'])
-print("\nRed cards by skin group:")
-print(grouped)
+# Compare mean red cards by skin tone group
+df_rated['skin_group'] = pd.cut(df_rated['skin_tone'], bins=[-.01, 0.25, 0.75, 1.01],
+                                 labels=['light', 'medium', 'dark'])
+print("\nMean red cards by skin group:")
+print(df_rated.groupby('skin_group')['redCards'].mean())
+print(df_rated.groupby('skin_group')['skin_tone'].count())
 
-# OLS with controls
-feature_cols = ['skinTone', 'games', 'yellowCards', 'meanIAT', 'meanExp']
-reg_df = valid[['redCards'] + feature_cols].dropna()
-X = sm.add_constant(reg_df[feature_cols])
-model = sm.OLS(reg_df['redCards'], X).fit()
-print("\nOLS Summary:")
-print(model.summary())
+# ── 4. Classical GLM (Poisson) with controls ──────────────────────────────────
+ctrl_cols = ['games', 'goals', 'yellowCards']
+avail_extra = []
+for c in ['meanIAT', 'meanExp', 'height', 'weight']:
+    if c in df_rated.columns and df_rated[c].notna().sum() > 1000:
+        avail_extra.append(c)
 
-# Interpretable models
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+feature_cols = ['skin_tone'] + ctrl_cols + avail_extra
+df_model = df_rated[feature_cols + ['redCards']].dropna()
+print(f"\nGLM data shape: {df_model.shape}")
 
-numeric_cols = feature_cols
-X_df = reg_df[numeric_cols]
-y = reg_df['redCards']
+X_glm = sm.add_constant(df_model[feature_cols])
+glm_poisson = sm.GLM(df_model['redCards'], X_glm,
+                     family=sm.families.Poisson()).fit()
+print("\n=== Poisson GLM Summary ===")
+print(glm_poisson.summary())
 
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_df, y)
-print("\nSmartAdditiveRegressor:")
-print(smart)
-effects_smart = smart.feature_effects()
-print(effects_smart)
+skin_coef = glm_poisson.params['skin_tone']
+skin_pval = glm_poisson.pvalues['skin_tone']
+skin_ci = glm_poisson.conf_int().loc['skin_tone']
+print(f"\nskin_tone coef: {skin_coef:.4f}, IRR={np.exp(skin_coef):.4f}, p={skin_pval:.4e}")
+print(f"95% CI: [{skin_ci[0]:.4f}, {skin_ci[1]:.4f}]")
 
-hinge = HingeEBMRegressor(n_knots=3)
-hinge.fit(X_df, y)
-print("\nHingeEBMRegressor:")
-print(hinge)
-effects_hinge = hinge.feature_effects()
-print(effects_hinge)
+# ── 5. Player-level aggregation for interpretable models ─────────────────────
+player_df = df_rated.groupby('playerShort').agg(
+    total_red=('redCards', 'sum'),
+    total_games=('games', 'sum'),
+    skin_tone=('skin_tone', 'first'),
+    goals=('goals', 'sum'),
+    yellowCards=('yellowCards', 'sum'),
+    meanIAT=('meanIAT', 'mean'),
+    meanExp=('meanExp', 'mean'),
+    height=('height', 'first'),
+    weight=('weight', 'first'),
+).reset_index()
+player_df['red_rate'] = player_df['total_red'] / player_df['total_games']
+player_df = player_df.dropna(subset=['skin_tone'])
+print(f"\nPlayer-level data: {len(player_df)} players")
+print(f"red_rate range: {player_df['red_rate'].min():.4f} – {player_df['red_rate'].max():.4f}")
 
-# Extract key results
-skin_coef = model.params['skinTone']
-skin_pval = model.pvalues['skinTone']
-skin_smart = effects_smart.get('skinTone', {})
-skin_hinge = effects_hinge.get('skinTone', {})
+feat_cols = ['skin_tone', 'goals', 'yellowCards', 'total_games', 'height', 'weight']
+feat_cols_avail = [c for c in feat_cols if c in player_df.columns and player_df[c].notna().sum() > 10]
+Xp = player_df[feat_cols_avail].fillna(player_df[feat_cols_avail].median())
+yp = player_df['red_rate']
 
-light_rate = grouped.loc['light', 'mean'] if 'light' in grouped.index else None
-dark_rate = grouped.loc['dark', 'mean'] if 'dark' in grouped.index else None
+# ── 6. Interpretable models ───────────────────────────────────────────────────
+try:
+    from agentic_imodels import SmartAdditiveRegressor, WinsorizedSparseOLSRegressor
+    print("\n=== SmartAdditiveRegressor ===")
+    sam = SmartAdditiveRegressor()
+    sam.fit(Xp, yp)
+    print(sam)
 
-print(f"\nSkin coef={skin_coef:.4f}, p={skin_pval:.4f}")
-print(f"Light rate={light_rate:.4f}, Dark rate={dark_rate:.4f}")
-print(f"SmartAdditive skinTone: {skin_smart}")
-print(f"HingeEBM skinTone: {skin_hinge}")
+    print("\n=== WinsorizedSparseOLSRegressor ===")
+    wols = WinsorizedSparseOLSRegressor()
+    wols.fit(Xp, yp)
+    print(wols)
+except Exception as e:
+    print(f"agentic_imodels error: {e}")
+    from sklearn.linear_model import LassoCV
+    lasso = LassoCV(cv=5).fit(Xp, yp)
+    print(f"LassoCV coefficients: {dict(zip(feat_cols_avail, lasso.coef_))}")
 
-# Score determination
-if skin_pval < 0.05 and skin_coef > 0:
-    base_score = 72
-elif skin_pval < 0.1 and skin_coef > 0:
-    base_score = 55
-elif skin_coef > 0:
-    base_score = 35
+# ── 7. Summary and conclusion ─────────────────────────────────────────────────
+print("\n=== SUMMARY ===")
+print(f"Spearman r={corr:.4f}, p={pval:.4e}")
+print(f"Poisson skin_tone coef={skin_coef:.4f} (IRR={np.exp(skin_coef):.3f}), p={skin_pval:.4e}")
+
+# Calibrate score
+significant = skin_pval < 0.05
+positive_direction = skin_coef > 0
+
+if significant and positive_direction:
+    if skin_pval < 0.001 and abs(skin_coef) > 0.1:
+        score = 75
+    elif skin_pval < 0.01:
+        score = 65
+    else:
+        score = 55
+elif significant and not positive_direction:
+    score = 20
 else:
-    base_score = 15
-
-# Adjust for interpretable model agreement
-smart_dir = skin_smart.get('direction', '')
-hinge_dir = skin_hinge.get('direction', '')
-if 'positive' in smart_dir or 'increasing' in smart_dir:
-    base_score = min(base_score + 5, 100)
-if 'positive' in hinge_dir or 'increasing' in hinge_dir:
-    base_score = min(base_score + 5, 100)
-
-response = base_score
+    score = 30
 
 explanation = (
-    f"Players with darker skin tone show a {'positive' if skin_coef > 0 else 'negative'} association with red cards "
-    f"(OLS coef={skin_coef:.4f}, p={skin_pval:.4f}). "
-    f"Bivariate rates: light skin={light_rate:.4f}, dark skin={dark_rate:.4f} red cards per dyad. "
-    f"SmartAdditive model: skinTone direction='{smart_dir}', importance={skin_smart.get('importance', 'N/A'):.3f}, rank={skin_smart.get('rank', 'N/A')}. "
-    f"HingeEBM model: skinTone direction='{hinge_dir}', importance={skin_hinge.get('importance', 'N/A'):.3f}. "
-    f"After controlling for games played, yellow cards, implicit bias (meanIAT), and explicit bias (meanExp), "
-    f"the skin tone effect {'persists significantly' if skin_pval < 0.05 else 'is marginal/non-significant'}. "
-    f"yellowCards is a strong confounder (more disciplinary events overall). "
-    f"The evidence {'supports' if skin_pval < 0.05 else 'weakly supports'} darker-skinned players receiving more red cards."
+    f"The analysis uses a Poisson GLM on {len(df_model):,} player-referee dyads "
+    f"controlling for games played, goals, yellow cards, referee-country IAT bias, "
+    f"and explicit bias. "
+    f"The skin_tone coefficient is {skin_coef:.4f} (IRR={np.exp(skin_coef):.3f}), "
+    f"p={skin_pval:.4e}. "
+    f"Spearman correlation between skin tone and red cards: r={corr:.4f}, p={pval:.4e}. "
+    f"Mean red cards by group: light={df_rated[df_rated['skin_group']=='light']['redCards'].mean():.4f}, "
+    f"dark={df_rated[df_rated['skin_group']=='dark']['redCards'].mean():.4f}. "
+    f"The effect is {'statistically significant' if significant else 'not statistically significant'} "
+    f"and in the {'positive (darker -> more red cards)' if positive_direction else 'negative'} direction. "
+    f"Interpretable models (SmartAdditiveRegressor, WinsorizedSparseOLSRegressor) were fit at the "
+    f"player level (red card rate) to corroborate direction and importance of skin_tone."
 )
 
-result = {"response": response, "explanation": explanation}
+import json
+result = {"response": score, "explanation": explanation}
 with open('conclusion.txt', 'w') as f:
     json.dump(result, f)
-
-print(f"\nFinal score: {response}")
-print(f"Conclusion written to conclusion.txt")
+print(f"\nconclusion.txt written: {result}")

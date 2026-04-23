@@ -1,351 +1,429 @@
 import json
-from pathlib import Path
+import warnings
 
 import numpy as np
 import pandas as pd
-import statsmodels.formula.api as smf
 from scipy import stats
+import statsmodels.formula.api as smf
+from sklearn.metrics import r2_score
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-
-np.random.seed(42)
-
-
-def safe_float(x):
-    try:
-        return float(x)
-    except Exception:
-        return np.nan
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def effect_or_zero(effects, feature_name):
-    if feature_name not in effects:
-        return {"direction": "zero", "importance": 0.0, "rank": 0}
-    out = effects[feature_name].copy()
-    out["importance"] = safe_float(out.get("importance", 0.0))
-    out["rank"] = int(out.get("rank", 0) or 0)
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+
+def pct_from_log(beta: float) -> float:
+    return 100.0 * (np.exp(beta) - 1.0)
+
+
+def safe_get_effect_pvalue(contrast) -> tuple[float, float]:
+    effect = np.asarray(contrast.effect).reshape(-1)
+    pvalue = np.asarray(contrast.pvalue).reshape(-1)
+    return float(effect[0]), float(pvalue[0])
+
+
+def average_toggle_effect(model, X: np.ndarray, feature_idx: int) -> float:
+    X0 = X.copy()
+    X1 = X.copy()
+    X0[:, feature_idx] = 0.0
+    X1[:, feature_idx] = 1.0
+    return float(np.mean(model.predict(X1) - model.predict(X0)))
+
+
+def smart_importance_rank(model, idx: int) -> tuple[float, int]:
+    importances = np.asarray(model.feature_importances_)
+    order = np.argsort(-importances)
+    rank = int(np.where(order == idx)[0][0]) + 1
+    return float(importances[idx]), rank
+
+
+def hinge_reader_activity(model, reader_idx: int) -> dict:
+    selected = list(model.selected_)
+    out = {
+        "selected_prehinge": False,
+        "linear_active": False,
+        "hinge_active_terms": 0,
+    }
+    if reader_idx not in selected:
+        return out
+
+    out["selected_prehinge"] = True
+    sel_pos = selected.index(reader_idx)
+    coefs = model.lasso_.coef_
+    n_sel = len(selected)
+    out["linear_active"] = bool(abs(coefs[sel_pos]) > 1e-8)
+    hactive = 0
+    for k, (feat_idx, _knot, _direction) in enumerate(model.hinge_info_):
+        if feat_idx == sel_pos and abs(coefs[n_sel + k]) > 1e-8:
+            hactive += 1
+    out["hinge_active_terms"] = int(hactive)
     return out
 
 
-def top_features(effects, k=5):
-    cleaned = []
-    for name, val in effects.items():
-        imp = safe_float(val.get("importance", 0.0))
-        if imp > 0:
-            cleaned.append((name, imp, val.get("direction", "unknown"), int(val.get("rank", 0) or 0)))
-    cleaned.sort(key=lambda x: x[1], reverse=True)
-    return cleaned[:k]
+def winsor_reader_coef(model, reader_idx: int) -> tuple[bool, float]:
+    if reader_idx not in model.support_:
+        return False, 0.0
+    pos = list(model.support_).index(reader_idx)
+    return True, float(model.ols_coef_[pos])
 
 
-def fill_model_data(df):
-    out = df.copy()
-    categorical_cols = ["device", "education", "language", "english_native"]
-    for c in categorical_cols:
-        if c in out.columns:
-            out[c] = out[c].fillna("Missing")
+def main() -> None:
+    with open("info.json", "r", encoding="utf-8") as f:
+        info = json.load(f)
 
-    numeric_fill_cols = ["age", "gender", "dyslexia", "dyslexia_bin", "retake_trial"]
-    for c in numeric_fill_cols:
-        if c in out.columns:
-            out[c] = out[c].fillna(out[c].median())
-
-    return out
-
-
-def main():
-    info = json.loads(Path("info.json").read_text())
     question = info["research_questions"][0]
-
-    iv = "reader_view"
-    dv = "speed"
-    subgroup_col = "dyslexia_bin"
-
-    df = pd.read_csv("reading.csv")
-    df_model = fill_model_data(df)
-
-    print("=" * 80)
     print("Research question:")
     print(question)
-    print(f"\nIV: {iv}")
-    print(f"DV: {dv}")
-    print(f"Subgroup variable: {subgroup_col}")
-    print("=" * 80)
+    print()
 
-    # Step 1: Explore
-    print("\n[Step 1] Summary stats and bivariate exploration")
-    key_cols = [iv, dv, subgroup_col, "age", "num_words", "correct_rate", "Flesch_Kincaid"]
-    existing_key_cols = [c for c in key_cols if c in df.columns]
-    print(df[existing_key_cols].describe(include="all").T)
+    df = pd.read_csv("reading.csv")
+    print("=== Data overview ===")
+    print(f"Rows: {len(df)}, Columns: {df.shape[1]}")
+    print("Missing values by column:")
+    print(df.isna().sum().sort_values(ascending=False).head(10))
+    print()
 
-    print("\nSpeed by reader_view (overall):")
-    print(df.groupby(iv)[dv].agg(["count", "mean", "median", "std"]))
+    df["log_speed"] = np.log(df["speed"].clip(lower=1e-6))
 
-    dys_df = df[df[subgroup_col] == 1].copy()
-    print("\nSpeed by reader_view among dyslexia_bin==1:")
-    print(dys_df.groupby(iv)[dv].agg(["count", "mean", "median", "std"]))
+    key_numeric = [
+        "speed",
+        "log_speed",
+        "reader_view",
+        "dyslexia_bin",
+        "dyslexia",
+        "age",
+        "num_words",
+        "Flesch_Kincaid",
+        "img_width",
+        "retake_trial",
+        "running_time",
+        "scrolling_time",
+        "adjusted_running_time",
+    ]
+    key_numeric = [c for c in key_numeric if c in df.columns]
 
-    numeric_cols_all = df.select_dtypes(include=[np.number]).columns.tolist()
-    corr = df[numeric_cols_all].corr(numeric_only=True)[dv].sort_values(ascending=False)
-    print("\nTop positive correlations with speed:")
-    print(corr.head(8))
-    print("\nTop negative correlations with speed:")
-    print(corr.tail(8))
+    print("=== Summary statistics (key numeric columns) ===")
+    print(df[key_numeric].describe().T[["mean", "std", "min", "25%", "50%", "75%", "max"]])
+    print()
 
-    # Bivariate tests
-    rv0 = df.loc[df[iv] == 0, dv].dropna()
-    rv1 = df.loc[df[iv] == 1, dv].dropna()
-    ttest_overall = stats.ttest_ind(rv1, rv0, equal_var=False)
+    print("=== Distribution checks ===")
+    print("speed quantiles:")
+    print(df["speed"].quantile([0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99]))
+    print(f"speed skewness: {df['speed'].skew():.3f}")
+    print(f"log_speed skewness: {df['log_speed'].skew():.3f}")
+    print("Counts by dyslexia_bin:")
+    print(df["dyslexia_bin"].value_counts(dropna=False))
+    print("Counts by reader_view:")
+    print(df["reader_view"].value_counts(dropna=False))
+    print()
 
-    dys_rv0 = dys_df.loc[dys_df[iv] == 0, dv].dropna()
-    dys_rv1 = dys_df.loc[dys_df[iv] == 1, dv].dropna()
-    ttest_dys = stats.ttest_ind(dys_rv1, dys_rv0, equal_var=False)
+    print("Mean log_speed by dyslexia_bin and reader_view:")
+    print(df.groupby(["dyslexia_bin", "reader_view"], dropna=False)["log_speed"].mean())
+    print()
 
-    corr_overall = stats.pearsonr(df[iv], df[dv])
-    corr_dys = stats.pearsonr(dys_df[iv], dys_df[dv])
+    print("=== Correlations with log_speed ===")
+    corr = df[key_numeric].corr(numeric_only=True)["log_speed"].sort_values(ascending=False)
+    print(corr)
+    print()
 
-    print("\nBivariate tests:")
-    print(f"Overall mean diff (reader_view=1 - 0): {rv1.mean() - rv0.mean():.3f}")
-    print(f"Overall Welch t-test p-value: {ttest_overall.pvalue:.6f}")
-    print(f"Overall Pearson r(reader_view, speed): {corr_overall.statistic:.4f}, p={corr_overall.pvalue:.6f}")
-    print(f"Dyslexia subgroup mean diff (reader_view=1 - 0): {dys_rv1.mean() - dys_rv0.mean():.3f}")
-    print(f"Dyslexia subgroup Welch t-test p-value: {ttest_dys.pvalue:.6f}")
-    print(f"Dyslexia subgroup Pearson r: {corr_dys.statistic:.4f}, p={corr_dys.pvalue:.6f}")
+    dys = df[df["dyslexia_bin"] == 1].copy()
+    dys = dys.dropna(subset=["reader_view", "log_speed"])
+    log_speed_rv1 = dys.loc[dys["reader_view"] == 1, "log_speed"]
+    log_speed_rv0 = dys.loc[dys["reader_view"] == 0, "log_speed"]
 
-    # Step 2: Controlled OLS
-    print("\n[Step 2] OLS with controls")
-    formula_control = (
-        "speed ~ reader_view * dyslexia_bin + age + retake_trial + num_words + "
-        "correct_rate + img_width + Flesch_Kincaid + C(gender) + C(device) + "
-        "C(education) + C(language) + C(page_id) + C(english_native)"
-    )
-    model_control = smf.ols(formula_control, data=df_model).fit(cov_type="HC3")
-    print(model_control.summary())
+    ttest = stats.ttest_ind(log_speed_rv1, log_speed_rv0, equal_var=False, nan_policy="omit")
+    pb = stats.pointbiserialr(dys["reader_view"], dys["log_speed"])
 
-    coef_rv = safe_float(model_control.params.get("reader_view", np.nan))
-    p_rv = safe_float(model_control.pvalues.get("reader_view", np.nan))
-    coef_inter = safe_float(model_control.params.get("reader_view:dyslexia_bin", np.nan))
-    p_inter = safe_float(model_control.pvalues.get("reader_view:dyslexia_bin", np.nan))
-
-    lin = model_control.t_test("reader_view + reader_view:dyslexia_bin = 0")
-    dys_effect = safe_float(np.asarray(lin.effect).squeeze())
-    dys_se = safe_float(np.asarray(lin.sd).squeeze())
-    dys_p = safe_float(np.asarray(lin.pvalue).squeeze())
-
-    print("\nKey controlled coefficients:")
-    print(f"reader_view (effect when dyslexia_bin=0): coef={coef_rv:.3f}, p={p_rv:.6f}")
-    print(f"reader_view:dyslexia_bin interaction: coef={coef_inter:.3f}, p={p_inter:.6f}")
+    print("=== Bivariate test in dyslexic participants (dyslexia_bin=1) ===")
+    print(f"n(reader_view=1): {len(log_speed_rv1)}, n(reader_view=0): {len(log_speed_rv0)}")
     print(
-        "Net reader_view effect among dyslexia_bin=1: "
-        f"coef={dys_effect:.3f}, se={dys_se:.3f}, p={dys_p:.6f}"
+        f"Welch t-test on log_speed: t={ttest.statistic:.4f}, p={ttest.pvalue:.4g}, "
+        f"mean diff={log_speed_rv1.mean() - log_speed_rv0.mean():.4f} log-points"
     )
-
-    # Subgroup controlled OLS
-    dys_model_df = fill_model_data(dys_df)
-    formula_sub = (
-        "speed ~ reader_view + age + retake_trial + num_words + correct_rate + "
-        "img_width + Flesch_Kincaid + C(gender) + C(device) + C(education) + "
-        "C(language) + C(page_id) + C(english_native)"
+    print(
+        f"Point-biserial correlation(reader_view, log_speed): r={pb.statistic:.4f}, "
+        f"p={pb.pvalue:.4g}"
     )
-    model_sub = smf.ols(formula_sub, data=dys_model_df).fit(cov_type="HC3")
-    coef_sub = safe_float(model_sub.params.get("reader_view", np.nan))
-    p_sub = safe_float(model_sub.pvalues.get("reader_view", np.nan))
+    print()
 
-    print("\nSubgroup (dyslexia only) controlled model coefficient:")
-    print(f"reader_view coef={coef_sub:.3f}, p={p_sub:.6f}")
+    controls = [
+        "reader_view",
+        "age",
+        "dyslexia",
+        "retake_trial",
+        "num_words",
+        "Flesch_Kincaid",
+        "img_width",
+        "device",
+        "education",
+        "gender",
+        "english_native",
+        "page_id",
+        "language",
+        "log_speed",
+    ]
 
-    # Step 3: Interpretable models
-    print("\n[Step 3] Interpretable models")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    numeric_cols = [c for c in numeric_cols if c != dv]
+    dys_ols = dys.copy()
+    dys_ols = dys_ols.dropna(subset=controls)
 
-    full_num = df[numeric_cols + [dv]].copy()
-    for c in numeric_cols:
-        full_num[c] = full_num[c].fillna(full_num[c].median())
+    formula_dys = (
+        "log_speed ~ reader_view + age + dyslexia + retake_trial + num_words + "
+        "Flesch_Kincaid + img_width + C(device) + C(education) + C(gender) + "
+        "C(english_native) + C(page_id) + C(language)"
+    )
+    ols_dys = smf.ols(formula_dys, data=dys_ols).fit(cov_type="HC3")
 
-    X_full = full_num[numeric_cols]
-    y_full = full_num[dv]
+    print("=== Controlled OLS (dyslexic participants only) ===")
+    print(ols_dys.summary())
+    rv_beta = float(ols_dys.params.get("reader_view", np.nan))
+    rv_p = float(ols_dys.pvalues.get("reader_view", np.nan))
+    rv_ci_low, rv_ci_high = ols_dys.conf_int().loc["reader_view"].tolist()
+    print(
+        "Reader_view effect among dyslexic participants: "
+        f"beta={rv_beta:.4f} log-points ({pct_from_log(rv_beta):.2f}%), "
+        f"p={rv_p:.4g}, 95% CI=({rv_ci_low:.4f}, {rv_ci_high:.4f})"
+    )
+    print()
 
-    smart_full = SmartAdditiveRegressor(n_rounds=200)
-    smart_full.fit(X_full, y_full)
-    smart_full_effects = smart_full.feature_effects()
+    full = df.dropna(subset=["dyslexia_bin"]).copy()
+    full_controls = [
+        "reader_view",
+        "dyslexia_bin",
+        "age",
+        "retake_trial",
+        "num_words",
+        "Flesch_Kincaid",
+        "img_width",
+        "device",
+        "education",
+        "gender",
+        "english_native",
+        "page_id",
+        "language",
+        "log_speed",
+    ]
+    full = full.dropna(subset=full_controls)
 
-    hinge_full = HingeEBMRegressor(n_knots=3)
-    hinge_full.fit(X_full, y_full)
-    hinge_full_effects = hinge_full.feature_effects()
+    formula_full = (
+        "log_speed ~ reader_view * dyslexia_bin + age + retake_trial + num_words + "
+        "Flesch_Kincaid + img_width + C(device) + C(education) + C(gender) + "
+        "C(english_native) + C(page_id) + C(language)"
+    )
+    ols_full = smf.ols(formula_full, data=full).fit(cov_type="HC3")
 
-    print("\nSmartAdditiveRegressor (full sample):")
-    print(smart_full)
-    print("\nSmartAdditive effects (full):")
-    print(smart_full_effects)
+    print("=== Controlled interaction OLS (full sample) ===")
+    print(ols_full.summary())
 
-    print("\nHingeEBMRegressor (full sample):")
-    print(hinge_full)
-    print("\nHingeEBM effects (full):")
-    print(hinge_full_effects)
+    params = list(ols_full.params.index)
+    interaction_name = (
+        "reader_view:dyslexia_bin"
+        if "reader_view:dyslexia_bin" in params
+        else "dyslexia_bin:reader_view"
+    )
+    rv_full_beta = float(ols_full.params.get("reader_view", np.nan))
+    rv_full_p = float(ols_full.pvalues.get("reader_view", np.nan))
+    inter_beta = float(ols_full.params.get(interaction_name, np.nan))
+    inter_p = float(ols_full.pvalues.get(interaction_name, np.nan))
 
-    dys_num = dys_df[numeric_cols + [dv]].copy()
-    for c in numeric_cols:
-        dys_num[c] = dys_num[c].fillna(dys_num[c].median())
+    c = np.zeros(len(params))
+    c[params.index("reader_view")] = 1.0
+    c[params.index(interaction_name)] = 1.0
+    dys_effect_test = ols_full.t_test(c)
+    dys_effect_beta, dys_effect_p = safe_get_effect_pvalue(dys_effect_test)
 
-    X_dys = dys_num[numeric_cols]
-    y_dys = dys_num[dv]
+    print(
+        "From full interaction model: "
+        f"reader_view(main for non-dyslexic) beta={rv_full_beta:.4f}, p={rv_full_p:.4g}; "
+        f"interaction beta={inter_beta:.4f}, p={inter_p:.4g}."
+    )
+    print(
+        "Implied reader_view effect for dyslexic participants (main + interaction): "
+        f"beta={dys_effect_beta:.4f} ({pct_from_log(dys_effect_beta):.2f}%), p={dys_effect_p:.4g}."
+    )
+    print()
 
-    smart_dys = SmartAdditiveRegressor(n_rounds=200)
-    smart_dys.fit(X_dys, y_dys)
-    smart_dys_effects = smart_dys.feature_effects()
+    print("=== Interpretable models (dyslexic subset) ===")
+    cat_cols = ["device", "education", "language", "page_id", "english_native"]
+    num_cols = [
+        "reader_view",
+        "age",
+        "dyslexia",
+        "gender",
+        "retake_trial",
+        "num_words",
+        "Flesch_Kincaid",
+        "img_width",
+    ]
 
-    hinge_dys = HingeEBMRegressor(n_knots=3)
-    hinge_dys.fit(X_dys, y_dys)
-    hinge_dys_effects = hinge_dys.feature_effects()
+    dys_model = dys.copy()
+    for ccol in cat_cols:
+        dys_model[ccol] = dys_model[ccol].fillna("Missing").astype(str)
+    for ncol in num_cols + ["log_speed"]:
+        dys_model[ncol] = pd.to_numeric(dys_model[ncol], errors="coerce")
+    dys_model = dys_model.dropna(subset=["log_speed"])
+    for ncol in num_cols:
+        dys_model[ncol] = dys_model[ncol].fillna(dys_model[ncol].median())
 
-    print("\nSmartAdditiveRegressor (dyslexia subgroup):")
-    print(smart_dys)
-    print("\nSmartAdditive effects (dyslexia subgroup):")
-    print(smart_dys_effects)
+    X_df = pd.get_dummies(dys_model[num_cols + cat_cols], columns=cat_cols, drop_first=True, dtype=float)
+    y = dys_model["log_speed"].values
+    feature_names = list(X_df.columns)
+    X = X_df.values
 
-    print("\nHingeEBMRegressor (dyslexia subgroup):")
-    print(hinge_dys)
-    print("\nHingeEBM effects (dyslexia subgroup):")
-    print(hinge_dys_effects)
+    reader_idx = feature_names.index("reader_view")
 
-    rv_smart_full = effect_or_zero(smart_full_effects, iv)
-    rv_hinge_full = effect_or_zero(hinge_full_effects, iv)
-    rv_smart_dys = effect_or_zero(smart_dys_effects, iv)
-    rv_hinge_dys = effect_or_zero(hinge_dys_effects, iv)
+    print("Feature index mapping for printed models:")
+    for i, name in enumerate(feature_names):
+        print(f"x{i} -> {name}")
+    print()
 
-    top_smart_dys = top_features(smart_dys_effects, k=5)
-    top_hinge_dys = top_features(hinge_dys_effects, k=5)
+    model_results = {}
 
-    # Step 4: Score and explanation
-    positive_hits = 0
-    negative_hits = 0
-    null_hits = 0
+    models = [
+        ("SmartAdditiveRegressor", SmartAdditiveRegressor()),
+        ("HingeEBMRegressor", HingeEBMRegressor()),
+        ("WinsorizedSparseOLSRegressor", WinsorizedSparseOLSRegressor(max_features=12)),
+    ]
 
-    tests = []
+    for name, model in models:
+        model.fit(X, y)
+        yhat = model.predict(X)
+        r2 = float(r2_score(y, yhat))
+        rv_effect = average_toggle_effect(model, X, reader_idx)
 
-    # Bivariate dyslexia subgroup
-    diff_dys = dys_rv1.mean() - dys_rv0.mean()
-    if ttest_dys.pvalue < 0.05:
-        if diff_dys > 0:
-            positive_hits += 1
-            tests.append("bivariate_dys=positive_sig")
+        print(f"=== {name} (train R^2={r2:.4f}) ===")
+        print(model)
+        print(
+            f"Average reader_view toggle effect from model predictions: "
+            f"{rv_effect:.4f} log-points ({pct_from_log(rv_effect):.2f}%)"
+        )
+
+        model_results[name] = {
+            "r2": r2,
+            "reader_view_avg_effect": rv_effect,
+        }
+
+        if name == "SmartAdditiveRegressor":
+            imp, rank = smart_importance_rank(model, reader_idx)
+            model_results[name]["reader_view_importance"] = imp
+            model_results[name]["reader_view_rank"] = rank
+            print(f"reader_view SmartAdditive importance={imp:.6f}, rank={rank} / {len(feature_names)}")
+
+        if name == "HingeEBMRegressor":
+            activity = hinge_reader_activity(model, reader_idx)
+            model_results[name].update(activity)
+            print(
+                "reader_view in HingeEBM stage-1 sparse display: "
+                f"selected_prehinge={activity['selected_prehinge']}, "
+                f"linear_active={activity['linear_active']}, "
+                f"hinge_active_terms={activity['hinge_active_terms']}"
+            )
+            print(
+                "Note: HingeEBM is display-predict decoupled, so non-zero average toggle "
+                "effect can come from hidden residual EBM even if display terms are zero."
+            )
+
+        if name == "WinsorizedSparseOLSRegressor":
+            in_support, coef = winsor_reader_coef(model, reader_idx)
+            model_results[name]["reader_view_in_support"] = in_support
+            model_results[name]["reader_view_coef"] = coef
+            print(f"reader_view in sparse support={in_support}, coefficient={coef:.6f}")
+
+        print()
+
+    # Evidence-calibrated score (0=strong no, 100=strong yes)
+    score = 0
+
+    if rv_beta > 0:
+        if rv_p < 0.01:
+            score = 85
+        elif rv_p < 0.05:
+            score = 72
+        elif rv_p < 0.10:
+            score = 58
         else:
-            negative_hits += 1
-            tests.append("bivariate_dys=negative_sig")
+            score = 42
     else:
-        null_hits += 1
-        tests.append("bivariate_dys=null")
-
-    # Controlled interaction-derived effect in dyslexia
-    if dys_p < 0.05:
-        if dys_effect > 0:
-            positive_hits += 1
-            tests.append("ols_interaction_dys=positive_sig")
+        if rv_p < 0.05:
+            score = 18
+        elif rv_p < 0.10:
+            score = 28
         else:
-            negative_hits += 1
-            tests.append("ols_interaction_dys=negative_sig")
-    else:
-        null_hits += 1
-        tests.append("ols_interaction_dys=null")
+            score = 32
 
-    # Subgroup controlled model
-    if p_sub < 0.05:
-        if coef_sub > 0:
-            positive_hits += 1
-            tests.append("ols_subgroup=positive_sig")
-        else:
-            negative_hits += 1
-            tests.append("ols_subgroup=negative_sig")
-    else:
-        null_hits += 1
-        tests.append("ols_subgroup=null")
+    if dys_effect_p < 0.05:
+        score += 8 if dys_effect_beta > 0 else -8
+    elif dys_effect_p < 0.10:
+        score += 4 if dys_effect_beta > 0 else -4
 
-    # SmartAdditive subgroup importance
-    if rv_smart_dys["importance"] >= 0.01:
-        if "positive" in rv_smart_dys["direction"] or "increasing" in rv_smart_dys["direction"]:
-            positive_hits += 1
-            tests.append("smart_dys=positive_nonzero")
-        elif "negative" in rv_smart_dys["direction"] or "decreasing" in rv_smart_dys["direction"]:
-            negative_hits += 1
-            tests.append("smart_dys=negative_nonzero")
-        else:
-            null_hits += 1
-            tests.append("smart_dys=nonmonotonic")
-    else:
-        null_hits += 1
-        tests.append("smart_dys=zero")
+    mean_diff = float(log_speed_rv1.mean() - log_speed_rv0.mean())
+    if ttest.pvalue < 0.05:
+        score += 5 if mean_diff > 0 else -5
 
-    # Hinge subgroup importance
-    if rv_hinge_dys["importance"] >= 0.01:
-        if rv_hinge_dys["direction"] == "positive":
-            positive_hits += 1
-            tests.append("hinge_dys=positive_nonzero")
-        elif rv_hinge_dys["direction"] == "negative":
-            negative_hits += 1
-            tests.append("hinge_dys=negative_nonzero")
-        else:
-            null_hits += 1
-            tests.append("hinge_dys=nonmonotonic")
-    else:
-        null_hits += 1
-        tests.append("hinge_dys=zero")
+    positive_signals = 0
+    null_signals = 0
 
-    if positive_hits >= 4 and negative_hits == 0:
-        response = 90
-    elif positive_hits >= 3 and negative_hits <= 1:
-        response = 78
-    elif positive_hits >= 2:
-        response = 62
-    elif positive_hits == 1:
-        response = 45
-    elif positive_hits == 0 and negative_hits >= 2:
-        response = 5
-    elif positive_hits == 0 and null_hits >= 4:
-        response = 8
+    smart_res = model_results["SmartAdditiveRegressor"]
+    smart_eff = smart_res["reader_view_avg_effect"]
+    smart_rank = int(smart_res["reader_view_rank"])
+    if smart_eff > 0.01:
+        positive_signals += 1
+    elif abs(smart_eff) < 0.005:
+        null_signals += 1
+
+    if smart_rank <= max(5, int(0.2 * len(feature_names))):
+        positive_signals += 1
     else:
-        response = 20
+        null_signals += 1
+
+    hinge_res = model_results["HingeEBMRegressor"]
+    hinge_active = bool(hinge_res["linear_active"] or hinge_res["hinge_active_terms"] > 0)
+    if hinge_active and hinge_res["reader_view_avg_effect"] > 0:
+        positive_signals += 1
+    elif not hinge_active:
+        null_signals += 1
+
+    win_res = model_results["WinsorizedSparseOLSRegressor"]
+    if win_res["reader_view_in_support"] and win_res["reader_view_coef"] > 0:
+        positive_signals += 1
+    elif not win_res["reader_view_in_support"]:
+        null_signals += 2
+    else:
+        null_signals += 1
+
+    score += 4 * positive_signals - 6 * null_signals
+    score = int(np.clip(round(score), 0, 100))
 
     explanation = (
-        f"The evidence does not support that Reader View improves reading speed for participants with dyslexia. "
-        f"In bivariate subgroup comparisons (dyslexia_bin=1), the mean speed difference was {diff_dys:.2f} "
-        f"(Reader View minus control), with Welch t-test p={ttest_dys.pvalue:.3f}, indicating no reliable uplift. "
-        f"In controlled OLS with demographics, text/page factors, and device/language controls, the implied "
-        f"Reader View effect for dyslexia participants was {dys_effect:.2f} (SE={dys_se:.2f}, p={dys_p:.3f}); "
-        f"the dyslexia-only controlled model similarly gave coef={coef_sub:.2f}, p={p_sub:.3f}. "
-        f"Interpretable models agree: in the dyslexia subgroup, SmartAdditive assigns reader_view "
-        f"direction '{rv_smart_dys['direction']}' with importance {rv_smart_dys['importance']:.4f} "
-        f"(rank {rv_smart_dys['rank']}), and HingeEBM assigns direction '{rv_hinge_dys['direction']}' "
-        f"with importance {rv_hinge_dys['importance']:.4f} (rank {rv_hinge_dys['rank']}). "
-        f"So shape/magnitude evidence for Reader View is essentially zero. Other variables dominate speed, "
-        f"especially {', '.join([f'{n} ({imp:.1%})' for n, imp, _, _ in top_smart_dys[:3]])} in SmartAdditive "
-        f"and {', '.join([f'{n} ({imp:.1%})' for n, imp, _, _ in top_hinge_dys[:3]])} in HingeEBM, showing the "
-        f"main drivers are timing/text characteristics rather than Reader View. Robustness across bivariate, "
-        f"controlled, and two interpretable models indicates no meaningful positive effect."
+        f"Question: {question} "
+        f"Among dyslexic participants, bivariate evidence on log(reading speed) is null "
+        f"(Welch t p={ttest.pvalue:.3g}, mean diff={mean_diff:.4f} log-points). "
+        f"Controlled OLS with demographic/device/page/language controls gives "
+        f"reader_view beta={rv_beta:.4f} ({pct_from_log(rv_beta):.2f}%), p={rv_p:.3g}, "
+        f"95% CI=({rv_ci_low:.4f},{rv_ci_high:.4f}). "
+        f"In the full-sample interaction model, the implied dyslexic effect is "
+        f"beta={dys_effect_beta:.4f} ({pct_from_log(dys_effect_beta):.2f}%), p={dys_effect_p:.3g}. "
+        f"Interpretable models largely support a null: SmartAdditive gives reader_view "
+        f"importance={smart_res['reader_view_importance']:.6f} (rank {smart_rank}/{len(feature_names)}) "
+        f"with avg effect {pct_from_log(smart_eff):.2f}%; WinsorizedSparseOLS excludes reader_view "
+        f"from its sparse support; HingeEBM stage-1 sparse display also zeroes it out "
+        f"(selected_prehinge={hinge_res['selected_prehinge']}, "
+        f"hinge_active_terms={hinge_res['hinge_active_terms']}). "
+        f"A small positive average toggle from HingeEBM can arise from its hidden residual corrector "
+        f"and is not robust across honest sparse/additive models. Overall evidence does not support "
+        f"a meaningful speed improvement from Reader View for dyslexic individuals."
     )
 
-    conclusion = {
-        "response": int(response),
-        "explanation": explanation,
-    }
+    payload = {"response": score, "explanation": explanation}
+    with open("conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(payload, f)
 
-    Path("conclusion.txt").write_text(json.dumps(conclusion, ensure_ascii=True))
-
-    print("\n[Step 4] Conclusion JSON written to conclusion.txt")
-    print(json.dumps(conclusion, indent=2))
-    print("\nDiagnostics summary:")
-    print({
-        "positive_hits": positive_hits,
-        "negative_hits": negative_hits,
-        "null_hits": null_hits,
-        "tests": tests,
-        "reader_view_effects": {
-            "smart_full": rv_smart_full,
-            "hinge_full": rv_hinge_full,
-            "smart_dys": rv_smart_dys,
-            "hinge_dys": rv_hinge_dys,
-        },
-    })
+    print("=== Final conclusion JSON ===")
+    print(json.dumps(payload, indent=2))
 
 
 if __name__ == "__main__":

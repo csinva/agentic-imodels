@@ -74,11 +74,13 @@ run_dataset() {
     cd "$run_dir"
 
     # Run Claude Code non-interactively with full tool access in this dir.
-    local prompt='Read the file AGENTS.md for instructions. Then write a python script called analysis.py and run it with python3 analysis.py. The script must create conclusion.txt. Do NOT just show code - you must actually write the file and execute it.'
-    printf '%s' "$prompt" | claude -p \
+    # Hard time-cap each run so a stuck agent does not block the whole pipeline
+    # (Claude sometimes keeps its session open after writing conclusion.txt).
+    local prompt='Read the file AGENTS.md for instructions. Then write a python script called analysis.py and run it with python3 analysis.py. The script must create conclusion.txt. Do NOT just show code - you must actually write the file and execute it. Once conclusion.txt exists, stop immediately.'
+    printf '%s' "$prompt" | timeout --kill-after=30s 900s claude -p \
         --model "$CLAUDE_MODEL" \
         --permission-mode bypassPermissions \
-        > claude_stdout.log 2> claude_stderr.log
+        > claude_stdout.log 2> claude_stderr.log || true
 
     if [[ -f "conclusion.txt" ]]; then
         echo "SUCCESS: $dataset - conclusion.txt written"

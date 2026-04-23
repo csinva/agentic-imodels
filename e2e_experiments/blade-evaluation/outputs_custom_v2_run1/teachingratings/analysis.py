@@ -1,284 +1,260 @@
 import json
-import warnings
+import re
 from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-from scipy.stats import pearsonr, spearmanr
-from sklearn.exceptions import ConvergenceWarning
+import statsmodels.formula.api as smf
+from scipy.stats import pearsonr
 
-from interp_models import HingeEBMRegressor, SmartAdditiveRegressor
-
-
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-
-
-def format_effect(effect: Dict) -> str:
-    if not effect:
-        return "not present"
-    direction = effect.get("direction", "unknown")
-    imp = float(effect.get("importance", 0.0))
-    rank = int(effect.get("rank", 0))
-    return f"direction={direction}, importance={imp:.1%}, rank={rank}"
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def top_significant_controls(model, exclude: List[str], k: int = 3) -> List[Tuple[str, float, float]]:
-    rows = []
-    for name in model.params.index:
-        if name in exclude:
-            continue
-        pval = float(model.pvalues[name])
-        coef = float(model.params[name])
-        if pval < 0.05:
-            rows.append((name, coef, pval))
-    rows.sort(key=lambda x: abs(x[1]), reverse=True)
-    return rows[:k]
+def summarize_data(df: pd.DataFrame) -> None:
+    print("=== DATA OVERVIEW ===")
+    print(f"Shape: {df.shape}")
+    print("\nColumn dtypes:")
+    print(df.dtypes)
+
+    print("\nMissing values per column:")
+    print(df.isna().sum())
+
+    print("\n=== SUMMARY STATS (NUMERIC) ===")
+    print(df.describe().T)
+
+    print("\n=== EVAL DISTRIBUTION ===")
+    print(df["eval"].value_counts().sort_index())
+
+    print("\n=== BEAUTY DISTRIBUTION (BINS) ===")
+    beauty_bins = pd.cut(df["beauty"], bins=10)
+    print(beauty_bins.value_counts().sort_index())
+
+    print("\n=== NUMERIC CORRELATIONS WITH EVAL ===")
+    corr_with_eval = df.corr(numeric_only=True)["eval"].sort_values(ascending=False)
+    print(corr_with_eval)
 
 
-def find_zero_crossing(smart: SmartAdditiveRegressor, feature_name: str):
-    if feature_name not in getattr(smart, "feature_names_", []):
-        return None
-    idx = smart.feature_names_.index(feature_name)
-    if idx not in smart.shape_functions_:
-        return None
-    thresholds, intervals = smart.shape_functions_[idx]
-    if len(thresholds) == 0:
-        return None
-    for i in range(len(intervals) - 1):
-        if intervals[i] < 0 <= intervals[i + 1]:
-            return float(thresholds[i])
-    return None
+def run_classical_tests(df: pd.DataFrame) -> Dict[str, float]:
+    print("\n=== CLASSICAL TESTS ===")
+
+    # Bivariate association
+    r, p_corr = pearsonr(df["beauty"], df["eval"])
+    print(f"Pearson correlation beauty vs eval: r={r:.4f}, p={p_corr:.4g}")
+
+    biv_model = smf.ols("eval ~ beauty", data=df).fit()
+    print("\nBivariate OLS: eval ~ beauty")
+    print(biv_model.summary())
+
+    # Controlled OLS with relevant confounders
+    controlled_formula = (
+        "eval ~ beauty + age + students + allstudents + "
+        "C(minority) + C(gender) + C(credits) + C(division) + C(native) + C(tenure)"
+    )
+    controlled_model = smf.ols(controlled_formula, data=df).fit(cov_type="HC3")
+    print("\nControlled OLS (HC3 robust SE):")
+    print(controlled_model.summary())
+
+    beauty_coef = float(controlled_model.params["beauty"])
+    beauty_p = float(controlled_model.pvalues["beauty"])
+    beauty_ci_low, beauty_ci_high = controlled_model.conf_int().loc["beauty"].tolist()
+
+    print(
+        f"\nControlled effect for beauty: coef={beauty_coef:.4f}, "
+        f"p={beauty_p:.4g}, 95% CI=({beauty_ci_low:.4f}, {beauty_ci_high:.4f})"
+    )
+
+    return {
+        "pearson_r": float(r),
+        "pearson_p": float(p_corr),
+        "bivariate_beauty_coef": float(biv_model.params["beauty"]),
+        "bivariate_beauty_p": float(biv_model.pvalues["beauty"]),
+        "controlled_beauty_coef": beauty_coef,
+        "controlled_beauty_p": beauty_p,
+        "controlled_beauty_ci_low": float(beauty_ci_low),
+        "controlled_beauty_ci_high": float(beauty_ci_high),
+        "controlled_r2": float(controlled_model.rsquared),
+    }
 
 
-def clamp_score(x: float) -> int:
-    return int(max(0, min(100, round(x))))
-
-
-def main():
-    with open("info.json", "r", encoding="utf-8") as f:
-        info = json.load(f)
-
-    question = info["research_questions"][0]
-    print("Research question:")
-    print(question)
-    print()
-
-    df = pd.read_csv("teachingratings.csv")
-    print(f"Data shape: {df.shape}")
-    print("Columns:", list(df.columns))
-    print()
-
-    # Step 1: identify DV and IV from metadata/question
-    dv = "eval"
-    iv = "beauty"
-
-    print(f"DV = {dv}")
-    print(f"IV = {iv}")
-    print()
-
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    categorical_cols = [c for c in df.columns if c not in numeric_cols]
-
-    print("Numeric summary statistics:")
-    print(df[numeric_cols].describe().T)
-    print()
-
-    print("Categorical distributions:")
-    for c in categorical_cols:
-        print(f"\\n{c} value counts:")
-        print(df[c].value_counts(dropna=False))
-    print()
-
-    print("Correlations with DV (numeric columns):")
-    corr_with_dv = df[numeric_cols].corr(numeric_only=True)[dv].sort_values(ascending=False)
-    print(corr_with_dv)
-    print()
-
-    pearson_r, pearson_p = pearsonr(df[iv], df[dv])
-    spearman_r, spearman_p = spearmanr(df[iv], df[dv])
-    print(f"Bivariate Pearson({iv}, {dv}) = {pearson_r:.4f}, p={pearson_p:.3g}")
-    print(f"Bivariate Spearman({iv}, {dv}) = {spearman_r:.4f}, p={spearman_p:.3g}")
-    print()
-
-    # Step 2: OLS tests
-    X_simple = sm.add_constant(df[[iv]])
-    ols_simple = sm.OLS(df[dv], X_simple).fit()
-    print("Simple OLS: eval ~ beauty")
-    print(ols_simple.summary())
-    print()
-
-    # Relevant controls from metadata (exclude identifiers)
-    controls = [
+def build_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+    # Keep interpretable and relevant predictors; exclude row index and professor ID.
+    feature_cols = [
         "beauty",
         "age",
+        "students",
+        "allstudents",
         "minority",
         "gender",
         "credits",
         "division",
         "native",
         "tenure",
-        "students",
-        "allstudents",
     ]
-    X_control = pd.get_dummies(df[controls], drop_first=True, dtype=float)
-    X_control = sm.add_constant(X_control)
-    ols_control = sm.OLS(df[dv], X_control).fit()
-    print("Controlled OLS: eval ~ beauty + covariates")
-    print(ols_control.summary())
-    print()
+    X = df[feature_cols].copy()
+    X = pd.get_dummies(X, drop_first=True)
+    y = df["eval"].copy()
+    return X, y
 
-    beauty_coef_simple = float(ols_simple.params[iv])
-    beauty_p_simple = float(ols_simple.pvalues[iv])
-    beauty_coef_control = float(ols_control.params[iv])
-    beauty_p_control = float(ols_control.pvalues[iv])
-    beauty_sd_effect = beauty_coef_control * float(df[iv].std())
 
-    # Step 3: interpretable models
-    # As requested: include all numeric columns (except DV target)
-    numeric_predictors_all = [c for c in numeric_cols if c != dv]
-    X_num_all = df[numeric_predictors_all]
-    y = df[dv]
+def extract_beauty_signal(
+    model_text: str,
+    feature_name: str = "beauty",
+    feature_aliases: List[str] | None = None,
+) -> Dict[str, object]:
+    lines = model_text.splitlines()
+    tokens = [feature_name]
+    if feature_aliases:
+        tokens.extend(feature_aliases)
+    beauty_lines: List[str] = [ln for ln in lines if any(tok in ln for tok in tokens)]
+    present = len(beauty_lines) > 0
 
-    smart_all = SmartAdditiveRegressor(n_rounds=200)
-    smart_all.fit(X_num_all, y)
-    smart_all_effects = smart_all.feature_effects()
+    signs: List[str] = []
+    for ln in beauty_lines:
+        # Lightweight sign extraction for common printable formats
+        if re.search(r":\s*\+?[0-9\.]+", ln) and not re.search(r":\s*-", ln):
+            signs.append("positive")
+        elif re.search(r":\s*-[0-9\.]+", ln):
+            signs.append("negative")
+        elif re.search(rf"{feature_name}.*\+\s*[0-9\.]+", ln) or re.search(
+            rf"\+\s*[0-9\.]+\s*\*?\s*{feature_name}", ln
+        ):
+            signs.append("positive")
+        elif re.search(rf"{feature_name}.*-\s*[0-9\.]+", ln) or re.search(
+            rf"-\s*[0-9\.]+\s*\*?\s*{feature_name}", ln
+        ):
+            signs.append("negative")
+        elif "<=" in ln or ">=" in ln or "<" in ln or ">" in ln:
+            signs.append("nonlinear_or_threshold")
+        else:
+            signs.append("mentioned")
 
-    hinge_all = HingeEBMRegressor(n_knots=3)
-    hinge_all.fit(X_num_all, y)
-    hinge_all_effects = hinge_all.feature_effects()
-
-    print("SmartAdditiveRegressor (all numeric predictors):")
-    print(smart_all)
-    print("Feature effects:")
-    print(smart_all_effects)
-    print()
-
-    print("HingeEBMRegressor (all numeric predictors):")
-    print(hinge_all)
-    print("Feature effects:")
-    print(hinge_all_effects)
-    print()
-
-    # Additional robustness pass excluding clear identifiers
-    id_like = {"rownames", "prof"}
-    numeric_predictors_clean = [c for c in numeric_predictors_all if c not in id_like]
-    X_num_clean = df[numeric_predictors_clean]
-
-    smart_clean = SmartAdditiveRegressor(n_rounds=200)
-    smart_clean.fit(X_num_clean, y)
-    smart_clean_effects = smart_clean.feature_effects()
-
-    hinge_clean = HingeEBMRegressor(n_knots=3)
-    hinge_clean.fit(X_num_clean, y)
-    hinge_clean_effects = hinge_clean.feature_effects()
-
-    print("SmartAdditiveRegressor (clean numeric, excluding rownames/prof IDs):")
-    print(smart_clean)
-    print("Feature effects:")
-    print(smart_clean_effects)
-    print()
-
-    print("HingeEBMRegressor (clean numeric, excluding rownames/prof IDs):")
-    print(hinge_clean)
-    print("Feature effects:")
-    print(hinge_clean_effects)
-    print()
-
-    beauty_smart_all = smart_all_effects.get(iv, {})
-    beauty_hinge_all = hinge_all_effects.get(iv, {})
-    beauty_smart_clean = smart_clean_effects.get(iv, {})
-    beauty_hinge_clean = hinge_clean_effects.get(iv, {})
-
-    zero_cross = find_zero_crossing(smart_clean, iv)
-
-    confounders = top_significant_controls(ols_control, exclude=["const", iv], k=3)
-    confounder_text = (
-        "; ".join([f"{n} (coef={c:.3f}, p={p:.3g})" for n, c, p in confounders])
-        if confounders
-        else "No control variable reached p<0.05"
-    )
-
-    # Score mapping based on strength and consistency
-    score = 40.0
-    if beauty_p_simple < 0.001:
-        score += 15
-    elif beauty_p_simple < 0.01:
-        score += 12
-    elif beauty_p_simple < 0.05:
-        score += 8
-
-    if beauty_p_control < 0.001:
-        score += 20
-    elif beauty_p_control < 0.01:
-        score += 16
-    elif beauty_p_control < 0.05:
-        score += 10
-
-    if beauty_coef_control > 0:
-        score += 8
-    else:
-        score -= 12
-
-    # Importance/shape from interpretable models (clean pass prioritized)
-    smart_clean_imp = float(beauty_smart_clean.get("importance", 0.0))
-    smart_clean_dir = str(beauty_smart_clean.get("direction", ""))
-    hinge_clean_imp = float(beauty_hinge_clean.get("importance", 0.0))
-    hinge_clean_dir = str(beauty_hinge_clean.get("direction", ""))
-
-    if "positive" in smart_clean_dir or "increasing" in smart_clean_dir:
-        score += 7
-    if smart_clean_imp >= 0.20:
-        score += 6
-
-    if hinge_clean_imp > 0 and ("positive" in hinge_clean_dir):
-        score += 6
-    elif hinge_clean_imp == 0:
-        score -= 4
-
-    # Penalize disagreement in all-numeric pass if strong
-    if float(beauty_hinge_all.get("importance", 0.0)) == 0.0:
-        score -= 2
-
-    likert_score = clamp_score(score)
-
-    explanation_parts = [
-        (
-            f"Beauty shows a positive bivariate relationship with teaching evaluations "
-            f"(Pearson r={pearson_r:.3f}, p={pearson_p:.3g}; simple OLS coef={beauty_coef_simple:.3f}, p={beauty_p_simple:.3g})."
-        ),
-        (
-            f"After controlling for course and instructor covariates, the beauty effect remains positive and statistically strong "
-            f"(controlled OLS coef={beauty_coef_control:.3f}, p={beauty_p_control:.3g}), about {beauty_sd_effect:.3f} eval points per 1 SD increase in beauty."
-        ),
-        (
-            f"SmartAdditive (clean numeric set) ranks beauty as {format_effect(beauty_smart_clean)}, with a nonlinear increasing pattern"
-            + (f" and a zero-crossing threshold near beauty={zero_cross:.3f}." if zero_cross is not None else ".")
-        ),
-        (
-            f"HingeEBM (clean numeric set) also keeps beauty with {format_effect(beauty_hinge_clean)}, indicating beauty is the dominant sparse linear driver."
-        ),
-        (
-            f"When including all numeric columns, ID-like variables (rownames/prof) absorb signal and can suppress beauty in sparse selection "
-            f"(Hinge all-numeric beauty: {format_effect(beauty_hinge_all)}), so the ID-excluded robustness check is more causally interpretable."
-        ),
-        (
-            f"Other significant controls in OLS are: {confounder_text}. These matter, but they do not remove the positive beauty-evaluation relationship."
-        ),
-    ]
-
-    explanation = " ".join(explanation_parts)
-
-    result = {
-        "response": likert_score,
-        "explanation": explanation,
+    return {
+        "present": present,
+        "lines": beauty_lines[:6],
+        "sign_hints": signs,
     }
 
-    with open("conclusion.txt", "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=True)
 
-    print("Wrote conclusion.txt")
-    print(json.dumps(result, indent=2))
+def run_agentic_models(X: pd.DataFrame, y: pd.Series) -> Dict[str, Dict[str, object]]:
+    print("\n=== AGENTIC_IMODELS INTERPRETABLE REGRESSORS ===")
+
+    models = [
+        ("SmartAdditiveRegressor", SmartAdditiveRegressor()),
+        ("HingeEBMRegressor", HingeEBMRegressor()),
+        ("WinsorizedSparseOLSRegressor", WinsorizedSparseOLSRegressor()),
+    ]
+
+    signals: Dict[str, Dict[str, object]] = {}
+    beauty_aliases = [f"x{i}" for i, col in enumerate(X.columns) if "beauty" in col]
+    print("\nFeature index map used by many printed models:")
+    for i, col in enumerate(X.columns):
+        print(f"  x{i} -> {col}")
+    print(f"Beauty aliases in printed models: {beauty_aliases}")
+
+    for name, model in models:
+        fitted = model.fit(X, y)
+        print(f"\n=== {name} ===")
+        print(fitted)  # Required interpretable form output
+        model_text = str(fitted)
+        beauty_signal = extract_beauty_signal(
+            model_text, feature_name="beauty", feature_aliases=beauty_aliases
+        )
+        signals[name] = beauty_signal
+        print(f"\nBeauty signal in {name}: {json.dumps(beauty_signal, indent=2)}")
+
+    return signals
+
+
+def calibrate_score(
+    classical: Dict[str, float], model_signals: Dict[str, Dict[str, object]]
+) -> Tuple[int, str]:
+    score = 50
+    rationale: List[str] = []
+
+    controlled_beta = classical["controlled_beauty_coef"]
+    controlled_p = classical["controlled_beauty_p"]
+
+    if controlled_p < 0.001:
+        score += 22
+        rationale.append("Controlled OLS shows a highly significant beauty effect (p < 0.001).")
+    elif controlled_p < 0.01:
+        score += 16
+        rationale.append("Controlled OLS shows a significant beauty effect (p < 0.01).")
+    elif controlled_p < 0.05:
+        score += 10
+        rationale.append("Controlled OLS shows a statistically significant beauty effect (p < 0.05).")
+    elif controlled_p < 0.10:
+        score += 4
+        rationale.append("Controlled OLS gives only marginal evidence for beauty (0.05 <= p < 0.10).")
+    else:
+        score -= 24
+        rationale.append("Controlled OLS does not support a reliable beauty effect (p >= 0.10).")
+
+    if controlled_beta > 0:
+        score += 6
+        rationale.append("The controlled coefficient for beauty is positive.")
+    elif controlled_beta < 0:
+        score -= 6
+        rationale.append("The controlled coefficient for beauty is negative.")
+
+    if classical["pearson_p"] < 0.05 and classical["pearson_r"] > 0:
+        score += 5
+        rationale.append("Bivariate correlation is positive and significant.")
+    elif classical["pearson_p"] >= 0.05:
+        score -= 5
+        rationale.append("Bivariate correlation is not statistically significant.")
+
+    present_count = sum(1 for v in model_signals.values() if v["present"])
+    absent_count = len(model_signals) - present_count
+
+    score += 7 * present_count
+    score -= 9 * absent_count
+
+    if present_count == len(model_signals):
+        rationale.append("Beauty appears across all interpretable models, supporting robustness.")
+    elif present_count >= 2:
+        rationale.append("Beauty appears in most interpretable models, supporting moderate robustness.")
+    elif present_count == 1:
+        rationale.append("Beauty appears in only one interpretable model, so robustness is limited.")
+    else:
+        rationale.append("Beauty is zeroed out or absent across interpretable models, strong null evidence.")
+
+    score = int(np.clip(round(score), 0, 100))
+
+    explanation = (
+        f"Research question: impact of beauty on teaching evaluations. "
+        f"Controlled OLS coefficient for beauty is {controlled_beta:.3f} "
+        f"(p={controlled_p:.4g}, 95% CI [{classical['controlled_beauty_ci_low']:.3f}, "
+        f"{classical['controlled_beauty_ci_high']:.3f}]). "
+        f"Bivariate correlation is r={classical['pearson_r']:.3f} (p={classical['pearson_p']:.4g}). "
+        f"Across interpretable models, beauty is present in {present_count}/{len(model_signals)} models. "
+        + " ".join(rationale)
+    )
+
+    return score, explanation
+
+
+def main() -> None:
+    print("Loading data...")
+    df = pd.read_csv("teachingratings.csv")
+
+    summarize_data(df)
+    classical = run_classical_tests(df)
+    X, y = build_features(df)
+    model_signals = run_agentic_models(X, y)
+    score, explanation = calibrate_score(classical, model_signals)
+
+    output = {"response": int(score), "explanation": explanation}
+    with open("conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(output, f)
+
+    print("\n=== FINAL CONCLUSION JSON ===")
+    print(json.dumps(output, indent=2))
+    print("\nWrote conclusion.txt")
 
 
 if __name__ == "__main__":

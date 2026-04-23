@@ -33,6 +33,11 @@ elif os.path.isdir(_SIBLING_DIR):
 else:
     DATASETS_DIR = os.path.join(SCRIPT_DIR, "outputs")
 
+# Location of the agentic-imodels skill library (used in custom_v2 mode).
+AGENTIC_IMODELS_DIR = os.path.abspath(
+    os.path.join(SCRIPT_DIR, "..", "..", "result_libs_processed", "agentic-imodels")
+)
+
 DATASETS = [
     "affairs",
     "amtl",
@@ -94,9 +99,24 @@ AGENTS_MD_CUSTOM_V2 = """You are an expert data scientist. You MUST write and ex
 
 1. Read `info.json` to get the research question and dataset metadata.
 2. Load the dataset from `{dataset_name}.csv`.
-3. Write a Python script called `analysis.py` that follows the analysis strategy below.
-4. **Execute the script** by running: `python3 analysis.py`
-5. The script MUST write a file called `conclusion.txt` containing ONLY a JSON object:
+3. **Carefully read `SKILL.md`** in this directory — it documents the `agentic_imodels`
+   library (a set of evolved interpretable regressors) and the recommended
+   analysis workflow. Follow those instructions closely; they are what the
+   library was designed to support.
+4. Write a Python script called `analysis.py` that:
+   - Loads and explores the data (summary statistics, distributions, correlations).
+   - Runs the classical statistical test appropriate to the research question
+     (OLS / logistic / GLM) with relevant control variables, via `statsmodels`.
+   - Heavily uses the `agentic_imodels` interpretable regressors as described in
+     `SKILL.md` to characterize the **direction, magnitude, shape, and
+     robustness** of each feature's effect. Fit at least two models from
+     `agentic_imodels` and `print(model)` each so the interpretable form is
+     captured in your reasoning.
+   - Interprets the results in the context of the research question, weighing
+     bivariate and controlled results, and null evidence from Lasso/hinge
+     zeroing as well as *p*-values.
+5. **Execute the script** by running: `python3 analysis.py`
+6. The script MUST write a file called `conclusion.txt` containing ONLY a JSON object:
 
 ```json
 {{"response": <integer 0-100>, "explanation": "<your reasoning>"}}
@@ -104,102 +124,37 @@ AGENTS_MD_CUSTOM_V2 = """You are an expert data scientist. You MUST write and ex
 
 Where `response` is a Likert scale score: 0 = strong "No", 100 = strong "Yes".
 
-## Analysis Strategy
+## Interpretability Tools
 
-### Step 1: Understand the question and explore
-- Read the research question. Identify the dependent variable (DV) and independent variable (IV).
-- Print summary statistics, check distributions, compute bivariate correlations.
+You should heavily use interpretable models to understand the data. The
+primary tool here is the **`agentic_imodels`** library — read `SKILL.md`
+in this run directory for the full API, the model selection table, and the
+recommended analysis workflow (framing the question, classical tests with
+controls, shape/direction/importance from the interpretable models,
+calibrated conclusion).
 
-### Step 2: Statistical tests with controls
-Run OLS (or logistic regression for binary DVs) with relevant control variables:
+Supporting tools you can also use:
 
-```python
-import statsmodels.api as sm
-X = df[feature_columns]
-X = sm.add_constant(X)
-model = sm.OLS(df[dv_column], X).fit()
-print(model.summary())
-```
+- **scikit-learn** / **imodels**: additional interpretable baselines
+  (`LinearRegression`, `DecisionTreeRegressor`, `RuleFitRegressor`, etc.).
+- **statsmodels**: `statsmodels.api.OLS` / `Logit` / `GLM` for classical
+  regression with *p*-values and confidence intervals — use this for the
+  formal statistical test with controls.
+- **scipy.stats**: for bivariate statistical tests (t-test, chi-square,
+  correlation, ANOVA).
 
-### Step 3: Use custom interpretable models to understand HOW features affect the outcome
-
-This is where you go beyond p-values. The file `interp_models.py` provides two
-models that reveal the **shape, direction, and relative importance** of each feature.
-
-```python
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-# Include ALL numeric columns — pass the DataFrame directly for column names
-X = df[numeric_columns]
-y = df[dv_column]
-
-# SmartAdditiveRegressor: reveals nonlinear effects and thresholds
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X, y)   # Automatically uses column names from DataFrame
-print(smart)       # Shows per-feature effects: linear slopes AND nonlinear patterns
-                   # e.g., "age: nonlinear effect (importance=32.1%)"
-                   #        "age <= 25: -0.42"
-                   #        "age > 25: +0.31"  <-- threshold at 25!
-
-effects = smart.feature_effects()
-print(effects)
-# {{'age': {{'direction': 'nonlinear (increasing trend)', 'importance': 0.321, 'rank': 1}},
-#  'income': {{'direction': 'positive', 'importance': 0.198, 'rank': 2}},
-#  'gender': {{'direction': 'zero', 'importance': 0.0, 'rank': 0}}}}
-# -> age is the most important predictor, income is second, gender doesn't matter
-
-# HingeEBMRegressor: sparse linear model that zeroes out unimportant features
-hinge = HingeEBMRegressor(n_knots=3)
-hinge.fit(X, y)
-print(hinge)       # Shows clean equation: y = 0.52*income + -0.13*age + 1.23
-print(hinge.feature_effects())
-```
-
-### Step 4: Write a rich conclusion
-
-Your explanation should go BEYOND just "significant or not." Include:
-- **Direction**: Is the effect positive or negative?
-- **Magnitude**: How strong is it relative to other features? (use importance rankings)
-- **Shape**: Is it linear, or does it have thresholds/nonlinear patterns?
-- **Robustness**: Does the relationship hold across multiple models (OLS, SmartAdditive, HingeEBM)?
-- **Confounders**: Which other variables also matter, and do they change the story?
-
-Example good explanation: "Hours fishing has a significant positive effect on fish
-caught (OLS coef=0.34, p=0.002). The SmartAdditive model confirms this with hours
-ranked 2nd in importance (19.8%%), showing a roughly linear positive effect. The
-relationship is robust after controlling for livebait, persons, and camper. Livebait
-is actually the strongest predictor (importance=45.2%%), suggesting that bait choice
-matters more than time spent."
-
-### Scoring guidelines
-- Strong significant effect that persists across models -> 75-100
-- Moderate or partially significant effect -> 40-70
-- Weak, inconsistent, or marginal effect -> 15-40
-- No significant effect in any analysis -> 0-15
-- Weigh BOTH bivariate and controlled results. If the effect weakens but doesn't
-  vanish with controls, give a moderate score reflecting the partial effect.
-
-## Custom Interpretability Tools Reference
-
-**SmartAdditiveRegressor** — Learns additive per-feature shape functions:
-- Accepts DataFrames directly (column names in output automatically)
-- `str(model)`: Shows each feature's effect — linear coefficients for linear features,
-  piecewise-constant lookup tables for nonlinear features (with thresholds!)
-- `model.feature_effects()`: Returns dict with direction, importance (0-1), and rank
-- Best for: discovering nonlinear effects, thresholds, feature importance rankings
-
-**HingeEBMRegressor** — Sparse piecewise-linear model:
-- Accepts DataFrames directly
-- `str(model)`: Shows sparse equation with only important features (Lasso selection)
-- `model.feature_effects()`: Returns dict with direction, importance, and rank
-- Best for: identifying which features truly matter (others get zeroed out)
+Focus on building interpretable models that reveal **how** features
+relate to the outcome, not just whether a relationship is significant.
+Use the printed form of each `agentic_imodels` regressor (coefficients,
+shape tables, rule sets, importance rankings) to inform your conclusion.
 
 ## Important
 
-- You MUST actually run the script. The `conclusion.txt` file must exist.
-- Use the custom models from `interp_models.py` to understand feature relationships.
-- Report feature importance rankings and effect shapes in your explanation.
-- Available packages: numpy, pandas, scipy, statsmodels, sklearn, imodels, interpret, matplotlib, seaborn.
+- You MUST actually run the script, not just write it. The `conclusion.txt` file must exist when you are done.
+- When asked if a relationship between two variables exists, use statistical significance tests AND corroborate with the interpretable models.
+- Relationships lacking significance AND ranked low / zeroed out by the interpretable models should receive a "No" (low score); significant ones that persist across models should receive a "Yes" (high score).
+- Calibrate the Likert score to the strength of evidence, following the scoring guidelines in `SKILL.md`.
+- Available packages: numpy, pandas, scipy, statsmodels, sklearn, imodels, agentic_imodels, interpret, matplotlib, seaborn.
 """
 
 
@@ -250,11 +205,21 @@ def prepare_dataset(dataset_name: str, mode: str, output_dir: str):
     with open(os.path.join(dst_dir, "AGENTS.md"), "w") as f:
         f.write(template.format(dataset_name=dataset_name))
 
-    # Copy interp_models.py for custom modes
+    # Copy the agentic-imodels package + SKILL.md for custom modes so the
+    # agent can `from agentic_imodels import ...` locally.
     if mode == "custom_v2":
+        pkg_src = os.path.join(AGENTIC_IMODELS_DIR, "agentic_imodels")
+        pkg_dst = os.path.join(dst_dir, "agentic_imodels")
+        if os.path.isdir(pkg_dst):
+            shutil.rmtree(pkg_dst)
+        shutil.copytree(
+            pkg_src,
+            pkg_dst,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
         shutil.copy2(
-            os.path.join(SCRIPT_DIR, "interp_models.py"),
-            os.path.join(dst_dir, "interp_models.py"),
+            os.path.join(AGENTIC_IMODELS_DIR, "SKILL.md"),
+            os.path.join(dst_dir, "SKILL.md"),
         )
 
     # Write packages.txt

@@ -4,325 +4,236 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from scipy.stats import pearsonr
+import statsmodels.formula.api as smf
+from scipy.stats import pointbiserialr, ttest_ind
+from sklearn.metrics import r2_score
 
-from interp_models import HingeEBMRegressor, SmartAdditiveRegressor
-
-
-def safe_pearson(x: pd.Series, y: pd.Series):
-    x = pd.to_numeric(x, errors="coerce")
-    y = pd.to_numeric(y, errors="coerce")
-    mask = x.notna() & y.notna()
-    x = x[mask]
-    y = y[mask]
-    if len(x) < 3 or np.isclose(x.std(ddof=0), 0) or np.isclose(y.std(ddof=0), 0):
-        return np.nan, np.nan
-    r, p = pearsonr(x, y)
-    return float(r), float(p)
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def fit_binomial_glm(y: pd.Series, X: pd.DataFrame):
-    Xc = sm.add_constant(X, has_constant="add")
-    model = sm.GLM(y, Xc, family=sm.families.Binomial()).fit()
-    return model
+def print_header(title: str) -> None:
+    print("\n" + "=" * 88)
+    print(title)
+    print("=" * 88)
 
 
-def get_coef_p(model, name: str):
-    coef = float(model.params[name]) if name in model.params else np.nan
-    pval = float(model.pvalues[name]) if name in model.pvalues else np.nan
-    return coef, pval
+def monotonicity(intervals, tol: float = 1e-9) -> str:
+    if len(intervals) < 2:
+        return "flat"
+    diffs = np.diff(intervals)
+    if np.all(diffs >= -tol):
+        return "increasing"
+    if np.all(diffs <= tol):
+        return "decreasing"
+    return "non-monotonic"
 
 
-def direction_matches(direction: str, expected_sign: int):
-    d = (direction or "").lower()
-    if expected_sign > 0:
-        if "positive" in d or "increasing" in d:
-            return True
-        if "negative" in d or "decreasing" in d:
-            return False
-        if "non-monotonic" in d:
-            return True
-        return False
-    if expected_sign < 0:
-        if "negative" in d or "decreasing" in d:
-            return True
-        if "positive" in d or "increasing" in d:
-            return False
-        if "non-monotonic" in d:
-            return True
-        return False
-    return False
+def hinge_effective_coefficients(model: HingeEBMRegressor):
+    n_sel = len(model.selected_)
+    coefs = model.lasso_.coef_
+    intercept = float(model.lasso_.intercept_)
+    effective = {int(model.selected_[i]): float(coefs[i]) for i in range(n_sel)}
 
-
-def score_parametric(sign_ok: bool, pval: float, max_points: float):
-    if not sign_ok or np.isnan(pval):
-        return 0.0
-    if pval < 0.05:
-        return max_points
-    if pval < 0.10:
-        return 0.75 * max_points
-    if pval < 0.20:
-        return 0.45 * max_points
-    return 0.20 * max_points
-
-
-def construct_support_from_effects(effects: dict, feature_expectations: dict):
-    support_imp = 0.0
-    oppose_imp = 0.0
-    for feat, expected_sign in feature_expectations.items():
-        e = effects.get(feat)
-        if not e:
+    for idx, (feat_idx, knot, direction) in enumerate(model.hinge_info_):
+        j_orig = int(model.selected_[feat_idx])
+        c = float(coefs[n_sel + idx])
+        if abs(c) < 1e-8:
             continue
-        imp = float(e.get("importance", 0.0) or 0.0)
-        if imp <= 0:
-            continue
-        ok = direction_matches(str(e.get("direction", "")), expected_sign)
-        if ok:
-            support_imp += imp
+        if direction == "pos":
+            effective[j_orig] = effective.get(j_orig, 0.0) + c
+            intercept -= c * knot
         else:
-            oppose_imp += imp
+            effective[j_orig] = effective.get(j_orig, 0.0) - c
+            intercept += c * knot
 
-    delta = support_imp - oppose_imp
-    if delta >= 0.08:
-        return 1.0
-    if delta >= 0.03:
-        return 0.5
-    if support_imp > oppose_imp and support_imp > 0:
-        return 0.25
-    return 0.0
+    active = {k: v for k, v in effective.items() if abs(v) > 1e-8}
+    return active, intercept
 
 
-def fmt_num(x, digits=3):
-    if x is None or (isinstance(x, float) and (np.isnan(x) or np.isinf(x))):
-        return "NA"
-    return f"{x:.{digits}f}"
+def main() -> None:
+    run_dir = Path(__file__).resolve().parent
 
+    info = json.loads((run_dir / "info.json").read_text())
+    question = info["research_questions"][0]
 
-def main():
-    info_path = Path("info.json")
-    data_path = Path("crofoot.csv")
-
-    info = json.loads(info_path.read_text())
-    question = info.get("research_questions", ["Research question unavailable"])[0]
-
-    df = pd.read_csv(data_path)
-
-    # Identify DV: prefer explicit 'win' for this dataset, else first binary numeric column.
-    dv = "win" if "win" in df.columns else None
-    if dv is None:
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        binary_candidates = [
-            c for c in numeric_cols if df[c].dropna().nunique() == 2
-        ]
-        if not binary_candidates:
-            raise ValueError("Could not identify binary dependent variable.")
-        dv = binary_candidates[0]
-
-    # Construct interpretable IVs tied to the research question wording.
-    if {"n_focal", "n_other"}.issubset(df.columns):
-        df["rel_group_size"] = df["n_focal"] - df["n_other"]
-    if {"dist_focal", "dist_other"}.issubset(df.columns):
-        # Positive = contest closer to focal home-range center than to other group center.
-        df["rel_location_adv"] = df["dist_other"] - df["dist_focal"]
-
-    print("=" * 80)
-    print("Research question:")
+    print_header("Research Question")
     print(question)
-    print("=" * 80)
-    print(f"Data shape: {df.shape}")
-    print(f"Dependent variable (DV): {dv}")
 
-    # Step 1: Explore
+    df = pd.read_csv(run_dir / "crofoot.csv")
+
+    # Feature engineering focused on the question's constructs.
+    df["size_diff"] = df["n_focal"] - df["n_other"]
+    df["location_adv"] = df["dist_other"] - df["dist_focal"]
+    df["dist_mean"] = (df["dist_focal"] + df["dist_other"]) / 2.0
+    df["n_total"] = df["n_focal"] + df["n_other"]
+
+    print_header("Data Overview")
+    print(f"Rows: {len(df)}")
+    print(f"Columns: {list(df.columns)}")
+    print("\nMissing values per column:")
+    print(df.isna().sum())
+    print("\nOutcome distribution (win):")
+    print(df["win"].value_counts(dropna=False).sort_index())
+
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    predictors = [c for c in numeric_cols if c != dv]
-
-    print("\nStep 1: Summary statistics")
+    print_header("Summary Statistics")
     print(df[numeric_cols].describe().T)
 
-    print("\nDV distribution:")
-    print(df[dv].value_counts(dropna=False).sort_index())
-    print(df[dv].value_counts(normalize=True, dropna=False).sort_index())
+    print_header("Distributions (selected predictors)")
+    for col in ["size_diff", "location_adv", "dist_focal", "dist_other", "dist_mean"]:
+        qs = df[col].quantile([0.0, 0.25, 0.5, 0.75, 1.0]).to_dict()
+        print(
+            f"{col}: min={qs[0.0]:.3f}, q25={qs[0.25]:.3f}, "
+            f"median={qs[0.5]:.3f}, q75={qs[0.75]:.3f}, max={qs[1.0]:.3f}"
+        )
 
-    corr_rows = []
-    for col in predictors:
-        r, p = safe_pearson(df[col], df[dv])
-        corr_rows.append({"feature": col, "pearson_r": r, "p_value": p, "abs_r": abs(r) if not np.isnan(r) else np.nan})
-    corr_df = pd.DataFrame(corr_rows).sort_values("abs_r", ascending=False)
-
-    print("\nTop bivariate correlations with DV:")
-    print(corr_df[["feature", "pearson_r", "p_value"]].head(12).to_string(index=False))
-
-    # Step 2: Controlled regression models
-    iv_size = "rel_group_size" if "rel_group_size" in df.columns else None
-    iv_loc = "rel_location_adv" if "rel_location_adv" in df.columns else None
-
-    id_controls = [c for c in ["focal", "other", "dyad"] if c in df.columns]
-
-    rel_model = None
-    rel_features = [c for c in [iv_size, iv_loc] if c is not None] + id_controls
-    if rel_features:
-        rel_model = fit_binomial_glm(df[dv], df[rel_features])
-        print("\nStep 2A: Binomial GLM with relative IVs + ID controls")
-        print(rel_model.summary())
-
-    raw_features = [c for c in ["n_focal", "n_other", "dist_focal", "dist_other"] if c in df.columns] + id_controls
-    raw_model = None
-    if raw_features:
-        raw_model = fit_binomial_glm(df[dv], df[raw_features])
-        print("\nStep 2B: Binomial GLM with raw size/location vars + ID controls")
-        print(raw_model.summary())
-
-    # Step 3: Custom interpretable models using all numeric predictors
-    X_custom = df[predictors].copy()
-    y = df[dv].copy()
-
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_custom, y)
-    smart_effects = smart.feature_effects()
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_custom, y)
-    hinge_effects = hinge.feature_effects()
-
-    print("\nStep 3A: SmartAdditiveRegressor")
-    print(smart)
-    print("Feature effects:")
-    print(smart_effects)
-
-    print("\nStep 3B: HingeEBMRegressor")
-    print(hinge)
-    print("Feature effects:")
-    print(hinge_effects)
-
-    # Extract core evidence for question variables
-    bivar_size_r, bivar_size_p = safe_pearson(df[iv_size], df[dv]) if iv_size else (np.nan, np.nan)
-    bivar_loc_r, bivar_loc_p = safe_pearson(df[iv_loc], df[dv]) if iv_loc else (np.nan, np.nan)
-
-    rel_size_coef = rel_size_p = rel_loc_coef = rel_loc_p = np.nan
-    if rel_model is not None and iv_size in rel_features:
-        rel_size_coef, rel_size_p = get_coef_p(rel_model, iv_size)
-    if rel_model is not None and iv_loc in rel_features:
-        rel_loc_coef, rel_loc_p = get_coef_p(rel_model, iv_loc)
-
-    # Raw model components
-    n_focal_coef = n_focal_p = n_other_coef = n_other_p = np.nan
-    dist_focal_coef = dist_focal_p = dist_other_coef = dist_other_p = np.nan
-    if raw_model is not None:
-        if "n_focal" in raw_features:
-            n_focal_coef, n_focal_p = get_coef_p(raw_model, "n_focal")
-        if "n_other" in raw_features:
-            n_other_coef, n_other_p = get_coef_p(raw_model, "n_other")
-        if "dist_focal" in raw_features:
-            dist_focal_coef, dist_focal_p = get_coef_p(raw_model, "dist_focal")
-        if "dist_other" in raw_features:
-            dist_other_coef, dist_other_p = get_coef_p(raw_model, "dist_other")
-
-    # Scoring rubric (0-100)
-    total_points = 0.0
-    max_points = 12.0
-
-    # Bivariate evidence (2 points total)
-    total_points += score_parametric(sign_ok=(bivar_size_r > 0), pval=bivar_size_p, max_points=1.0)
-    total_points += score_parametric(sign_ok=(bivar_loc_r > 0), pval=bivar_loc_p, max_points=1.0)
-
-    # Relative controlled GLM evidence (4 points total)
-    total_points += score_parametric(sign_ok=(rel_size_coef > 0), pval=rel_size_p, max_points=2.0)
-    total_points += score_parametric(sign_ok=(rel_loc_coef > 0), pval=rel_loc_p, max_points=2.0)
-
-    # Raw controlled GLM evidence (2 points total)
-    size_raw_sign_ok = (n_focal_coef > 0) and (n_other_coef < 0)
-    size_raw_p = np.nanmin([n_focal_p, n_other_p]) if not (np.isnan(n_focal_p) and np.isnan(n_other_p)) else np.nan
-    total_points += score_parametric(sign_ok=size_raw_sign_ok, pval=size_raw_p, max_points=1.0)
-
-    loc_raw_sign_ok = (dist_focal_coef < 0) and (dist_other_coef > 0)
-    loc_raw_p = np.nanmin([dist_focal_p, dist_other_p]) if not (np.isnan(dist_focal_p) and np.isnan(dist_other_p)) else np.nan
-    # partial credit if one of the two signs matches expected
-    if not loc_raw_sign_ok:
-        partial_loc_sign_ok = (dist_focal_coef < 0) or (dist_other_coef > 0)
-        total_points += score_parametric(sign_ok=partial_loc_sign_ok, pval=loc_raw_p, max_points=0.5)
-    else:
-        total_points += score_parametric(sign_ok=True, pval=loc_raw_p, max_points=1.0)
-
-    # Interpretable model construct-level support (4 points total)
-    size_expectations = {k: v for k, v in {
-        "rel_group_size": +1,
-        "n_focal": +1,
-        "n_other": -1,
-    }.items() if k in predictors}
-
-    loc_expectations = {k: v for k, v in {
-        "rel_location_adv": +1,
-        "dist_focal": -1,
-        "dist_other": +1,
-    }.items() if k in predictors}
-
-    smart_size_support = construct_support_from_effects(smart_effects, size_expectations)
-    smart_loc_support = construct_support_from_effects(smart_effects, loc_expectations)
-    hinge_size_support = construct_support_from_effects(hinge_effects, size_expectations)
-    hinge_loc_support = construct_support_from_effects(hinge_effects, loc_expectations)
-
-    total_points += smart_size_support
-    total_points += smart_loc_support
-    total_points += hinge_size_support
-    total_points += hinge_loc_support
-
-    score = int(np.clip(round(100.0 * (total_points / max_points)), 0, 100))
-
-    # Summaries for explanation
-    def safe_effect(effects, feat):
-        e = effects.get(feat, {}) if isinstance(effects, dict) else {}
-        return {
-            "direction": str(e.get("direction", "zero")),
-            "importance": float(e.get("importance", 0.0) or 0.0),
-            "rank": int(e.get("rank", 0) or 0),
-        }
-
-    smart_size = safe_effect(smart_effects, "rel_group_size")
-    smart_loc = safe_effect(smart_effects, "rel_location_adv")
-    hinge_size = safe_effect(hinge_effects, "rel_group_size")
-    hinge_loc = safe_effect(hinge_effects, "rel_location_adv")
-
-    # Top non-target predictors from SmartAdditive as confounders
-    target_vars = {"rel_group_size", "rel_location_adv", "n_focal", "n_other", "dist_focal", "dist_other"}
-    smart_ranked = sorted(
-        [(k, v) for k, v in smart_effects.items() if isinstance(v, dict)],
-        key=lambda kv: float(kv[1].get("importance", 0.0) or 0.0),
-        reverse=True,
+    print_header("Correlations With Outcome (Pearson)")
+    corr_to_win = (
+        df[numeric_cols]
+        .corr(numeric_only=True)["win"]
+        .drop("win")
+        .sort_values(key=np.abs, ascending=False)
     )
-    confounders = []
-    for feat, eff in smart_ranked:
-        if feat in target_vars:
-            continue
-        imp = float(eff.get("importance", 0.0) or 0.0)
-        if imp <= 0:
-            continue
-        confounders.append(f"{feat} ({imp:.1%}, {eff.get('direction', 'unknown')})")
-        if len(confounders) == 2:
-            break
-    confounder_text = ", ".join(confounders) if confounders else "none with meaningful importance"
+    print(corr_to_win)
+
+    print_header("Bivariate Tests")
+    bivariate_results = {}
+    for col in ["size_diff", "location_adv", "dist_focal", "dist_other", "dist_mean"]:
+        r, p = pointbiserialr(df["win"], df[col])
+        bivariate_results[col] = {"r": float(r), "p": float(p)}
+        print(f"point-biserial(win, {col}): r={r:.4f}, p={p:.4g}")
+
+        win1 = df.loc[df["win"] == 1, col]
+        win0 = df.loc[df["win"] == 0, col]
+        t_stat, t_p = ttest_ind(win1, win0, equal_var=False)
+        print(f"  Welch t-test ({col} by win): t={t_stat:.4f}, p={t_p:.4g}")
+
+    print_header("Classical Statistical Models (Binomial GLM)")
+    formula_rel = "win ~ size_diff + location_adv + dist_mean + n_total"
+    glm_rel = smf.glm(formula_rel, data=df, family=sm.families.Binomial()).fit()
+    print("Model A (relative effects + controls):", formula_rel)
+    print(glm_rel.summary())
+
+    formula_raw = "win ~ n_focal + n_other + dist_focal + dist_other"
+    glm_raw = smf.glm(formula_raw, data=df, family=sm.families.Binomial()).fit()
+    print("\nModel B (raw component robustness check):", formula_raw)
+    print(glm_raw.summary())
+
+    feature_cols = ["size_diff", "location_adv", "dist_mean", "n_total"]
+    X = df[feature_cols]
+    y = df["win"]
+
+    print_header("Interpretable Models (agentic_imodels)")
+
+    smart = SmartAdditiveRegressor().fit(X, y)
+    print("=== SmartAdditiveRegressor ===")
+    print(f"Train R^2: {r2_score(y, smart.predict(X)):.4f}")
+    print(smart)
+
+    hinge_ebm = HingeEBMRegressor().fit(X, y)
+    print("\n=== HingeEBMRegressor ===")
+    print(f"Train R^2: {r2_score(y, hinge_ebm.predict(X)):.4f}")
+    print(hinge_ebm)
+
+    sparse_ols = WinsorizedSparseOLSRegressor().fit(X, y)
+    print("\n=== WinsorizedSparseOLSRegressor ===")
+    print(f"Train R^2: {r2_score(y, sparse_ols.predict(X)):.4f}")
+    print(sparse_ols)
+
+    print_header("Interpretable Effect Diagnostics")
+
+    smart_imp = {
+        feature_cols[i]: float(v)
+        for i, v in enumerate(getattr(smart, "feature_importances_", np.zeros(len(feature_cols))))
+    }
+    imp_total = sum(smart_imp.values()) + 1e-12
+    for i, name in enumerate(feature_cols):
+        rel_imp = smart_imp[name] / imp_total
+        if i in smart.shape_functions_:
+            _, intervals = smart.shape_functions_[i]
+            shape = monotonicity(intervals)
+            slope, _, r2_lin = smart.linear_approx_.get(i, (0.0, 0.0, 0.0))
+            direction = "positive" if slope > 0 else ("negative" if slope < 0 else "flat")
+            print(
+                f"SmartAdditive {name}: rel_importance={rel_imp:.3f}, "
+                f"direction~{direction}, shape={shape}, linear_R2={r2_lin:.3f}"
+            )
+        else:
+            print(f"SmartAdditive {name}: effectively zero / excluded")
+
+    hinge_eff, _ = hinge_effective_coefficients(hinge_ebm)
+    hinge_by_name = {feature_cols[k]: float(v) for k, v in hinge_eff.items() if k < len(feature_cols)}
+    print("\nHingeEBM effective coefficients (display layer):")
+    print(hinge_by_name)
+
+    sparse_coef = {feature_cols[idx]: float(c) for idx, c in zip(sparse_ols.support_, sparse_ols.ols_coef_)}
+    sparse_excluded = [name for i, name in enumerate(feature_cols) if i not in set(sparse_ols.support_)]
+    print("\nWinsorizedSparseOLS kept coefficients:")
+    print(sparse_coef)
+    print("WinsorizedSparseOLS excluded (zeroed):", sparse_excluded)
+
+    # Evidence synthesis for the binary Likert response.
+    p_size = float(glm_rel.pvalues["size_diff"])
+    p_loc = float(glm_rel.pvalues["location_adv"])
+    beta_size = float(glm_rel.params["size_diff"])
+    beta_loc = float(glm_rel.params["location_adv"])
+
+    p_dist_focal = float(glm_raw.pvalues["dist_focal"])
+    beta_dist_focal = float(glm_raw.params["dist_focal"])
+
+    size_zeroed_sparse = "size_diff" in sparse_excluded
+    size_zeroed_hinge = abs(hinge_by_name.get("size_diff", 0.0)) < 1e-8
+    loc_zeroed_sparse = "location_adv" in sparse_excluded
+    loc_zeroed_hinge = abs(hinge_by_name.get("location_adv", 0.0)) < 1e-8
+
+    # Calibrated score:
+    # - size evidence is weak/inconsistent and often zeroed.
+    # - location has weak relative-effect evidence, but a mild distance-from-home signal.
+    size_component = 25
+    if p_size < 0.10:
+        size_component = 40
+    if p_size < 0.05:
+        size_component = 55
+    if size_zeroed_sparse and size_zeroed_hinge:
+        size_component -= 10
+    size_component = int(np.clip(size_component, 0, 100))
+
+    location_component = 35
+    if p_loc < 0.10:
+        location_component = 50
+    if p_loc < 0.05:
+        location_component = 65
+    if p_dist_focal < 0.10 and beta_dist_focal < 0:
+        location_component += 10
+    if loc_zeroed_sparse and not loc_zeroed_hinge:
+        location_component -= 3
+    location_component = int(np.clip(location_component, 0, 100))
+
+    response = int(round((size_component + location_component) / 2))
 
     explanation = (
-        f"Bivariate evidence is weak: rel_group_size has r={fmt_num(bivar_size_r)} (p={fmt_num(bivar_size_p)}), "
-        f"and rel_location_adv has r={fmt_num(bivar_loc_r)} (p={fmt_num(bivar_loc_p)}). "
-        f"In controlled binomial GLM with relative predictors, rel_group_size is {fmt_num(rel_size_coef)} "
-        f"(p={fmt_num(rel_size_p)}) and rel_location_adv is {fmt_num(rel_loc_coef, 4)} (p={fmt_num(rel_loc_p)}), "
-        f"so classical significance is limited. A raw-feature GLM is directionally suggestive for size "
-        f"(n_focal={fmt_num(n_focal_coef)}, n_other={fmt_num(n_other_coef)}) and partly for location "
-        f"(dist_focal={fmt_num(dist_focal_coef,4)}, dist_other={fmt_num(dist_other_coef,4)}), but mostly not significant. "
-        f"SmartAdditive indicates nonlinear positive patterns for both focal advantages: rel_group_size rank {smart_size['rank']} "
-        f"(importance={smart_size['importance']:.1%}, {smart_size['direction']}) and rel_location_adv rank {smart_loc['rank']} "
-        f"(importance={smart_loc['importance']:.1%}, {smart_loc['direction']}), suggesting threshold-like effects. "
-        f"HingeEBM is more conservative and zeros both relative variables directly "
-        f"(rel_group_size importance={hinge_size['importance']:.1%}, rel_location_adv importance={hinge_loc['importance']:.1%}), "
-        f"so robustness across models is mixed. Important additional predictors include {confounder_text}. "
-        f"Overall, evidence supports at most a moderate influence, stronger for contest location than for relative group size."
+        "Evidence is mixed and generally weak for a strong joint effect. "
+        f"In the controlled binomial GLM on relative terms, size_diff has beta={beta_size:.3f} (p={p_size:.3f}) "
+        f"and location_adv has beta={beta_loc:.4f} (p={p_loc:.3f}), so neither reaches p<0.05. "
+        f"A raw-location robustness model shows dist_focal beta={beta_dist_focal:.4f} (p={p_dist_focal:.3f}), "
+        "suggesting only mild evidence that being farther from the focal group's center reduces winning odds. "
+        "Interpretable models corroborate weak size effects: WinsorizedSparseOLS and HingeEBM both zero out size_diff, "
+        "while SmartAdditive gives it only moderate importance relative to distance features. "
+        "For location, SmartAdditive shows a non-monotonic location_adv shape and both SmartAdditive/HingeEBM retain some "
+        "distance-related signal, but sparse linear zeroing indicates that effect is not robustly linear. "
+        "Overall this supports a low-to-moderate 'yes': contest location appears to matter somewhat, but relative group size "
+        "does not show consistent robust influence in this sample."
     )
 
-    payload = {"response": int(score), "explanation": explanation}
-    Path("conclusion.txt").write_text(json.dumps(payload, ensure_ascii=True))
+    out = {"response": response, "explanation": explanation}
+    (run_dir / "conclusion.txt").write_text(json.dumps(out))
 
-    print("\nWrote conclusion.txt:")
-    print(json.dumps(payload, indent=2))
+    print_header("Final Likert Output")
+    print(json.dumps(out, indent=2))
 
 
 if __name__ == "__main__":

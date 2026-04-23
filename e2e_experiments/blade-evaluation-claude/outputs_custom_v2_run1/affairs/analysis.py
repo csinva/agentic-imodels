@@ -1,110 +1,132 @@
-import json
-import pandas as pd
-import numpy as np
-import statsmodels.api as sm
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(__file__))
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+os.chdir(SCRIPT_DIR)
+
+import json
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy import stats
 
 # Load data
 df = pd.read_csv("affairs.csv")
 print("Shape:", df.shape)
+print("\nFirst rows:")
 print(df.head())
+print("\nSummary statistics:")
 print(df.describe())
 
-# Encode categoricals
-df["gender_num"] = (df["gender"] == "male").astype(int)
-df["children_num"] = (df["children"] == "yes").astype(int)
+# --- Feature engineering ---
+df["children_bin"] = (df["children"] == "yes").astype(int)
+df["gender_bin"] = (df["gender"] == "male").astype(int)
 
-print("\nAffairs by children:")
-print(df.groupby("children")["affairs"].describe())
-print("\nMean affairs by children:", df.groupby("children")["affairs"].mean())
+# --- Bivariate exploration ---
+print("\n=== Bivariate: children vs affairs ===")
+grp = df.groupby("children")["affairs"]
+print(grp.describe())
+yes_affairs = df.loc[df["children"] == "yes", "affairs"]
+no_affairs = df.loc[df["children"] == "no", "affairs"]
+t_stat, p_val = stats.ttest_ind(yes_affairs, no_affairs)
+print(f"Mean affairs (children=yes): {yes_affairs.mean():.3f}")
+print(f"Mean affairs (children=no):  {no_affairs.mean():.3f}")
+print(f"t-test: t={t_stat:.3f}, p={p_val:.4f}")
 
-# Bivariate correlation
-from scipy import stats
-no_kids = df[df["children"] == "no"]["affairs"]
-yes_kids = df[df["children"] == "yes"]["affairs"]
-t, p = stats.ttest_ind(no_kids, yes_kids)
-print(f"\nt-test: t={t:.3f}, p={p:.4f}")
-print(f"No children mean: {no_kids.mean():.3f}, With children mean: {yes_kids.mean():.3f}")
+# Correlation
+corr_pearson, corr_p = stats.pearsonr(df["children_bin"], df["affairs"])
+print(f"Pearson r(children, affairs): {corr_pearson:.3f}, p={corr_p:.4f}")
 
-# OLS with controls
-feature_cols = ["children_num", "gender_num", "age", "yearsmarried", "religiousness", "education", "occupation", "rating"]
+# --- Classical OLS with controls ---
+control_cols = ["gender_bin", "age", "yearsmarried", "religiousness", "education", "occupation", "rating"]
+X_ols = sm.add_constant(df[["children_bin"] + control_cols])
+ols_model = sm.OLS(df["affairs"], X_ols).fit()
+print("\n=== OLS with controls ===")
+print(ols_model.summary())
+
+# --- Interpretable models ---
+from agentic_imodels import SmartAdditiveRegressor, HingeGAMRegressor, WinsorizedSparseOLSRegressor
+
+feature_cols = ["children_bin", "gender_bin", "age", "yearsmarried", "religiousness", "education", "occupation", "rating"]
 X = df[feature_cols]
-X = sm.add_constant(X)
-model = sm.OLS(df["affairs"], X).fit()
-print("\nOLS Summary:")
-print(model.summary())
-
-# SmartAdditiveRegressor
-numeric_cols = ["children_num", "gender_num", "age", "yearsmarried", "religiousness", "education", "occupation", "rating"]
-X_df = df[numeric_cols].copy()
-X_df.columns = ["children", "gender", "age", "yearsmarried", "religiousness", "education", "occupation", "rating"]
 y = df["affairs"]
 
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_df, y)
-print("\nSmartAdditiveRegressor:")
-print(smart)
-smart_effects = smart.feature_effects()
-print("Feature effects:", smart_effects)
+print("\n=== SmartAdditiveRegressor ===")
+sar = SmartAdditiveRegressor()
+sar.fit(X, y)
+print(sar)
 
-# HingeEBMRegressor
-hinge = HingeEBMRegressor(n_knots=3)
-hinge.fit(X_df, y)
-print("\nHingeEBMRegressor:")
-print(hinge)
-hinge_effects = hinge.feature_effects()
-print("Feature effects:", hinge_effects)
+print("\n=== HingeGAMRegressor ===")
+hgam = HingeGAMRegressor()
+hgam.fit(X, y)
+print(hgam)
 
-# Build conclusion
-children_ols_coef = model.params["children_num"]
-children_ols_p = model.pvalues["children_num"]
-children_smart = smart_effects.get("children", {})
-children_hinge = hinge_effects.get("children", {})
+print("\n=== WinsorizedSparseOLSRegressor ===")
+wols = WinsorizedSparseOLSRegressor()
+wols.fit(X, y)
+print(wols)
 
-# The question asks: does having children DECREASE affairs?
-# "decrease" = negative effect of children on affairs
-# Score: if children has negative significant effect -> high score (Yes)
-# children_num=1 means "yes children", so negative coef = having children -> fewer affairs
+# --- Summarize findings ---
+children_coef = ols_model.params["children_bin"]
+children_pval = ols_model.pvalues["children_bin"]
+children_ci = ols_model.conf_int().loc["children_bin"]
 
-bivariate_diff = yes_kids.mean() - no_kids.mean()
-direction_bivariate = "negative" if bivariate_diff < 0 else "positive"
+print(f"\n=== Key finding: children coefficient ===")
+print(f"OLS beta (controlled): {children_coef:.4f}, p={children_pval:.4f}, CI=[{children_ci[0]:.3f}, {children_ci[1]:.3f}]")
+
+# Calibrate Likert score
+# Research question: "Does having children *decrease* engagement in extramarital affairs?"
+# We check sign of children_bin coef (positive = more affairs with children; negative = fewer)
+# Also check bivariate vs controlled direction
+
+bivar_diff = yes_affairs.mean() - no_affairs.mean()  # positive means children -> more affairs
+
+print(f"\nBivariate diff (yes-no): {bivar_diff:.3f}")
+print(f"Controlled beta: {children_coef:.3f} (positive = more affairs, negative = fewer)")
+
+# Write conclusion
+# The question asks if children DECREASE affairs
+# Need to check: is coefficient significantly negative?
+
+if children_pval < 0.05 and children_coef < 0:
+    # Significant decrease
+    if children_coef < -0.5:
+        score = 75
+    else:
+        score = 60
+    direction = "decrease"
+elif children_pval < 0.1 and children_coef < 0:
+    score = 45
+    direction = "weak/marginal decrease"
+elif children_pval >= 0.05 and abs(children_coef) < 0.3:
+    score = 25
+    direction = "no significant effect"
+elif children_pval < 0.05 and children_coef > 0:
+    score = 10
+    direction = "increase (opposite direction)"
+else:
+    score = 30
+    direction = "inconsistent/unclear"
 
 explanation = (
     f"Research question: Does having children decrease extramarital affairs? "
-    f"Bivariate analysis: mean affairs for those without children = {no_kids.mean():.3f}, "
-    f"with children = {yes_kids.mean():.3f} (diff={bivariate_diff:.3f}, {direction_bivariate} effect of children). "
-    f"t-test: t={t:.3f}, p={p:.4f}. "
-    f"OLS with controls: children coefficient = {children_ols_coef:.3f} (p={children_ols_p:.4f}). "
-    f"SmartAdditive: children direction={children_smart.get('direction','unknown')}, importance={children_smart.get('importance',0):.3f}, rank={children_smart.get('rank','?')}. "
-    f"HingeEBM: children direction={children_hinge.get('direction','unknown')}, importance={children_hinge.get('importance',0):.3f}, rank={children_hinge.get('rank','?')}. "
+    f"Bivariate: mean affairs is {yes_affairs.mean():.2f} for those with children vs {no_affairs.mean():.2f} without "
+    f"(diff={bivar_diff:.2f}, t={t_stat:.2f}, p={p_val:.3f}). "
+    f"OLS with controls (gender, age, yearsmarried, religiousness, education, occupation, rating): "
+    f"children_bin beta={children_coef:.3f}, p={children_pval:.4f}, 95% CI=[{children_ci[0]:.3f}, {children_ci[1]:.3f}]. "
+    f"Direction assessed as: {direction}. "
+    f"SmartAdditiveRegressor and HingeGAMRegressor provide shape and importance info. "
+    f"Key confounders: rating (marriage satisfaction) and religiousness are typically strong predictors. "
+    f"The bivariate pattern shows children=yes is associated with {'more' if bivar_diff>0 else 'fewer'} affairs, "
+    f"but under controls the effect may change. "
+    f"Calibrated Likert score (0=strong No, 100=strong Yes for decrease): {score}."
 )
 
-# Determine score
-# If OLS coef for children is negative and p < 0.05 -> strong yes (75-100)
-# If negative but p > 0.05 -> weak (15-40)
-# Note: the question is about DECREASE, so negative coef = yes
-if children_ols_coef < 0 and children_ols_p < 0.05:
-    score = 70
-    explanation += "The effect is statistically significant and negative in OLS: having children is associated with fewer affairs. However, bivariate analysis shows those WITH children have HIGHER mean affairs, suggesting confounding (e.g., longer marriages). After controlling for years married and other factors, the children effect may be attenuated or reversed. Rating (marital happiness) and religiousness are stronger predictors."
-elif children_ols_coef < 0 and children_ols_p < 0.10:
-    score = 45
-    explanation += "Marginal negative effect in OLS, not statistically significant at 0.05 level."
-elif children_ols_coef > 0 and children_ols_p < 0.05:
-    score = 15
-    explanation += "Counterintuitively, having children is associated with MORE affairs in controlled analysis."
-else:
-    score = 25
-    explanation += "Weak or inconsistent effect of children on affairs across models."
-
-print(f"\nFinal score: {score}")
-print(f"Explanation: {explanation}")
-
-conclusion = {"response": score, "explanation": explanation}
+result = {"response": score, "explanation": explanation}
 with open("conclusion.txt", "w") as f:
-    json.dump(conclusion, f)
+    json.dump(result, f)
 
-print("\nWrote conclusion.txt")
+print("\n=== Conclusion ===")
+print(json.dumps(result, indent=2))
+print("\nWritten to conclusion.txt")

@@ -1,244 +1,247 @@
 import json
+import re
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from scipy.stats import pearsonr
+from scipy import stats
+from sklearn.exceptions import ConvergenceWarning
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-
-def _to_native(x):
-    if isinstance(x, (np.generic,)):
-        return x.item()
-    return x
-
-
-def _clean_effects(effects):
-    cleaned = {}
-    for feat, vals in effects.items():
-        cleaned[feat] = {k: _to_native(v) for k, v in vals.items()}
-    return cleaned
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    SparseSignedBasisPursuitRegressor,
+)
 
 
-def main():
-    info_path = Path("info.json")
-    data_path = Path("fish.csv")
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-    info = json.loads(info_path.read_text())
-    df = pd.read_csv(data_path)
 
-    question = info.get("research_questions", ["Unknown question"])[0]
-    print("Research question:")
-    print(question)
-    print()
+def parse_linear_x_coeffs(model_text: str, feature_cols: list[str]) -> dict[str, float]:
+    coeffs: dict[str, float] = {}
+    for coef_str, idx_str in re.findall(r"([+-]?\d+(?:\.\d+)?)\*x(\d+)", model_text):
+        idx = int(idx_str)
+        if 0 <= idx < len(feature_cols):
+            coeffs[feature_cols[idx]] = float(coef_str)
+    return coeffs
 
-    # Identify variables for this task.
-    dv = "fish_caught" if "fish_caught" in df.columns else df.columns[0]
-    iv = "hours" if "hours" in df.columns else [c for c in df.columns if c != dv][0]
 
-    print(f"Dependent variable (DV): {dv}")
-    print(f"Primary independent variable (IV): {iv}")
-    print()
-
-    # Step 1: explore
-    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
-    print("=== Step 1: Summary statistics ===")
-    print(df[numeric_cols].describe().T)
-    print()
-
-    print("=== Step 1: Distribution diagnostics (skewness) ===")
-    print(df[numeric_cols].skew().sort_values(ascending=False))
-    print()
-
-    print("=== Step 1: Correlation matrix ===")
-    print(df[numeric_cols].corr())
-    print()
-
-    r, r_p = pearsonr(df[iv], df[dv])
-    print(f"Bivariate Pearson correlation ({iv}, {dv}): r={r:.4f}, p={r_p:.4g}")
-    print()
-
-    # Simple model for raw relationship
-    X_simple = sm.add_constant(df[[iv]])
-    model_simple = sm.OLS(df[dv], X_simple).fit()
-    print("=== Simple OLS (DV ~ IV) ===")
-    print(model_simple.summary())
-    print()
-
-    # Step 2: controlled model
-    controls = [c for c in df.columns if c != dv]
-    X_full = sm.add_constant(df[controls])
-
-    unique_dv = set(df[dv].dropna().unique().tolist())
-    is_binary_dv = unique_dv.issubset({0, 1}) and len(unique_dv) <= 2
-
-    if is_binary_dv:
-        model_full = sm.Logit(df[dv], X_full).fit(disp=False)
-        model_type = "Logit"
-    else:
-        model_full = sm.OLS(df[dv], X_full).fit()
-        model_type = "OLS"
-
-    print(f"=== Step 2: Controlled {model_type} ({dv} ~ all predictors) ===")
-    print(model_full.summary())
-    print()
-
-    # Step 3: custom interpretable models
-    feature_cols = [c for c in numeric_cols if c != dv]
-    X_num = df[feature_cols]
-    y = df[dv]
-
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_num, y)
-    smart_effects = _clean_effects(smart.feature_effects())
-
-    print("=== Step 3: SmartAdditiveRegressor ===")
-    print(smart)
-    print("Feature effects:")
-    print(smart_effects)
-    print()
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_num, y)
-    hinge_effects = _clean_effects(hinge.feature_effects())
-
-    print("=== Step 3: HingeEBMRegressor ===")
-    print(hinge)
-    print("Feature effects:")
-    print(hinge_effects)
-    print()
-
-    # Collect metrics for conclusion
-    simple_coef = float(model_simple.params.get(iv, np.nan))
-    simple_p = float(model_simple.pvalues.get(iv, np.nan))
-    full_coef = float(model_full.params.get(iv, np.nan))
-    full_p = float(model_full.pvalues.get(iv, np.nan))
-
-    smart_iv = smart_effects.get(iv, {"direction": "unknown", "importance": 0.0, "rank": 0})
-    hinge_iv = hinge_effects.get(iv, {"direction": "unknown", "importance": 0.0, "rank": 0})
-
-    # Shape details from SmartAdditive thresholds.
-    shape_note = ""
-    if hasattr(smart, "shape_functions_") and iv in feature_cols:
-        iv_idx = feature_cols.index(iv)
-        if iv_idx in smart.shape_functions_:
-            thresholds, intervals = smart.shape_functions_[iv_idx]
-            thresholds = np.array(thresholds, dtype=float)
-            intervals = np.array(intervals, dtype=float)
-            if len(thresholds) > 0 and len(intervals) > 1:
-                pos_idx = np.where(intervals > 0)[0]
-                if len(pos_idx) > 0:
-                    first_pos = int(pos_idx[0])
-                    if first_pos == 0:
-                        cross_text = f"effect already positive at very low {iv}"
-                    else:
-                        cross_text = f"effect turns positive around {iv}>{thresholds[first_pos - 1]:.2f}"
-                else:
-                    cross_text = "effect does not turn positive in observed range"
-
-                diffs = np.diff(intervals)
-                if len(diffs) > 0:
-                    j = int(np.argmax(diffs))
-                    jump_t = thresholds[j] if j < len(thresholds) else thresholds[-1]
-                    shape_note = (
-                        f"SmartAdditive shows a nonlinear increasing pattern; {cross_text}, "
-                        f"with the largest upward step near {iv}≈{jump_t:.2f}."
-                    )
-                else:
-                    shape_note = f"SmartAdditive shows a nonlinear increasing pattern; {cross_text}."
-
-    # Confounders from controlled model
-    pvals = model_full.pvalues.drop(labels=["const"], errors="ignore")
-    coefs = model_full.params.drop(labels=["const"], errors="ignore")
-    control_items = []
-    for col in controls:
-        if col == iv:
+def parse_zeroed_features(model_text: str, feature_cols: list[str]) -> set[str]:
+    zeroed = set()
+    patterns = [
+        r"Zero-contribution features:\s*([^\n]+)",
+        r"zero[- ]effect features:\s*([^\n]+)",
+        r"Features with zero coefficients \(excluded\):\s*([^\n]+)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, model_text, flags=re.IGNORECASE)
+        if not m:
             continue
-        if col in pvals.index:
-            control_items.append((col, float(coefs[col]), float(pvals[col])))
+        raw = m.group(1)
+        parts = [p.strip().strip(".") for p in raw.split(",") if p.strip()]
+        for token in parts:
+            if token in feature_cols:
+                zeroed.add(token)
+            elif re.fullmatch(r"x\d+", token):
+                idx = int(token[1:])
+                if 0 <= idx < len(feature_cols):
+                    zeroed.add(feature_cols[idx])
+    return zeroed
 
-    # Most influential significant controls
-    sig_controls = [x for x in control_items if x[2] < 0.05]
-    sig_controls.sort(key=lambda t: t[2])
-    conf_text_parts = []
-    for col, coef, p in sig_controls[:3]:
-        direction = "positive" if coef > 0 else "negative"
-        conf_text_parts.append(f"{col} ({direction}, coef={coef:.3f}, p={p:.3g})")
-    conf_text = "; ".join(conf_text_parts) if conf_text_parts else "no strong control variables at p<0.05"
 
-    # Fish/hour descriptive rates
-    fish_per_hour = df[dv] / df[iv]
-    avg_ratio = float(np.mean(fish_per_hour.replace([np.inf, -np.inf], np.nan).dropna()))
-    weighted_ratio = float(df[dv].sum() / df[iv].sum())
+def clamp_int(x: float, lo: int = 0, hi: int = 100) -> int:
+    return int(max(lo, min(hi, round(x))))
 
-    # Score strength of evidence for IV effect on DV
-    score = 0
 
-    # Controlled model gets highest weight
-    if full_p < 0.01:
-        score += 45
-    elif full_p < 0.05:
-        score += 35
-    elif full_p < 0.10:
-        score += 25
-    else:
-        score += 10 if full_coef > 0 else 0
+def main() -> None:
+    base = Path(".")
+    info = json.loads((base / "info.json").read_text())
 
-    # Bivariate evidence
-    if simple_p < 0.01:
-        score += 20
-    elif simple_p < 0.05:
-        score += 15
-    elif simple_p < 0.10:
-        score += 8
+    print("=== Research question ===")
+    for q in info.get("research_questions", []):
+        print("-", q)
 
-    # Interpretable models
-    smart_imp = float(smart_iv.get("importance", 0.0) or 0.0)
-    hinge_imp = float(hinge_iv.get("importance", 0.0) or 0.0)
-    smart_dir = str(smart_iv.get("direction", "")).lower()
-    hinge_dir = str(hinge_iv.get("direction", "")).lower()
+    df = pd.read_csv(base / "fish.csv")
+    df["fish_per_hour"] = df["fish_caught"] / df["hours"]
+    # stabilized log-rate for continuous interpretable regressors
+    df["log_rate"] = np.log((df["fish_caught"] + 0.5) / df["hours"])
 
-    score += min(20, int(round(30 * smart_imp)))
-    score += min(15, int(round(20 * hinge_imp)))
+    print("\n=== Data overview ===")
+    print("Shape:", df.shape)
+    print("Columns:", list(df.columns))
+    print("Missing values:\n", df.isna().sum())
 
-    if "positive" in smart_dir or "increasing" in smart_dir:
-        score += 5
-    elif "negative" in smart_dir or "decreasing" in smart_dir:
-        score -= 5
+    print("\n=== Summary statistics ===")
+    print(df.describe().to_string())
 
-    if "positive" in hinge_dir:
-        score += 3
-    elif "negative" in hinge_dir:
-        score -= 3
+    print("\n=== Distribution checkpoints ===")
+    for col in ["fish_caught", "hours", "fish_per_hour", "log_rate"]:
+        qs = df[col].quantile([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1.0])
+        print(f"{col}:\n{qs.to_string()}\n")
 
-    # Penalize weak controlled evidence
-    if 0.05 <= full_p < 0.10:
-        score -= 7
-    elif full_p >= 0.10:
-        score -= 15
+    weighted_rate = float(df["fish_caught"].sum() / df["hours"].sum())
+    mean_individual_rate = float(df["fish_per_hour"].mean())
+    median_individual_rate = float(df["fish_per_hour"].median())
+    zero_catch_share = float((df["fish_caught"] == 0).mean())
 
-    response = int(np.clip(score, 0, 100))
+    print("=== Catch-rate estimates ===")
+    print(f"Weighted average catch rate (total fish / total hours): {weighted_rate:.4f} fish/hour")
+    print(f"Mean individual trip catch rate: {mean_individual_rate:.4f} fish/hour")
+    print(f"Median individual trip catch rate: {median_individual_rate:.4f} fish/hour")
+    print(f"Share of zero-catch trips: {zero_catch_share:.3f}")
+
+    print("\n=== Correlations ===")
+    corr = df[["fish_caught", "livebait", "camper", "persons", "child", "hours", "fish_per_hour", "log_rate"]].corr(numeric_only=True)
+    print(corr.to_string())
+
+    print("\n=== Bivariate tests ===")
+    pearson_hours = stats.pearsonr(df["fish_caught"], df["hours"])
+    spearman_hours = stats.spearmanr(df["fish_caught"], df["hours"])
+    print(f"Pearson fish_caught vs hours: r={pearson_hours.statistic:.4f}, p={pearson_hours.pvalue:.4g}")
+    print(f"Spearman fish_caught vs hours: rho={spearman_hours.statistic:.4f}, p={spearman_hours.pvalue:.4g}")
+
+    for b in ["livebait", "camper"]:
+        grp1 = df.loc[df[b] == 1, "log_rate"]
+        grp0 = df.loc[df[b] == 0, "log_rate"]
+        t = stats.ttest_ind(grp1, grp0, equal_var=False)
+        print(
+            f"Welch t-test log_rate by {b}: "
+            f"mean(1)={grp1.mean():.4f}, mean(0)={grp0.mean():.4f}, t={t.statistic:.4f}, p={t.pvalue:.4g}"
+        )
+
+    for c in ["persons", "child"]:
+        s = stats.spearmanr(df[c], df["log_rate"])
+        print(f"Spearman log_rate vs {c}: rho={s.statistic:.4f}, p={s.pvalue:.4g}")
+
+    print("\n=== Controlled count-rate models ===")
+    controls = ["livebait", "camper", "persons", "child"]
+    X_ctrl = sm.add_constant(df[controls])
+    y_count = df["fish_caught"]
+    offset = np.log(df["hours"])
+
+    poisson = sm.GLM(y_count, X_ctrl, family=sm.families.Poisson(), offset=offset).fit()
+    print("Poisson GLM with log(hours) offset")
+    print(poisson.summary())
+    overdispersion_ratio = float(poisson.pearson_chi2 / poisson.df_resid)
+    print(f"Poisson overdispersion ratio (Pearson chi2/df): {overdispersion_ratio:.3f}")
+
+    nb = sm.NegativeBinomial(y_count, X_ctrl, offset=offset).fit(disp=False)
+    print("\nNegative Binomial with log(hours) offset (primary due overdispersion)")
+    print(nb.summary())
+
+    nb_params = nb.params.copy()
+    nb_pvals = nb.pvalues.copy()
+    irr = np.exp(nb_params.drop("alpha"))
+
+    print("\nIncidence Rate Ratios (NB):")
+    print(irr.to_string())
+
+    print("\n=== Interpretable models (agentic_imodels) ===")
+    feature_cols = ["livebait", "camper", "persons", "child", "hours"]
+    X_interp = df[feature_cols]
+    y_interp = df["log_rate"]
+
+    print("Feature mapping used by printed models:")
+    for i, c in enumerate(feature_cols):
+        print(f"  x{i} -> {c}")
+
+    model_specs = [
+        ("SmartAdditiveRegressor", SmartAdditiveRegressor()),  # honest
+        ("HingeEBMRegressor", HingeEBMRegressor()),            # high-rank decoupled
+        ("SparseSignedBasisPursuitRegressor", SparseSignedBasisPursuitRegressor()),  # honest sparse/zeroing
+    ]
+
+    model_texts: dict[str, str] = {}
+    linear_coeffs: dict[str, dict[str, float]] = {}
+    zeroed_by_model: dict[str, set[str]] = {}
+
+    for name, model in model_specs:
+        fitted = model.fit(X_interp, y_interp)
+        text = str(fitted)
+        model_texts[name] = text
+        linear_coeffs[name] = parse_linear_x_coeffs(text, feature_cols)
+        zeroed_by_model[name] = parse_zeroed_features(text, feature_cols)
+
+        print(f"\n--- {name} ---")
+        print(text)
+
+    # Evidence synthesis for Likert score
+    sig_features = [f for f in controls if nb_pvals[f] < 0.05]
+    very_sig_features = [f for f in controls if nb_pvals[f] < 0.01]
+
+    # Directional robustness across two complementary interpretable models
+    dir_support = 0
+    dir_total = 0
+    for f in sig_features:
+        nb_sign = np.sign(nb_params[f])
+        for model_name in ["SmartAdditiveRegressor", "HingeEBMRegressor"]:
+            coeff = linear_coeffs.get(model_name, {}).get(f)
+            if coeff is None:
+                continue
+            dir_total += 1
+            if np.sign(coeff) == nb_sign and abs(coeff) > 1e-8:
+                dir_support += 1
+
+    sparse_zeroed = zeroed_by_model.get("SparseSignedBasisPursuitRegressor", set())
+    conflicted_sig = [f for f in sig_features if f in sparse_zeroed]
+
+    # Score calibration per SKILL guidance
+    score = 50.0
+    if len(sig_features) == 0:
+        score = 15.0
+    elif len(sig_features) == 1:
+        score = 62.0
+    elif len(sig_features) >= 2:
+        score = 72.0
+
+    score += 4.0 * len(very_sig_features)
+    if "persons" in sig_features and irr.get("persons", 1.0) > 2.0:
+        score += 6.0
+    if "livebait" in sig_features and irr.get("livebait", 1.0) > 2.0:
+        score += 6.0
+
+    if dir_total > 0:
+        score += 8.0 * (dir_support / dir_total)
+
+    score -= 8.0 * len(conflicted_sig)
+
+    # reward specific null evidence for non-significant controls
+    null_controls = [f for f in controls if nb_pvals[f] >= 0.05]
+    null_zeroed = [f for f in null_controls if f in sparse_zeroed]
+    score += 2.0 * len(null_zeroed)
+
+    response = clamp_int(score)
+
+    # Structured explanation with concrete effect sizes
+    effect_lines = []
+    for f in controls:
+        beta = nb_params[f]
+        p = nb_pvals[f]
+        irr_f = float(np.exp(beta))
+        effect_lines.append(f"{f}: beta={beta:.3f}, IRR={irr_f:.2f}, p={p:.4g}")
 
     explanation = (
-        f"Primary test of {iv} on {dv}: bivariate association is positive (r={r:.3f}, p={r_p:.4g}); "
-        f"simple OLS gives coef={simple_coef:.3f} fish/hour (p={simple_p:.4g}). "
-        f"With controls (livebait, camper, persons, child), the {iv} coefficient stays positive but weakens "
-        f"to coef={full_coef:.3f} (p={full_p:.4g}), so evidence is moderate rather than definitive. "
-        f"Magnitude/importance across interpretable models: SmartAdditive rank={smart_iv.get('rank', 0)} "
-        f"importance={smart_imp:.1%} direction={smart_iv.get('direction', 'unknown')}; "
-        f"HingeEBM rank={hinge_iv.get('rank', 0)} importance={hinge_imp:.1%} direction={hinge_iv.get('direction', 'unknown')}. "
-        f"{shape_note} Confounders that materially affect catch include {conf_text}. "
-        f"For rate context, mean individual fish/hour is {avg_ratio:.3f} (skewed), while total fish/total hours is {weighted_ratio:.3f}. "
-        f"Overall: {iv} likely increases catches, but part of the raw effect is explained by group composition and trip characteristics."
+        f"Average catch rate is about {weighted_rate:.3f} fish/hour (total-fish/total-hours; "
+        f"trip-level mean {mean_individual_rate:.3f}, median {median_individual_rate:.3f}). "
+        f"Poisson with offset showed strong overdispersion (ratio={overdispersion_ratio:.2f}), "
+        f"so Negative Binomial is primary. NB evidence with controls: "
+        + "; ".join(effect_lines)
+        + ". This indicates robust positive associations for livebait and persons, while camper and child are not statistically reliable after controls. "
+        "In agentic_imodels, SmartAdditive and HingeEBM both keep livebait/persons with positive direction and show camper as weak/zeroed, "
+        "while SparseSignedBasisPursuit provides sparse null evidence by zeroing camper and child (and also drops livebait, indicating some model disagreement). "
+        "Overall evidence supports that catch rate per hour is meaningfully influenced by trip composition, with strongest support for number of adults and livebait usage, "
+        "and weaker/inconsistent evidence for camper and children."
     )
 
     conclusion = {"response": response, "explanation": explanation}
-    Path("conclusion.txt").write_text(json.dumps(conclusion))
+    with (base / "conclusion.txt").open("w", encoding="utf-8") as f:
+        json.dump(conclusion, f, ensure_ascii=True)
 
-    print("=== Step 4: Conclusion JSON ===")
-    print(json.dumps(conclusion, indent=2))
+    print("\n=== Conclusion JSON ===")
+    print(json.dumps(conclusion, ensure_ascii=True))
 
 
 if __name__ == "__main__":

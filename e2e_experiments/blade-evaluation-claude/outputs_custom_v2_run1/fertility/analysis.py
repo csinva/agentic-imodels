@@ -1,138 +1,144 @@
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+from scipy import stats
+from agentic_imodels import SmartAdditiveRegressor, HingeEBMRegressor, WinsorizedSparseOLSRegressor
 import json
 import warnings
 warnings.filterwarnings('ignore')
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
 # Load data
 df = pd.read_csv('fertility.csv')
+print("Shape:", df.shape)
+print(df.head())
+print(df.describe())
 
-# Parse dates and compute fertility proxy (days to next ovulation)
-# Ovulation typically occurs ~14 days before next period
-# days_since_last_period = DateTesting - StartDateofLastPeriod
-# cycle_phase_normalized = days_since_last_period / ReportedCycleLength
-# High fertility = mid-cycle (around 0.5 of cycle)
+# Parse dates
+for col in ['DateTesting', 'StartDateofLastPeriod', 'StartDateofPeriodBeforeLast']:
+    df[col] = pd.to_datetime(df[col])
 
-df['DateTesting'] = pd.to_datetime(df['DateTesting'], format='%m/%d/%y')
-df['StartDateofLastPeriod'] = pd.to_datetime(df['StartDateofLastPeriod'], format='%m/%d/%y')
-df['StartDateofPeriodBeforeLast'] = pd.to_datetime(df['StartDateofPeriodBeforeLast'], format='%m/%d/%y')
+# Compute fertility proxy: estimate cycle day and proximity to ovulation
+# Fertile window is typically around ovulation, ~14 days before next period
+df['days_since_last_period'] = (df['DateTesting'] - df['StartDateofLastPeriod']).dt.days
+df['computed_cycle_length'] = (df['StartDateofLastPeriod'] - df['StartDateofPeriodBeforeLast']).dt.days
 
-# Compute cycle length from actual dates (more accurate than self-report)
-df['ComputedCycleLength'] = (df['StartDateofLastPeriod'] - df['StartDateofPeriodBeforeLast']).dt.days
+# Use reported cycle length if computed is missing or odd
+df['cycle_length'] = df['ReportedCycleLength'].fillna(df['computed_cycle_length'])
 
-# Days since last period started
-df['DaysSinceLastPeriod'] = (df['DateTesting'] - df['StartDateofLastPeriod']).dt.days
+# Days until next period
+df['days_until_next_period'] = df['cycle_length'] - df['days_since_last_period']
 
-# Use reported cycle length if available, else computed
-cycle_len = df['ReportedCycleLength'].fillna(df['ComputedCycleLength'])
-df['CycleLength'] = cycle_len
+# Ovulation ~14 days before next period; proximity to ovulation = fertility
+# fertility_score: higher = closer to ovulation
+df['days_to_ovulation'] = df['days_until_next_period'] - 14
+df['fertility_score'] = -np.abs(df['days_to_ovulation'])  # higher = nearer ovulation
 
-# Fertility index: estimated days until next ovulation (ovulation = cycle_len - 14 days from start)
-# Higher value = closer to ovulation = higher fertility
-df['DaysToOvulation'] = (df['CycleLength'] - 14) - df['DaysSinceLastPeriod']
-# Normalize to 0-1 fertility window; higher = more fertile (closer to ovulation)
-df['FertilityProxy'] = 1 - (np.abs(df['DaysToOvulation']) / (df['CycleLength'] / 2))
-df['FertilityProxy'] = df['FertilityProxy'].clip(-1, 1)
+# High-fertility binary indicator (within 3 days of ovulation)
+df['high_fertility'] = (np.abs(df['days_to_ovulation']) <= 3).astype(int)
 
-# Composite religiosity score (average of 3 items)
-df['Religiosity'] = df[['Rel1', 'Rel2', 'Rel3']].mean(axis=1)
+print("\nFertility score stats:")
+print(df[['days_since_last_period', 'cycle_length', 'days_to_ovulation', 'fertility_score', 'high_fertility']].describe())
 
-print("=== Dataset Overview ===")
-print(df[['FertilityProxy', 'DaysSinceLastPeriod', 'CycleLength', 'Religiosity', 'Relationship']].describe())
-
-print("\n=== Correlation with Religiosity ===")
-corr_cols = ['FertilityProxy', 'DaysSinceLastPeriod', 'CycleLength', 'Relationship', 'Sure1', 'Sure2']
-for col in corr_cols:
-    valid = df[[col, 'Religiosity']].dropna()
-    r = valid[col].corr(valid['Religiosity'])
-    print(f"  {col}: r = {r:.4f} (n={len(valid)})")
+# Religiosity composite
+df['religiosity'] = df[['Rel1', 'Rel2', 'Rel3']].mean(axis=1)
+print("\nReligiosity stats:", df['religiosity'].describe())
+print("High fertility N:", df['high_fertility'].sum())
 
 # Drop rows with missing key variables
-analysis_df = df[['FertilityProxy', 'DaysSinceLastPeriod', 'CycleLength',
-                   'Relationship', 'Sure1', 'Sure2', 'Religiosity']].dropna()
-print(f"\nAnalysis sample size: {len(analysis_df)}")
+df_clean = df.dropna(subset=['religiosity', 'fertility_score', 'Relationship', 'Sure1', 'Sure2'])
+print(f"\nClean rows: {len(df_clean)}")
 
-# OLS with controls
-print("\n=== OLS Regression (DV = Religiosity) ===")
-feature_cols = ['FertilityProxy', 'DaysSinceLastPeriod', 'CycleLength', 'Relationship', 'Sure1', 'Sure2']
-X = analysis_df[feature_cols]
-X = sm.add_constant(X)
-model = sm.OLS(analysis_df['Religiosity'], X).fit()
-print(model.summary())
+# Bivariate correlation
+r, p = stats.pearsonr(df_clean['fertility_score'], df_clean['religiosity'])
+print(f"\nBivariate Pearson r(fertility_score, religiosity) = {r:.4f}, p = {p:.4f}")
 
-# SmartAdditiveRegressor
+r2, p2 = stats.pointbiserialr(df_clean['high_fertility'], df_clean['religiosity'])
+print(f"Point-biserial r(high_fertility, religiosity) = {r2:.4f}, p = {p2:.4f}")
+
+# t-test: high vs low fertility
+high = df_clean[df_clean['high_fertility'] == 1]['religiosity']
+low = df_clean[df_clean['high_fertility'] == 0]['religiosity']
+t, p_t = stats.ttest_ind(high, low)
+print(f"\nHigh fertility mean: {high.mean():.3f}, Low fertility mean: {low.mean():.3f}")
+print(f"t-test t={t:.4f}, p={p_t:.4f}")
+
+# Classical OLS with controls
+X_ols = sm.add_constant(df_clean[['fertility_score', 'Relationship', 'Sure1', 'Sure2', 'cycle_length']])
+ols_model = sm.OLS(df_clean['religiosity'], X_ols).fit()
+print("\n=== OLS Summary ===")
+print(ols_model.summary())
+
+# Also OLS with high_fertility binary
+X_ols2 = sm.add_constant(df_clean[['high_fertility', 'Relationship', 'Sure1', 'Sure2', 'cycle_length']])
+ols_model2 = sm.OLS(df_clean['religiosity'], X_ols2).fit()
+print("\n=== OLS with high_fertility binary ===")
+print(ols_model2.summary())
+
+# Interpretable models from agentic_imodels
+feature_cols = ['fertility_score', 'high_fertility', 'Relationship', 'Sure1', 'Sure2', 'cycle_length', 'days_since_last_period']
+X = df_clean[feature_cols].values
+y = df_clean['religiosity'].values
+
 print("\n=== SmartAdditiveRegressor ===")
-X_df = analysis_df[feature_cols]
-y = analysis_df['Religiosity']
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_df, y)
-print(smart)
-smart_effects = smart.feature_effects()
-print(smart_effects)
+sam = SmartAdditiveRegressor()
+sam.fit(X, y)
+print(sam)
 
-# HingeEBMRegressor
 print("\n=== HingeEBMRegressor ===")
-hinge = HingeEBMRegressor(n_knots=3)
-hinge.fit(X_df, y)
-print(hinge)
-hinge_effects = hinge.feature_effects()
-print(hinge_effects)
+hebm = HingeEBMRegressor()
+hebm.fit(X, y)
+print(hebm)
 
-# Extract key results
-fertility_ols_coef = model.params.get('FertilityProxy', None)
-fertility_ols_pval = model.pvalues.get('FertilityProxy', None)
-fertility_smart = smart_effects.get('FertilityProxy', {})
-fertility_hinge = hinge_effects.get('FertilityProxy', {})
+print("\n=== WinsorizedSparseOLSRegressor ===")
+wols = WinsorizedSparseOLSRegressor()
+wols.fit(X, y)
+print(wols)
 
-days_ols_coef = model.params.get('DaysSinceLastPeriod', None)
-days_ols_pval = model.pvalues.get('DaysSinceLastPeriod', None)
-days_smart = smart_effects.get('DaysSinceLastPeriod', {})
+# Summary of evidence
+fert_coef = ols_model.params['fertility_score']
+fert_pval = ols_model.pvalues['fertility_score']
+high_fert_coef = ols_model2.params['high_fertility']
+high_fert_pval = ols_model2.pvalues['high_fertility']
 
-print(f"\nFertilityProxy OLS: coef={fertility_ols_coef:.4f}, p={fertility_ols_pval:.4f}")
-print(f"DaysSinceLastPeriod OLS: coef={days_ols_coef:.4f}, p={days_ols_pval:.4f}")
-print(f"SmartAdditive FertilityProxy: {fertility_smart}")
-print(f"SmartAdditive DaysSinceLastPeriod: {days_smart}")
-print(f"HingeEBM FertilityProxy: {fertility_hinge}")
+print(f"\n--- Evidence Summary ---")
+print(f"OLS fertility_score coef={fert_coef:.4f}, p={fert_pval:.4f}")
+print(f"OLS high_fertility coef={high_fert_coef:.4f}, p={high_fert_pval:.4f}")
+print(f"Bivariate r={r:.4f}, p={p:.4f}")
+print(f"High vs low t-test p={p_t:.4f}")
 
-# Determine score
-fertility_p = fertility_ols_pval if fertility_ols_pval is not None else 1.0
-days_p = days_ols_pval if days_ols_pval is not None else 1.0
-fertility_imp = fertility_smart.get('importance', 0)
-days_imp = days_smart.get('importance', 0)
+# Assess evidence strength and write conclusion
+# Significant = p < 0.05 with controlled analysis
+# Need to check if fertility_score (or high_fertility) has a clear effect
 
-# Combined fertility signal importance
-combined_fertility_imp = max(fertility_imp, days_imp)
+evidence_notes = (
+    f"Bivariate Pearson r={r:.4f} (p={p:.4f}). "
+    f"OLS with controls: fertility_score coef={fert_coef:.4f} (p={fert_pval:.4f}). "
+    f"High-fertility binary coef={high_fert_coef:.4f} (p={high_fert_pval:.4f}). "
+    f"High fertility mean religiosity={high.mean():.3f} vs low={low.mean():.3f}."
+)
+print("\nEvidence notes:", evidence_notes)
 
-if (fertility_p < 0.05 or days_p < 0.05) and combined_fertility_imp > 0.1:
+# Score calibration:
+# - Both OLS p-values for fertility predictors > 0.05 with controls → weak/null evidence
+# - Bivariate r also likely small
+# Check p-values to assign score
+if fert_pval < 0.01 and abs(r) > 0.15:
     score = 75
-elif (fertility_p < 0.1 or days_p < 0.1) and combined_fertility_imp > 0.05:
+    explanation = f"Strong significant effect of fertility on religiosity. {evidence_notes}"
+elif fert_pval < 0.05 or high_fert_pval < 0.05:
     score = 55
-elif (fertility_p < 0.2 or days_p < 0.2) or combined_fertility_imp > 0.05:
+    explanation = f"Moderate evidence: fertility measure significant under at least one specification. {evidence_notes}"
+elif fert_pval < 0.1 or high_fert_pval < 0.1:
     score = 35
+    explanation = f"Weak / marginal evidence of fertility effect on religiosity. {evidence_notes}"
 else:
     score = 15
+    explanation = f"Little to no evidence of hormonal fertility effect on religiosity. Neither continuous nor binary fertility measure is significant after controls. {evidence_notes}"
 
-explanation = (
-    f"The research question asks whether hormonal fluctuations associated with fertility affect women's religiosity. "
-    f"Fertility was operationalized as FertilityProxy (estimated closeness to ovulation based on cycle timing). "
-    f"OLS regression controlling for cycle length, relationship status, and date-reporting certainty showed: "
-    f"FertilityProxy coef={fertility_ols_coef:.3f} (p={fertility_ols_pval:.3f}), "
-    f"DaysSinceLastPeriod coef={days_ols_coef:.3f} (p={days_ols_pval:.3f}). "
-    f"SmartAdditiveRegressor ranked FertilityProxy importance={fertility_imp:.3f} and DaysSinceLastPeriod importance={days_imp:.3f}. "
-    f"HingeEBM FertilityProxy: {fertility_hinge}. "
-    f"The overall evidence {'supports' if score >= 50 else 'does not strongly support'} a meaningful relationship "
-    f"between fertility-related hormonal fluctuations and religiosity, "
-    f"though the effect is {'statistically significant' if min(fertility_p, days_p) < 0.05 else 'not statistically significant at p<0.05'}. "
-    f"Relationship status was also in the model as a potential confounder."
-)
+print(f"\nFinal score: {score}")
+print(f"Explanation: {explanation}")
 
 result = {"response": score, "explanation": explanation}
 with open('conclusion.txt', 'w') as f:
     json.dump(result, f)
-
-print(f"\n=== CONCLUSION ===")
-print(json.dumps(result, indent=2))
-print("conclusion.txt written.")
+print("\nWritten conclusion.txt")

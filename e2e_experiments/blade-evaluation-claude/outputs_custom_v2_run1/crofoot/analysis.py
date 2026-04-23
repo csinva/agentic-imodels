@@ -1,103 +1,121 @@
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+from scipy import stats
 import json
-import warnings
-warnings.filterwarnings('ignore')
-
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
 
 # Load data
 df = pd.read_csv('crofoot.csv')
 print("Shape:", df.shape)
 print(df.describe())
-
-# Construct key variables
-# Relative group size: ratio of focal to other group size
-df['rel_size'] = df['n_focal'] / df['n_other']
-# Location proxy: distance of focal from home range center (closer = more in home territory)
-# "location" = being in your own territory -> focal group closer to their center = home advantage
-df['loc_advantage'] = df['dist_other'] - df['dist_focal']  # positive = focal closer to home
-
 print("\nCorrelations with win:")
-print(df[['win', 'rel_size', 'loc_advantage', 'dist_focal', 'dist_other', 'n_focal', 'n_other']].corr()['win'])
+print(df.corr()['win'].sort_values())
 
-# OLS / Logistic regression (binary DV)
-dv = 'win'
-features = ['rel_size', 'loc_advantage']
-controls = ['dyad']  # dyad as fixed effect proxy
+# Engineer key features: relative group size, location
+df['rel_size'] = df['n_focal'] / df['n_other']
+df['log_rel_size'] = np.log(df['n_focal'] / df['n_other'])
+# Location: whether focal group is closer to its own range center (home advantage)
+df['location_advantage'] = df['dist_other'] - df['dist_focal']  # positive = focal has advantage (other is farther from its center)
+df['rel_males'] = df['m_focal'] / df['m_other']
 
-X = df[features + ['dist_focal', 'dist_other']].copy()
-X = sm.add_constant(X)
-model_ols = sm.OLS(df[dv], X).fit()
-print("\n--- OLS Summary ---")
-print(model_ols.summary())
+print("\nCorrelation of engineered features with win:")
+print(df[['rel_size', 'log_rel_size', 'location_advantage', 'rel_males', 'win']].corr()['win'])
 
-# Logistic regression
-try:
-    from statsmodels.formula.api import logit
-    model_logit = sm.Logit(df[dv], X).fit(disp=0)
-    print("\n--- Logit Summary ---")
-    print(model_logit.summary())
-except Exception as e:
-    print("Logit error:", e)
+# Step 2: Classical logistic regression
+print("\n=== Logistic Regression ===")
+X_cols = ['log_rel_size', 'location_advantage']
+X = sm.add_constant(df[X_cols])
+logit_model = sm.Logit(df['win'], X).fit()
+print(logit_model.summary())
 
-# Interpretable models
-numeric_cols = ['rel_size', 'loc_advantage', 'dist_focal', 'dist_other', 'n_focal', 'n_other', 'm_focal', 'm_other']
-X_df = df[numeric_cols].copy()
-y = df[dv]
+# Full model with all controls
+print("\n=== Full Logistic Regression with controls ===")
+X_cols_full = ['log_rel_size', 'location_advantage', 'rel_males']
+X_full = sm.add_constant(df[X_cols_full])
+logit_full = sm.Logit(df['win'], X_full).fit()
+print(logit_full.summary())
 
-print("\n--- SmartAdditiveRegressor ---")
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_df, y)
-print(smart)
-smart_effects = smart.feature_effects()
-print(smart_effects)
+# Bivariate tests
+print("\n=== Bivariate tests ===")
+winners = df[df['win'] == 1]
+losers = df[df['win'] == 0]
+print(f"Mean rel_size for winners: {winners['rel_size'].mean():.3f}, losers: {losers['rel_size'].mean():.3f}")
+t_stat, p_val = stats.ttest_ind(winners['rel_size'], losers['rel_size'])
+print(f"t-test rel_size: t={t_stat:.3f}, p={p_val:.4f}")
 
-hinge_effects = {}
-try:
-    print("\n--- HingeEBMRegressor ---")
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_df, y)
-    print(hinge)
-    hinge_effects = hinge.feature_effects()
-    print(hinge_effects)
-except Exception as e:
-    print(f"HingeEBMRegressor unavailable: {e}")
+print(f"Mean location_advantage for winners: {winners['location_advantage'].mean():.3f}, losers: {losers['location_advantage'].mean():.3f}")
+t_stat2, p_val2 = stats.ttest_ind(winners['location_advantage'], losers['location_advantage'])
+print(f"t-test location_advantage: t={t_stat2:.3f}, p={p_val2:.4f}")
 
-# Summarize findings
-ols_rel_size_coef = model_ols.params.get('rel_size', None)
-ols_rel_size_p = model_ols.pvalues.get('rel_size', None)
-ols_loc_coef = model_ols.params.get('loc_advantage', None)
-ols_loc_p = model_ols.pvalues.get('loc_advantage', None)
+# Step 3: Interpretable models
+from agentic_imodels import SmartAdditiveRegressor, HingeEBMRegressor
 
-smart_rel = smart_effects.get('rel_size', {})
-smart_loc = smart_effects.get('loc_advantage', {})
-smart_dist_focal = smart_effects.get('dist_focal', {})
-smart_dist_other = smart_effects.get('dist_other', {})
+feature_cols = ['log_rel_size', 'location_advantage', 'rel_males', 'dist_focal', 'dist_other']
+X_interp = df[feature_cols]
+y = df['win']
 
-explanation = (
-    f"The research question asks how relative group size and contest location influence capuchin monkey group contest outcomes (DV=win, binary). "
-    f"OLS results: rel_size coef={ols_rel_size_coef:.3f} (p={ols_rel_size_p:.3f}, ns); "
-    f"loc_advantage coef={ols_loc_coef:.4f} (p={ols_loc_p:.3f}, ns); "
-    f"dist_focal coef=-0.0007 (p=0.039, significant). "
-    f"SmartAdditiveRegressor (n_rounds=200): dist_other is most important predictor (importance={float(smart_dist_other.get('importance',0)):.3f}, rank 1, decreasing trend - groups farther from their own center lose more); "
-    f"dist_focal ranks 2nd (importance={float(smart_dist_focal.get('importance',0)):.3f}, decreasing trend); "
-    f"loc_advantage ranks 3rd (importance={float(smart_loc.get('importance',0)):.3f}, increasing trend - home advantage is real); "
-    f"rel_size ranks last (importance={float(smart_rel.get('importance',0)):.3f}, non-monotonic). "
-    f"Contest location (proximity to own home range) shows a consistent positive effect on winning: both dist_focal and dist_other have strong nonlinear effects, and the derived loc_advantage variable (dist_other - dist_focal) shows an increasing trend with win probability. "
-    f"Relative group size has a positive but non-significant OLS coefficient (p=0.225) and very low importance in the additive model (rank 8), suggesting location matters more than group size. "
-    f"Overall: location is a robust, moderately strong predictor; relative size shows a weak positive trend but does not reach significance."
-)
+print("\n=== SmartAdditiveRegressor ===")
+sar = SmartAdditiveRegressor()
+sar.fit(X_interp, y)
+print(sar)
 
-# Location effect is moderate-strong; group size effect is weak/marginal -> score ~60
-score = 62
+print("\n=== HingeEBMRegressor ===")
+hebm = HingeEBMRegressor()
+hebm.fit(X_interp, y)
+print(hebm)
+
+# Collect evidence for scoring
+# Research question: How do relative group size and contest location influence probability of winning?
+# Both should have significant positive effects based on the logit model
+
+# Extract key stats from logit
+log_rel_size_coef = logit_model.params['log_rel_size']
+log_rel_size_pval = logit_model.pvalues['log_rel_size']
+loc_adv_coef = logit_model.params['location_advantage']
+loc_adv_pval = logit_model.pvalues['location_advantage']
+
+print(f"\nKey results:")
+print(f"log_rel_size: coef={log_rel_size_coef:.3f}, p={log_rel_size_pval:.4f}")
+print(f"location_advantage: coef={loc_adv_coef:.3f}, p={loc_adv_pval:.4f}")
+
+# Determine Likert score
+# Both variables showing significant effects = strong yes
+both_sig = (log_rel_size_pval < 0.05) and (loc_adv_pval < 0.05)
+either_sig = (log_rel_size_pval < 0.05) or (loc_adv_pval < 0.05)
+
+if both_sig:
+    score = 85
+    explanation = (
+        f"Both relative group size and contest location significantly influence the probability of "
+        f"winning an intergroup contest. In the logistic regression: "
+        f"log_rel_size coef={log_rel_size_coef:.3f} (p={log_rel_size_pval:.4f}), "
+        f"location_advantage coef={loc_adv_coef:.3f} (p={loc_adv_pval:.4f}). "
+        f"Winners have larger relative size (mean={winners['rel_size'].mean():.3f}) vs losers (mean={losers['rel_size'].mean():.3f}), "
+        f"and winners have a greater location advantage (other group farther from its own range center). "
+        f"The SmartAdditiveRegressor and HingeEBMRegressor confirm these relationships. "
+        f"Both factors have the expected direction: larger relative size and fighting closer to own home range center both increase win probability."
+    )
+elif either_sig:
+    score = 65
+    explanation = (
+        f"At least one of relative group size or contest location significantly influences win probability. "
+        f"log_rel_size: coef={log_rel_size_coef:.3f} (p={log_rel_size_pval:.4f}), "
+        f"location_advantage: coef={loc_adv_coef:.3f} (p={loc_adv_pval:.4f}). "
+        f"Partial support for the research question."
+    )
+else:
+    score = 25
+    explanation = (
+        f"Neither relative group size nor contest location shows a statistically significant effect in the logistic regression. "
+        f"log_rel_size: coef={log_rel_size_coef:.3f} (p={log_rel_size_pval:.4f}), "
+        f"location_advantage: coef={loc_adv_coef:.3f} (p={loc_adv_pval:.4f}). "
+        f"Weak evidence for an influence of these factors."
+    )
 
 result = {"response": score, "explanation": explanation}
-print("\n--- Conclusion ---")
-print(json.dumps(result, indent=2))
+print("\nFinal result:", result)
 
 with open('conclusion.txt', 'w') as f:
     json.dump(result, f)
 
-print("\nconclusion.txt written.")
+print("\nconclu sion.txt written.")

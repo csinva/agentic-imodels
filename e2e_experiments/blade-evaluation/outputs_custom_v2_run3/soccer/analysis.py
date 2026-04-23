@@ -1,316 +1,350 @@
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 import statsmodels.api as sm
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+from agentic_imodels import (
+    HingeEBMRegressor,
+    HingeGAMRegressor,
+    WinsorizedSparseOLSRegressor,
+)
+
+warnings.filterwarnings("ignore")
 
 
-INFO_PATH = Path("info.json")
-DATA_PATH = Path("soccer.csv")
-CONCLUSION_PATH = Path("conclusion.txt")
+def build_effective_coefs_hinge_ebm(model):
+    """Reconstruct effective linear coefficients shown by HingeEBMRegressor.__str__."""
+    coefs = model.lasso_.coef_
+    n_sel = len(model.selected_)
 
+    effective = {}
+    for i in range(n_sel):
+        j_orig = int(model.selected_[i])
+        effective[j_orig] = float(coefs[i])
 
-def safe_float(x):
-    try:
-        if x is None:
-            return None
-        val = float(x)
-        if np.isfinite(val):
-            return val
-        return None
-    except Exception:
-        return None
-
-
-def fmt_num(x, digits=4):
-    if x is None:
-        return "NA"
-    return f"{x:.{digits}f}"
-
-
-def summarize_top_effects(effects, exclude=None, top_k=3):
-    exclude = exclude or set()
-    rows = []
-    for name, info in effects.items():
-        if name in exclude:
+    for idx, (feat_idx, knot, direction) in enumerate(model.hinge_info_):
+        j_orig = int(model.selected_[feat_idx])
+        c = float(coefs[n_sel + idx])
+        if abs(c) < 1e-6:
             continue
-        imp = info.get("importance", 0.0) or 0.0
-        if imp > 0:
-            rows.append((name, info.get("direction", "unknown"), imp, info.get("rank", 0)))
-    rows.sort(key=lambda x: x[2], reverse=True)
-    return rows[:top_k]
-
-
-def rank_of_feature(effects, feature):
-    info = effects.get(feature, {})
-    return info.get("rank", 0), info.get("importance", 0.0), info.get("direction", "zero")
-
-
-def main():
-    with INFO_PATH.open() as f:
-        info = json.load(f)
-
-    research_question = info["research_questions"][0]
-    print("Research question:")
-    print(research_question)
-    print("=" * 80)
-
-    df = pd.read_csv(DATA_PATH)
-    print(f"Loaded dataset with shape: {df.shape}")
-
-    # Define IV and DV from question/context
-    dv_col = "redCards"
-    iv_col = "skin_tone"
-
-    # Build skin tone from two raters
-    df[iv_col] = df[["rater1", "rater2"]].mean(axis=1, skipna=True)
-
-    # Keep rows where IV and DV are observed
-    analysis_df = df.dropna(subset=[iv_col, dv_col]).copy()
-
-    # Binary dark-skin indicator for descriptive comparison
-    analysis_df["dark_skin"] = (analysis_df[iv_col] >= 0.5).astype(int)
-    analysis_df["any_red_card"] = (analysis_df[dv_col] > 0).astype(int)
-
-    print(f"Rows after requiring non-missing skin tone and red cards: {len(analysis_df)}")
-
-    # Step 1: Explore
-    print("\nStep 1: Summary statistics and bivariate relationships")
-    vars_for_summary = [
-        iv_col,
-        "dark_skin",
-        dv_col,
-        "any_red_card",
-        "games",
-        "yellowCards",
-        "yellowReds",
-        "goals",
-        "meanIAT",
-        "meanExp",
-    ]
-    print(analysis_df[vars_for_summary].describe().T)
-
-    corr = analysis_df[[iv_col, dv_col, "any_red_card", "games", "yellowCards"]].corr(numeric_only=True)
-    print("\nCorrelation matrix (key variables):")
-    print(corr)
-
-    # Group descriptive stats for dark vs light
-    group_stats = analysis_df.groupby("dark_skin")[dv_col].agg(["mean", "std", "count"])
-    red_rate = analysis_df.groupby("dark_skin")["any_red_card"].mean()
-    print("\nRed card counts by dark_skin (0=lighter, 1=darker):")
-    print(group_stats)
-    print("\nAny-red-card rate by dark_skin (0=lighter, 1=darker):")
-    print(red_rate)
-
-    # Bivariate OLS
-    X_biv = sm.add_constant(analysis_df[[iv_col]])
-    y = analysis_df[dv_col]
-    biv_model = sm.OLS(y, X_biv).fit(cov_type="HC3")
-    print("\nBivariate OLS: redCards ~ skin_tone")
-    print(biv_model.summary())
-
-    # Step 2: OLS with controls
-    print("\nStep 2: Controlled OLS")
-    base_numeric_controls = [
-        "games",
-        "goals",
-        "yellowCards",
-        "yellowReds",
-        "victories",
-        "ties",
-        "defeats",
-        "height",
-        "weight",
-        "meanIAT",
-        "meanExp",
-        "seIAT",
-        "seExp",
-        "nIAT",
-        "nExp",
-    ]
-
-    # Include league and position fixed effects via dummies
-    cat_cols = ["leagueCountry", "position"]
-    ols_df = analysis_df[[dv_col, iv_col] + base_numeric_controls + cat_cols].copy()
-
-    # Missing-value handling for OLS
-    for c in [iv_col] + base_numeric_controls:
-        med = ols_df[c].median()
-        ols_df[c] = ols_df[c].fillna(med)
-
-    for c in cat_cols:
-        ols_df[c] = ols_df[c].fillna("Missing")
-
-    cat_dummies = pd.get_dummies(ols_df[cat_cols], drop_first=True)
-    X_ctrl = pd.concat([ols_df[[iv_col] + base_numeric_controls], cat_dummies], axis=1)
-    X_ctrl = sm.add_constant(X_ctrl).astype(float)
-    y_ctrl = ols_df[dv_col].astype(float)
-
-    ctrl_model = sm.OLS(y_ctrl, X_ctrl).fit(cov_type="HC3")
-    print("Controlled OLS: redCards ~ skin_tone + controls")
-    print(ctrl_model.summary())
-
-    # Step 3: Interpretable models on numeric columns with valid controls
-    # Exclude target-derived columns and direct components of IV construction.
-    print("\nStep 3: Interpretable models")
-    numeric_cols = analysis_df.select_dtypes(include=[np.number]).columns.tolist()
-    excluded_for_leakage_or_redundancy = {
-        dv_col,          # target
-        "any_red_card",  # target-derived
-        "dark_skin",     # derived threshold of IV
-        "rater1",        # IV component
-        "rater2",        # IV component
-    }
-    feature_cols = [c for c in numeric_cols if c not in excluded_for_leakage_or_redundancy]
-
-    model_df = analysis_df[feature_cols + [dv_col]].copy()
-    for c in feature_cols:
-        model_df[c] = model_df[c].fillna(model_df[c].median())
-
-    X_model = model_df[feature_cols]
-    y_model = model_df[dv_col]
-
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_model, y_model)
-    smart_effects = smart.feature_effects()
-    print("\nSmartAdditiveRegressor model:")
-    print(smart)
-    print("\nSmartAdditive feature effects:")
-    print(smart_effects)
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_model, y_model)
-    hinge_effects = hinge.feature_effects()
-    print("\nHingeEBMRegressor model:")
-    print(hinge)
-    print("\nHingeEBM feature effects:")
-    print(hinge_effects)
-
-    # Gather IV evidence
-    biv_coef = safe_float(biv_model.params.get(iv_col))
-    biv_p = safe_float(biv_model.pvalues.get(iv_col))
-
-    ctrl_coef = safe_float(ctrl_model.params.get(iv_col))
-    ctrl_p = safe_float(ctrl_model.pvalues.get(iv_col))
-
-    smart_rank, smart_imp, smart_dir = rank_of_feature(smart_effects, iv_col)
-    hinge_rank, hinge_imp, hinge_dir = rank_of_feature(hinge_effects, iv_col)
-
-    # Try to recover nonlinear threshold details for skin_tone from SmartAdditive
-    shape_desc = ""
-    if iv_col in getattr(smart, "feature_names_", []):
-        j = smart.feature_names_.index(iv_col)
-        if j in getattr(smart, "shape_functions_", {}):
-            thresholds, intervals = smart.shape_functions_[j]
-            if len(thresholds) > 0:
-                first_t = thresholds[0]
-                low_val = intervals[0]
-                high_val = intervals[-1]
-                shape_desc = (
-                    f"SmartAdditive shows threshold-like changes around skin_tone={first_t:.3f}; "
-                    f"effect level shifts from {low_val:.4f} (lowest bin) to {high_val:.4f} (highest bin)."
-                )
-
-    # Scoring logic (0-100)
-    score = 50
-
-    # Controlled OLS gets highest weight
-    if ctrl_coef is not None and ctrl_coef > 0:
-        if ctrl_p is not None:
-            if ctrl_p < 0.001:
-                score = 85
-            elif ctrl_p < 0.01:
-                score = 78
-            elif ctrl_p < 0.05:
-                score = 70
-            elif ctrl_p < 0.10:
-                score = 60
-            else:
-                score = 48
+        if direction == "pos":
+            effective[j_orig] = effective.get(j_orig, 0.0) + c
         else:
-            score = 55
-    else:
-        if ctrl_p is not None and ctrl_p < 0.05:
-            score = 15
-        else:
-            score = 25
+            effective[j_orig] = effective.get(j_orig, 0.0) - c
 
-    # Bivariate support adjustment
-    if biv_coef is not None and biv_coef > 0 and biv_p is not None and biv_p < 0.05:
-        score += 5
-    elif biv_coef is not None and biv_coef < 0:
-        score -= 8
-
-    # Interpretable model support adjustment
-    supportive = 0
-    if smart_imp > 0 and (
-        smart_dir.startswith("positive")
-        or smart_dir.startswith("nonlinear (increasing")
-    ):
-        supportive += 1
-    elif smart_imp > 0:
-        supportive -= 1
-
-    if hinge_imp > 0 and hinge_dir == "positive":
-        supportive += 1
-    elif hinge_imp > 0 and hinge_dir == "negative":
-        supportive -= 1
-
-    score += 6 * supportive
-
-    # If IV is very low-importance in both interpretable models, dampen
-    if smart_imp < 0.01 and hinge_imp < 0.01:
-        score -= 10
-
-    score = int(max(0, min(100, round(score))))
-
-    # Confounders/top features
-    smart_top = summarize_top_effects(smart_effects, exclude={iv_col}, top_k=3)
-    hinge_top = summarize_top_effects(hinge_effects, exclude={iv_col}, top_k=3)
-
-    def top_to_text(rows):
-        if not rows:
-            return "none stood out"
-        parts = []
-        for name, direction, imp, rank in rows:
-            parts.append(f"{name} (rank {rank}, {direction}, importance={imp:.1%})")
-        return "; ".join(parts)
-
-    dark_mean = safe_float(group_stats.loc[1, "mean"]) if 1 in group_stats.index else None
-    light_mean = safe_float(group_stats.loc[0, "mean"]) if 0 in group_stats.index else None
-    dark_rate = safe_float(red_rate.loc[1]) if 1 in red_rate.index else None
-    light_rate = safe_float(red_rate.loc[0]) if 0 in red_rate.index else None
-
-    explanation = (
-        f"Question: {research_question} "
-        f"Using {len(analysis_df)} player-referee dyads with rated skin tone, darker-toned players had "
-        f"higher raw red-card counts than lighter-toned players (mean {fmt_num(dark_mean, 4)} vs {fmt_num(light_mean, 4)}; "
-        f"any-red-card rate {fmt_num(dark_rate, 4)} vs {fmt_num(light_rate, 4)}). "
-        f"Bivariate OLS shows skin_tone -> redCards coef={fmt_num(biv_coef, 4)}, p={fmt_num(biv_p, 4)}. "
-        f"After controls (exposure, performance/discipline, body metrics, league/position, referee-country bias proxies), "
-        f"the skin_tone effect is coef={fmt_num(ctrl_coef, 4)}, p={fmt_num(ctrl_p, 4)}. "
-        f"SmartAdditive ranks skin_tone #{smart_rank} with importance={smart_imp:.1%} and direction='{smart_dir}'; "
-        f"HingeEBM ranks it #{hinge_rank} with importance={hinge_imp:.1%} and direction='{hinge_dir}'. "
-        f"{shape_desc} "
-        f"Key confounders in SmartAdditive: {top_to_text(smart_top)}. "
-        f"Key confounders in HingeEBM: {top_to_text(hinge_top)}. "
-        f"Overall, the IV-DV relationship is {'robust' if score >= 75 else 'moderate/partial' if score >= 40 else 'weak/inconsistent'} across models, yielding a Likert score of {score}/100."
-    )
-
-    result = {
-        "response": score,
-        "explanation": explanation,
-    }
-
-    with CONCLUSION_PATH.open("w") as f:
-        json.dump(result, f)
-
-    print("\nWrote conclusion.txt")
-    print(json.dumps(result, indent=2))
+    return {k: v for k, v in effective.items() if abs(v) > 1e-6}
 
 
-if __name__ == "__main__":
-    main()
+def rank_of_feature(values, feature_idx):
+    order = np.argsort(-values)
+    for i, idx in enumerate(order, start=1):
+        if int(idx) == int(feature_idx):
+            return i
+    return None
+
+
+with open("info.json", "r", encoding="utf-8") as f:
+    info = json.load(f)
+
+question = info["research_questions"][0]
+print("Research question:", question)
+
+# ------------------------------------------------------------------
+# 1) Load and prepare data
+# ------------------------------------------------------------------
+
+df = pd.read_csv("soccer.csv")
+print("\nRaw shape:", df.shape)
+
+# Skin-tone construct and core engineered features.
+df["skin_tone"] = df[["rater1", "rater2"]].mean(axis=1)
+df["age"] = 2013 - pd.to_datetime(df["birthday"], format="%d.%m.%Y", errors="coerce").dt.year
+
+df["red_rate"] = df["redCards"] / df["games"].clip(lower=1)
+for col in ["goals", "yellowCards", "yellowReds", "victories", "ties", "defeats"]:
+    df[f"{col}_pg"] = df[col] / df["games"].clip(lower=1)
+
+# Main analysis framing dark vs light as requested (exclude neutral 0.5).
+analysis_df = df[(df["skin_tone"].notna()) & (df["skin_tone"] != 0.5)].copy()
+analysis_df["dark_skin"] = (analysis_df["skin_tone"] > 0.5).astype(int)
+analysis_df["light_skin"] = (analysis_df["skin_tone"] < 0.5).astype(int)
+
+print("Analysis subset shape (dark/light only, no neutral):", analysis_df.shape)
+print("Dark-skin proportion:", round(float(analysis_df["dark_skin"].mean()), 4))
+
+# ------------------------------------------------------------------
+# 2) Explore data: summary statistics, distributions, correlations
+# ------------------------------------------------------------------
+
+summary_cols = [
+    "skin_tone",
+    "dark_skin",
+    "redCards",
+    "red_rate",
+    "games",
+    "yellowCards",
+    "yellowReds",
+    "goals",
+    "height",
+    "weight",
+    "meanIAT",
+    "meanExp",
+    "age",
+]
+
+print("\nSummary statistics:")
+print(analysis_df[summary_cols].describe().T)
+
+print("\nRed-card count distribution:")
+print(analysis_df["redCards"].value_counts().sort_index().head(10))
+
+group_stats = analysis_df.groupby("dark_skin")["red_rate"].agg(["count", "mean", "std"])
+print("\nRed-card rate by dark_skin (0=light, 1=dark):")
+print(group_stats)
+
+corr_cols = [
+    "skin_tone",
+    "dark_skin",
+    "red_rate",
+    "yellowCards_pg",
+    "yellowReds_pg",
+    "goals_pg",
+    "victories_pg",
+    "ties_pg",
+    "defeats_pg",
+    "meanIAT",
+    "meanExp",
+    "age",
+    "height",
+    "weight",
+]
+
+print("\nCorrelations with red_rate:")
+corrs = analysis_df[corr_cols].corr(numeric_only=True)["red_rate"].sort_values(ascending=False)
+print(corrs)
+
+# ------------------------------------------------------------------
+# 3) Classical tests: bivariate + controlled GLM(Poisson) with controls
+# ------------------------------------------------------------------
+
+light = analysis_df[analysis_df["dark_skin"] == 0]["red_rate"]
+dark = analysis_df[analysis_df["dark_skin"] == 1]["red_rate"]
+ttest_res = stats.ttest_ind(dark, light, equal_var=False, nan_policy="omit")
+
+print("\nBivariate Welch t-test on red_rate (dark vs light):")
+print(ttest_res)
+
+biv_df = analysis_df[["redCards", "games", "dark_skin"]].dropna().copy()
+X_biv = sm.add_constant(biv_df[["dark_skin"]], has_constant="add")
+poisson_biv = sm.GLM(
+    biv_df["redCards"].astype(float),
+    X_biv.astype(float),
+    family=sm.families.Poisson(),
+    offset=np.log(biv_df["games"].clip(lower=1).astype(float)),
+).fit(cov_type="HC3")
+
+biv_coef = float(poisson_biv.params["dark_skin"])
+biv_p = float(poisson_biv.pvalues["dark_skin"])
+biv_irr = float(np.exp(biv_coef))
+biv_ci = np.exp(poisson_biv.conf_int().loc["dark_skin"].to_numpy(dtype=float))
+
+print("\nBivariate Poisson (offset=log(games)) for dark_skin:")
+print(
+    f"coef={biv_coef:.4f}, IRR={biv_irr:.4f}, p={biv_p:.4g}, "
+    f"95%CI(IRR)=({biv_ci[0]:.4f}, {biv_ci[1]:.4f})"
+)
+
+controls = [
+    "height",
+    "weight",
+    "age",
+    "meanIAT",
+    "meanExp",
+    "goals_pg",
+    "yellowCards_pg",
+    "yellowReds_pg",
+    "victories_pg",
+    "ties_pg",
+    "defeats_pg",
+]
+cat_controls = ["position", "leagueCountry"]
+
+glm_cols = ["redCards", "games", "dark_skin", "skin_tone"] + controls + cat_controls
+glm_df = analysis_df[glm_cols].dropna().copy()
+
+X_ctrl = pd.concat(
+    [
+        glm_df[["dark_skin"] + controls],
+        pd.get_dummies(glm_df[cat_controls], drop_first=True),
+    ],
+    axis=1,
+).astype(float)
+X_ctrl = sm.add_constant(X_ctrl, has_constant="add")
+
+y_ctrl = glm_df["redCards"].astype(float)
+offset_ctrl = np.log(glm_df["games"].clip(lower=1).astype(float))
+
+poisson_ctrl = sm.GLM(
+    y_ctrl,
+    X_ctrl,
+    family=sm.families.Poisson(),
+    offset=offset_ctrl,
+).fit(cov_type="HC3", maxiter=200)
+
+dark_coef = float(poisson_ctrl.params["dark_skin"])
+dark_p = float(poisson_ctrl.pvalues["dark_skin"])
+dark_irr = float(np.exp(dark_coef))
+dark_ci = np.exp(poisson_ctrl.conf_int().loc["dark_skin"].to_numpy(dtype=float))
+
+print("\nControlled Poisson GLM (with controls + league + position):")
+print(
+    f"dark_skin coef={dark_coef:.4f}, IRR={dark_irr:.4f}, p={dark_p:.4g}, "
+    f"95%CI(IRR)=({dark_ci[0]:.4f}, {dark_ci[1]:.4f})"
+)
+
+# Sensitivity: continuous skin-tone level instead of dark/light threshold.
+X_skin = pd.concat(
+    [
+        glm_df[["skin_tone"] + controls],
+        pd.get_dummies(glm_df[cat_controls], drop_first=True),
+    ],
+    axis=1,
+).astype(float)
+X_skin = sm.add_constant(X_skin, has_constant="add")
+
+poisson_skin = sm.GLM(
+    y_ctrl,
+    X_skin,
+    family=sm.families.Poisson(),
+    offset=offset_ctrl,
+).fit(cov_type="HC3", maxiter=200)
+
+skin_coef = float(poisson_skin.params["skin_tone"])
+skin_p = float(poisson_skin.pvalues["skin_tone"])
+skin_irr = float(np.exp(skin_coef))
+skin_ci = np.exp(poisson_skin.conf_int().loc["skin_tone"].to_numpy(dtype=float))
+
+print("\nSensitivity Poisson GLM using continuous skin_tone:")
+print(
+    f"skin_tone coef={skin_coef:.4f}, IRR={skin_irr:.4f}, p={skin_p:.4g}, "
+    f"95%CI(IRR)=({skin_ci[0]:.4f}, {skin_ci[1]:.4f})"
+)
+
+# ------------------------------------------------------------------
+# 4) Interpretable models from agentic_imodels (at least two, print all)
+# ------------------------------------------------------------------
+
+model_df = glm_df.copy()
+X_model = pd.concat(
+    [
+        model_df[["dark_skin", "skin_tone"] + controls],
+        pd.get_dummies(model_df[cat_controls], drop_first=True),
+    ],
+    axis=1,
+).astype(float)
+y_model = (model_df["redCards"] / model_df["games"].clip(lower=1)).astype(float)
+
+feature_names = list(X_model.columns)
+dark_idx = feature_names.index("dark_skin")
+skin_idx = feature_names.index("skin_tone")
+
+sample_n = min(25000, len(X_model))
+if len(X_model) > sample_n:
+    sampled_idx = X_model.sample(n=sample_n, random_state=42).index
+    X_fit = X_model.loc[sampled_idx].copy()
+    y_fit = y_model.loc[sampled_idx].copy()
+else:
+    X_fit = X_model.copy()
+    y_fit = y_model.copy()
+
+print(f"\nInterpretable-model training shape: {X_fit.shape}")
+
+wins = WinsorizedSparseOLSRegressor(max_features=10, cv=3).fit(X_fit, y_fit)
+print("\n=== WinsorizedSparseOLSRegressor ===")
+print(wins)
+
+hgam = HingeGAMRegressor(n_knots=2, max_input_features=15).fit(X_fit, y_fit)
+print("\n=== HingeGAMRegressor ===")
+print(hgam)
+
+hebm = HingeEBMRegressor(n_knots=2, max_input_features=15, ebm_outer_bags=3, ebm_max_rounds=500).fit(X_fit, y_fit)
+print("\n=== HingeEBMRegressor ===")
+print(hebm)
+
+# Extract model-specific evidence for dark_skin vs skin_tone.
+wins_coef_map = {int(j): float(c) for j, c in zip(wins.support_, wins.ols_coef_)}
+wins_dark_coef = wins_coef_map.get(dark_idx, 0.0)
+wins_skin_coef = wins_coef_map.get(skin_idx, 0.0)
+
+hgam_dark_importance = float(hgam.feature_importances_[dark_idx])
+hgam_skin_importance = float(hgam.feature_importances_[skin_idx])
+hgam_total_importance = float(np.sum(hgam.feature_importances_))
+
+hgam_dark_rank = rank_of_feature(hgam.feature_importances_, dark_idx)
+hgam_skin_rank = rank_of_feature(hgam.feature_importances_, skin_idx)
+
+hebm_effective = build_effective_coefs_hinge_ebm(hebm)
+hebm_dark_coef = float(hebm_effective.get(dark_idx, 0.0))
+hebm_skin_coef = float(hebm_effective.get(skin_idx, 0.0))
+
+print("\nModel-derived feature evidence:")
+print(
+    f"dark_skin index={dark_idx}, skin_tone index={skin_idx}; "
+    f"Winsorized dark={wins_dark_coef:.6f}, skin_tone={wins_skin_coef:.6f}; "
+    f"HingeGAM dark_importance={hgam_dark_importance:.6g} (rank {hgam_dark_rank}), "
+    f"skin_importance={hgam_skin_importance:.6g} (rank {hgam_skin_rank}); "
+    f"HingeEBM dark={hebm_dark_coef:.6f}, skin_tone={hebm_skin_coef:.6f}."
+)
+
+# ------------------------------------------------------------------
+# 5) Calibrated conclusion score + explanation JSON
+# ------------------------------------------------------------------
+
+zero_votes_dark = 0
+if abs(wins_dark_coef) < 1e-12:
+    zero_votes_dark += 1
+if hgam_dark_importance < 1e-12:
+    zero_votes_dark += 1
+if abs(hebm_dark_coef) < 1e-12:
+    zero_votes_dark += 1
+
+# Primary calibration centered on controlled dark-vs-light effect.
+if dark_p <= 0.05 and dark_irr > 1:
+    score = 80 if zero_votes_dark <= 1 else 65
+elif dark_p <= 0.10 and dark_irr > 1:
+    score = 60 if zero_votes_dark <= 1 else 45
+elif dark_p <= 0.15 and dark_irr > 1:
+    score = 45 if zero_votes_dark <= 1 else 28
+else:
+    score = 22 if zero_votes_dark >= 2 else 30
+
+# Secondary evidence (bivariate and continuous-tone sensitivity).
+if biv_p <= 0.10 and biv_irr > 1:
+    score += 4
+if skin_p <= 0.05 and skin_irr > 1:
+    score += 3
+
+score = int(np.clip(round(score), 0, 100))
+
+explanation = (
+    f"Question: whether dark-skinned players are more likely than light-skinned players to receive red cards. "
+    f"In bivariate rate comparisons, dark skin showed a higher red-card rate (Poisson IRR={biv_irr:.2f}, p={biv_p:.3f}; "
+    f"Welch t-test p={ttest_res.pvalue:.3f}), but this was only marginal. "
+    f"In the controlled Poisson GLM with exposure offset and confounders, the dark-vs-light indicator remained positive "
+    f"(IRR={dark_irr:.2f}) but was not statistically significant (p={dark_p:.3f}, 95% CI includes 1). "
+    f"Interpretable models gave mostly null evidence for the binary dark indicator: WinsorizedSparseOLS coefficient={wins_dark_coef:.5f}, "
+    f"HingeGAM importance={hgam_dark_importance:.3g}, HingeEBM effective coefficient={hebm_dark_coef:.5f}, with {zero_votes_dark}/3 models zeroing it out. "
+    f"At the same time, continuous skin-tone level showed a small positive controlled association (IRR={skin_irr:.2f}, p={skin_p:.3f}) and positive small coefficients in sparse/hinge models, "
+    f"suggesting a weak gradient rather than strong robust dark-vs-light separation. "
+    f"Overall evidence is mixed-to-weak, so the calibrated answer is below neutral rather than a strong yes."
+)
+
+payload = {"response": score, "explanation": explanation}
+Path("conclusion.txt").write_text(json.dumps(payload, ensure_ascii=True), encoding="utf-8")
+
+print("\nFinal Likert response:", score)
+print("Wrote conclusion.txt")

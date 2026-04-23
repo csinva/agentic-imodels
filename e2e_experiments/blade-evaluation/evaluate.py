@@ -35,7 +35,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _BLADE_DIR = os.path.join(
     SCRIPT_DIR, "..", "example-blade-repo", "blade_bench", "datasets"
 )
-DATASETS_DIR = _BLADE_DIR if os.path.isdir(_BLADE_DIR) else os.path.join(SCRIPT_DIR, "outputs")
+_SIBLING_DIR = os.path.join(SCRIPT_DIR, "outputs_standard_run1")
+if os.path.isdir(_BLADE_DIR):
+    DATASETS_DIR = _BLADE_DIR
+elif os.path.isdir(_SIBLING_DIR):
+    DATASETS_DIR = _SIBLING_DIR
+else:
+    DATASETS_DIR = os.path.join(SCRIPT_DIR, "outputs")
 
 DATASETS = [
     "affairs", "amtl", "boxes", "caschools", "crofoot", "fertility",

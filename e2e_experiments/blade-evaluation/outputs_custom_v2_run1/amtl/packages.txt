@@ -1,7 +1,8 @@
-Package                  Version      Build
------------------------- ------------ -----
+Package                  Version      Build Editable project location
+------------------------ ------------ ----- --------------------------------------------------------------------
 accelerate               1.13.0
 adjustText               1.3.0
+agentic-imodels          0.1.0              /home/chansingh/imodels-evolve/result_libs_processed/agentic-imodels
 aiohappyeyeballs         2.6.1
 aiohttp                  3.13.3
 aiosignal                1.4.0
@@ -154,6 +155,7 @@ pygam                    0.12.0
 Pygments                 2.19.2
 PyJWT                    2.12.1
 pyparsing                3.3.2
+PyPDF2                   3.0.1
 pyphen                   0.17.2
 python-dateutil          2.9.0.post0
 python-dotenv            1.2.2

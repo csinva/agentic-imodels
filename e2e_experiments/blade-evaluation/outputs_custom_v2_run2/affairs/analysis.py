@@ -1,58 +1,74 @@
 import json
+import re
 import warnings
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 from scipy import stats
-from sklearn.exceptions import ConvergenceWarning
 
-from interp_models import HingeEBMRegressor, SmartAdditiveRegressor
+from agentic_imodels import HingeEBMRegressor, HingeGAMRegressor, SmartAdditiveRegressor
+
+warnings.filterwarnings("ignore")
 
 
-def safe_rank_effect(effects, feature):
-    out = effects.get(feature, {})
-    return {
-        "direction": out.get("direction", "zero"),
-        "importance": float(out.get("importance", 0.0)),
-        "rank": int(out.get("rank", 0) or 0),
-    }
+def parse_zeroed_features(model_text: str, feature_names: List[str]) -> List[str]:
+    """Parse lines like: Features with zero coefficients (excluded): x0, x1"""
+    match = re.search(r"Features with zero coefficients \(excluded\):\s*(.*)", model_text)
+    if not match:
+        return []
+
+    zero_tokens = [tok.strip() for tok in match.group(1).split(",") if tok.strip()]
+    zero_features = []
+    for token in zero_tokens:
+        idx_match = re.fullmatch(r"x(\d+)", token)
+        if idx_match:
+            idx = int(idx_match.group(1))
+            if 0 <= idx < len(feature_names):
+                zero_features.append(feature_names[idx])
+    return zero_features
+
+
+def counterfactual_children_effect(model, X: pd.DataFrame) -> float:
+    """Average predicted change in affairs when toggling children indicator 0->1."""
+    X0 = X.copy()
+    X1 = X.copy()
+    X0["children_yes"] = 0
+    X1["children_yes"] = 1
+    pred0 = np.asarray(model.predict(X0), dtype=float)
+    pred1 = np.asarray(model.predict(X1), dtype=float)
+    return float(np.mean(pred1 - pred0))
 
 
 def main():
-    warnings.filterwarnings("ignore", category=ConvergenceWarning)
-    warnings.filterwarnings("ignore", message="Objective did not converge")
-
+    # ---------------------------------------------------------------------
+    # 1) Read question metadata + load data
+    # ---------------------------------------------------------------------
     with open("info.json", "r", encoding="utf-8") as f:
         info = json.load(f)
-
-    research_question = info.get("research_questions", [""])[0].strip()
-    print("Research question:", research_question)
+    question = info.get("research_questions", ["Unknown question"])[0]
 
     df = pd.read_csv("affairs.csv")
 
-    # Encode key categorical variables for regression and interpretable models.
-    df["children_yes"] = (df["children"].astype(str).str.lower() == "yes").astype(int)
-    df["gender_male"] = (df["gender"].astype(str).str.lower() == "male").astype(int)
+    print("=" * 88)
+    print("Research question:")
+    print(question)
+    print("=" * 88)
 
-    dv = "affairs"
-    iv = "children_yes"
+    # Basic encoding for analysis
+    df = df.copy()
+    df["children_yes"] = (df["children"].str.lower() == "yes").astype(int)
+    df["gender_male"] = (df["gender"].str.lower() == "male").astype(int)
 
-    # Step 1: Explore
-    print("\n=== Step 1: Summary statistics ===")
-    print(df.describe(include="all").transpose())
+    # ---------------------------------------------------------------------
+    # 2) Exploration: summary stats, distributions, correlations
+    # ---------------------------------------------------------------------
+    print("\n[EDA] Data shape:", df.shape)
+    print("[EDA] Missing values per column:")
+    print(df.isna().sum())
 
-    print("\n=== Step 1: DV distribution (affairs) ===")
-    print(df[dv].value_counts(dropna=False).sort_index())
-
-    print("\n=== Step 1: IV distribution (children) ===")
-    print(df["children"].value_counts(dropna=False))
-
-    print("\n=== Step 1: Mean affairs by children ===")
-    mean_by_children = df.groupby("children")[dv].mean()
-    print(mean_by_children)
-
-    numeric_for_corr = [
+    numeric_cols = [
         "affairs",
         "children_yes",
         "gender_male",
@@ -63,24 +79,38 @@ def main():
         "occupation",
         "rating",
     ]
-    print("\n=== Step 1: Correlation matrix (numeric analysis columns) ===")
-    print(df[numeric_for_corr].corr())
 
-    pb_r, pb_p = stats.pointbiserialr(df[iv], df[dv])
-    t_res = stats.ttest_ind(
-        df.loc[df[iv] == 1, dv],
-        df.loc[df[iv] == 0, dv],
-        equal_var=False,
-    )
-    print("\n=== Step 1: Bivariate IV-DV tests ===")
-    print(f"Point-biserial correlation {iv} vs {dv}: r={pb_r:.4f}, p={pb_p:.4g}")
-    print(
-        "Welch t-test (mean affairs, children=yes vs no): "
-        f"t={t_res.statistic:.4f}, p={t_res.pvalue:.4g}"
-    )
+    print("\n[EDA] Numeric summary statistics:")
+    print(df[numeric_cols].describe().T)
 
-    # Step 2: Controlled OLS
-    controls = [
+    print("\n[EDA] Affairs distribution (counts):")
+    print(df["affairs"].value_counts().sort_index())
+
+    print("\n[EDA] Affairs by children group:")
+    print(df.groupby("children")["affairs"].describe())
+
+    corr = df[numeric_cols].corr(numeric_only=True)
+    print("\n[EDA] Correlation of predictors with affairs:")
+    print(corr["affairs"].sort_values(ascending=False))
+
+    # ---------------------------------------------------------------------
+    # 3) Classical tests: bivariate + controlled GLM for counts
+    # ---------------------------------------------------------------------
+    y_yes = df.loc[df["children_yes"] == 1, "affairs"]
+    y_no = df.loc[df["children_yes"] == 0, "affairs"]
+
+    t_stat, t_p = stats.ttest_ind(y_yes, y_no, equal_var=False)
+    u_stat, u_p = stats.mannwhitneyu(y_yes, y_no, alternative="two-sided")
+    mean_diff = float(y_yes.mean() - y_no.mean())
+
+    print("\n[Bivariate] children_yes vs affairs")
+    print(f"Mean(yes)={y_yes.mean():.4f}, Mean(no)={y_no.mean():.4f}, Diff(yes-no)={mean_diff:.4f}")
+    print(f"Welch t-test: t={t_stat:.4f}, p={t_p:.6g}")
+    print(f"Mann-Whitney U: U={u_stat:.4f}, p={u_p:.6g}")
+
+    # Controlled model: Poisson diagnostic -> Negative Binomial GLM
+    control_cols = [
+        "children_yes",
         "gender_male",
         "age",
         "yearsmarried",
@@ -89,78 +119,165 @@ def main():
         "occupation",
         "rating",
     ]
-    feature_columns = [iv] + controls
-    X_ols = sm.add_constant(df[feature_columns])
-    ols_model = sm.OLS(df[dv], X_ols).fit()
+    X_glm = sm.add_constant(df[control_cols])
+    y = df["affairs"]
 
-    print("\n=== Step 2: OLS with controls ===")
-    print(ols_model.summary())
-    iv_coef = float(ols_model.params[iv])
-    iv_pval = float(ols_model.pvalues[iv])
-    print(f"{iv} coefficient: {iv_coef:.4f}, p-value: {iv_pval:.4g}")
+    poisson_model = sm.GLM(y, X_glm, family=sm.families.Poisson()).fit()
+    dispersion = float(poisson_model.pearson_chi2 / poisson_model.df_resid)
 
-    # Step 3: Interpretable models
-    X_interp = df[feature_columns]
-    y = df[dv]
+    # Method-of-moments style alpha from Poisson dispersion: Var ~= mu + alpha*mu^2
+    mu_bar = float(np.mean(poisson_model.fittedvalues))
+    alpha_est = max((dispersion - 1.0) / max(mu_bar, 1e-8), 1e-6)
 
-    print("\n=== Step 3: SmartAdditiveRegressor ===")
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y)
-    print(smart)
-    smart_effects = smart.feature_effects()
-    print("SmartAdditive feature_effects():")
-    print(smart_effects)
+    nb_model = sm.GLM(
+        y,
+        X_glm,
+        family=sm.families.NegativeBinomial(alpha=alpha_est),
+    ).fit(cov_type="HC3")
 
-    print("\n=== Step 3: HingeEBMRegressor ===")
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y)
-    print(hinge)
-    hinge_effects = hinge.feature_effects()
-    print("HingeEBM feature_effects():")
-    print(hinge_effects)
+    print("\n[Controlled count model] Negative Binomial GLM (with controls)")
+    print(f"Poisson dispersion diagnostic: {dispersion:.3f} (>1 suggests overdispersion)")
+    print(f"Estimated NB alpha used: {alpha_est:.4f}")
+    print(nb_model.summary())
 
-    iv_smart = safe_rank_effect(smart_effects, iv)
-    iv_hinge = safe_rank_effect(hinge_effects, iv)
+    beta_child = float(nb_model.params["children_yes"])
+    p_child = float(nb_model.pvalues["children_yes"])
+    ci_low, ci_high = nb_model.conf_int().loc["children_yes"].tolist()
+    irr_child = float(np.exp(beta_child))
 
-    # Step 4: Rich conclusion + score
-    # Scoring logic prioritizes controlled and multi-model robustness.
-    score = 8
-    if iv_coef < 0 and iv_pval < 0.05 and iv_smart["importance"] > 0.05 and iv_hinge["importance"] > 0.05:
-        score = 90
-    elif iv_coef < 0 and (iv_pval < 0.10 or iv_smart["importance"] > 0.03 or iv_hinge["importance"] > 0.03):
-        score = 55
-    elif pb_r < 0 and pb_p < 0.05 and iv_pval >= 0.10:
-        score = 30
-    elif pb_r > 0 and pb_p < 0.05 and iv_pval >= 0.10:
-        score = 5
-
-    # Pull major confounders from OLS absolute t-values (excluding IV).
-    tvals = ols_model.tvalues.drop(labels=[iv, "const"], errors="ignore").abs().sort_values(ascending=False)
-    top_conf = tvals.head(3).index.tolist()
-    conf_terms = ", ".join(top_conf) if top_conf else "none"
-
-    explanation = (
-        f"Question: {research_question} "
-        f"Bivariate evidence does not support a decrease: people with children report more affairs on average "
-        f"(mean_yes={mean_by_children.get('yes', np.nan):.3f} vs mean_no={mean_by_children.get('no', np.nan):.3f}); "
-        f"point-biserial r={pb_r:.3f} (p={pb_p:.3g}). "
-        f"After controls, the children effect is small and statistically null in OLS "
-        f"(coef={iv_coef:.3f}, p={iv_pval:.3g}), so no robust decrease remains. "
-        f"SmartAdditive also assigns children essentially zero importance "
-        f"(importance={iv_smart['importance']:.3f}, rank={iv_smart['rank']}, direction={iv_smart['direction']}), "
-        f"and HingeEBM similarly zeroes it out "
-        f"(importance={iv_hinge['importance']:.3f}, rank={iv_hinge['rank']}, direction={iv_hinge['direction']}). "
-        f"Key confounders that matter more are {conf_terms}; SmartAdditive shows nonlinear age/religiousness shapes "
-        f"and strong negative marriage-rating effect, while HingeEBM emphasizes rating and years married. "
-        f"Overall, the hypothesized negative effect of having children is not robust across models."
+    print(
+        f"\n[Controlled effect] children_yes beta={beta_child:.4f}, p={p_child:.6g}, "
+        f"95% CI=({ci_low:.4f}, {ci_high:.4f}), IRR={irr_child:.4f}"
     )
 
-    output = {"response": int(score), "explanation": explanation}
-    with open("conclusion.txt", "w", encoding="utf-8") as f:
-        json.dump(output, f)
+    # OLS sensitivity (robust SE)
+    ols_model = sm.OLS(y, X_glm).fit(cov_type="HC3")
+    beta_child_ols = float(ols_model.params["children_yes"])
+    p_child_ols = float(ols_model.pvalues["children_yes"])
+    print(
+        f"[OLS sensitivity] children_yes beta={beta_child_ols:.4f}, p={p_child_ols:.6g}"
+    )
 
-    print("\nWrote conclusion.txt:")
-    print(json.dumps(output, indent=2))
+    # ---------------------------------------------------------------------
+    # 4) Interpretable models: shape/direction/magnitude/robustness
+    # ---------------------------------------------------------------------
+    feature_cols = control_cols  # keep identical variables to controlled model
+    X_model = df[feature_cols]
+    y_model = y
+
+    x_index_map = {f"x{i}": col for i, col in enumerate(feature_cols)}
+    print("\n[Interpretable models] x-index mapping:")
+    print(x_index_map)
+
+    model_classes = [SmartAdditiveRegressor, HingeGAMRegressor, HingeEBMRegressor]
+    fitted_models: Dict[str, object] = {}
+    model_texts: Dict[str, str] = {}
+
+    for cls in model_classes:
+        name = cls.__name__
+        model = cls()
+        model.fit(X_model, y_model)
+        fitted_models[name] = model
+        text = str(model)
+        model_texts[name] = text
+        print("\n" + "=" * 30 + f" {name} " + "=" * 30)
+        print(model)  # required: capture interpretable form verbatim
+
+    # Counterfactual children effect across models
+    model_child_effects = {
+        name: counterfactual_children_effect(model, X_model)
+        for name, model in fitted_models.items()
+    }
+    print("\n[Robustness] Counterfactual avg effect of children_yes (1 vs 0) on predicted affairs:")
+    for name, eff in model_child_effects.items():
+        print(f"  {name}: {eff:.4f}")
+
+    # Zeroing / feature-importance null evidence
+    hinge_zeroed = parse_zeroed_features(model_texts["HingeGAMRegressor"], feature_cols)
+    print("\n[Null evidence] HingeGAM zeroed-out features:", hinge_zeroed)
+
+    smart_importances = None
+    smart_rank = None
+    if hasattr(fitted_models["SmartAdditiveRegressor"], "feature_importances_"):
+        smart_importances = np.asarray(fitted_models["SmartAdditiveRegressor"].feature_importances_, dtype=float)
+        imp_table = pd.DataFrame({"feature": feature_cols, "importance": smart_importances})
+        imp_table = imp_table.sort_values("importance", ascending=False).reset_index(drop=True)
+        print("\n[SmartAdditive] Feature importance ranking:")
+        print(imp_table)
+
+        rank_map = {row.feature: i + 1 for i, row in imp_table.iterrows()}
+        smart_rank = rank_map.get("children_yes", None)
+        smart_child_imp = float(imp_table.loc[imp_table["feature"] == "children_yes", "importance"].iloc[0])
+    else:
+        smart_child_imp = float("nan")
+
+    # ---------------------------------------------------------------------
+    # 5) Calibrated conclusion score (0-100 Likert)
+    # ---------------------------------------------------------------------
+    score = 50
+
+    # Controlled significance is primary
+    if p_child < 0.01:
+        score += 30 if beta_child < 0 else -30
+    elif p_child < 0.05:
+        score += 20 if beta_child < 0 else -20
+    elif p_child < 0.10:
+        score += 8 if beta_child < 0 else -8
+    else:
+        score -= 15
+
+    # Bivariate corroboration
+    if t_p < 0.05:
+        score += 8 if mean_diff < 0 else -8
+    elif t_p >= 0.10:
+        score -= 5
+
+    # Robustness across interpretable models
+    for eff in model_child_effects.values():
+        if eff < -0.05:
+            score += 5
+        elif eff > 0.05:
+            score -= 5
+
+    # Null evidence from sparse/hinge exclusion and low importance
+    if "children_yes" in hinge_zeroed:
+        score -= 15
+
+    if smart_importances is not None:
+        if smart_child_imp <= 1e-9:
+            score -= 10
+        if smart_rank is not None and smart_rank >= len(feature_cols) - 1:
+            score -= 5
+
+    # OLS sensitivity (small auxiliary weight)
+    if p_child_ols < 0.05:
+        score += 5 if beta_child_ols < 0 else -5
+    elif p_child_ols >= 0.10:
+        score -= 3
+
+    response = int(np.clip(np.round(score), 0, 100))
+
+    explanation = (
+        f"Question: {question} "
+        f"Bivariate evidence was weak/mixed (children mean diff yes-no={mean_diff:.3f}, Welch p={t_p:.3g}, "
+        f"Mann-Whitney p={u_p:.3g}). In the controlled Negative Binomial GLM, children had "
+        f"beta={beta_child:.3f} (IRR={irr_child:.3f}, p={p_child:.3g}, 95% CI [{ci_low:.3f}, {ci_high:.3f}]), "
+        f"so the adjusted effect was {'negative' if beta_child < 0 else 'positive'} but "
+        f"{'not statistically significant' if p_child >= 0.05 else 'statistically significant'}. "
+        f"Interpretable models corroborated weak impact: counterfactual children effects were "
+        + ", ".join([f"{k}={v:.3f}" for k, v in model_child_effects.items()])
+        + ". "
+        f"HingeGAM zeroed out {('children_yes' if 'children_yes' in hinge_zeroed else 'no key child effect')} and "
+        f"SmartAdditive ranked children importance at {smart_rank if smart_rank is not None else 'NA'} "
+        f"(importance={smart_child_imp:.3f}). Overall evidence that having children decreases affairs is weak."
+    )
+
+    out = {"response": response, "explanation": explanation}
+    with open("conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(out, f)
+
+    print("\n[Final] Likert response:", response)
+    print("[Final] Wrote conclusion.txt")
 
 
 if __name__ == "__main__":

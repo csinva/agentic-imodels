@@ -1,295 +1,253 @@
 import json
-import math
-from typing import Dict, Any
+import re
+import warnings
 
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 from scipy import stats
-from sklearn.preprocessing import StandardScaler
-
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-
-def get_effect(effects: Dict[str, Dict[str, Any]], name: str) -> Dict[str, Any]:
-    default = {"direction": "zero", "importance": 0.0, "rank": 0}
-    eff = effects.get(name, default)
-    out = {
-        "direction": str(eff.get("direction", "zero")),
-        "importance": float(eff.get("importance", 0.0)),
-        "rank": int(eff.get("rank", 0)),
-    }
-    return out
+from sklearn.inspection import permutation_importance
+from sklearn.metrics import r2_score
 
 
-def nonlinear_summary(model: SmartAdditiveRegressor, feature_name: str) -> str:
-    if feature_name not in model.feature_names_:
-        return ""
-    j = model.feature_names_.index(feature_name)
-    if j not in model.shape_functions_:
-        return ""
+warnings.filterwarnings("ignore", category=FutureWarning)
 
-    thresholds, intervals = model.shape_functions_[j]
-    if len(thresholds) == 0 or len(intervals) < 2:
-        return ""
 
-    start_val = float(intervals[0])
-    end_val = float(intervals[-1])
-    peak_idx = int(np.argmax(intervals))
-    trough_idx = int(np.argmin(intervals))
+def section(title: str) -> None:
+    print("\n" + "=" * 88)
+    print(title)
+    print("=" * 88)
 
-    if peak_idx == 0:
-        peak_desc = f"below {thresholds[0]:.1f}"
-    elif peak_idx == len(thresholds):
-        peak_desc = f"above {thresholds[-1]:.1f}"
-    else:
-        peak_desc = f"around {thresholds[peak_idx - 1]:.1f} to {thresholds[peak_idx]:.1f}"
 
-    if trough_idx == 0:
-        trough_desc = f"below {thresholds[0]:.1f}"
-    elif trough_idx == len(thresholds):
-        trough_desc = f"above {thresholds[-1]:.1f}"
-    else:
-        trough_desc = f"around {thresholds[trough_idx - 1]:.1f} to {thresholds[trough_idx]:.1f}"
+def extract_x_coef(model_text: str, x_idx: int):
+    pattern = rf"x{x_idx}:\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)"
+    match = re.search(pattern, model_text)
+    if not match:
+        return None
+    return float(match.group(1))
 
-    trend = "increasing" if end_val > start_val else "decreasing"
-    return (
-        f"{feature_name} shows a {trend} nonlinear pattern with low effect {trough_desc} "
-        f"and highest effect {peak_desc}."
-    )
+
+def is_x_zeroed(model_text: str, x_idx: int) -> bool:
+    x_tok = f"x{x_idx}"
+    zero_patterns = [
+        rf"Features with zero coefficients.*\b{x_tok}\b",
+        rf"Features excluded.*\b{x_tok}\b",
+        rf"zero effect.*\b{x_tok}\b",
+    ]
+    return any(re.search(p, model_text, flags=re.IGNORECASE) for p in zero_patterns)
 
 
 def main() -> None:
+    section("Research Question")
     with open("info.json", "r", encoding="utf-8") as f:
         info = json.load(f)
+    question = info["research_questions"][0]
+    print(question)
 
-    research_question = info["research_questions"][0]
-    print("Research question:")
-    print(research_question)
-
+    section("Load Data")
     df = pd.read_csv("amtl.csv")
+    print(f"Rows: {len(df)}, Columns: {df.shape[1]}")
+    print("Columns:", list(df.columns))
 
-    # Define DV/IV based on question (frequency of AMTL in humans vs non-humans)
-    df["is_human"] = (df["genus"] == "Homo sapiens").astype(int)
+    section("Data Exploration")
     df["amtl_rate"] = df["num_amtl"] / df["sockets"]
-    df["has_amtl"] = (df["num_amtl"] > 0).astype(int)
+    df["homo_sapiens"] = (df["genus"] == "Homo sapiens").astype(int)
+    df["genus"] = pd.Categorical(
+        df["genus"], categories=["Homo sapiens", "Pan", "Pongo", "Papio"]
+    )
 
-    needed_cols = [
-        "num_amtl",
-        "sockets",
-        "age",
-        "stdev_age",
-        "prob_male",
-        "tooth_class",
-        "genus",
-        "is_human",
-        "amtl_rate",
-        "has_amtl",
-    ]
-    df = df.dropna(subset=needed_cols).copy()
-
-    print("\nStep 1: Explore data")
-    print(f"Rows used: {len(df)}")
-    print("DV (primary): amtl_rate = num_amtl / sockets")
-    print("IV (primary): is_human (Homo sapiens=1, non-human genera=0)")
-
-    numeric_cols = ["num_amtl", "sockets", "age", "stdev_age", "prob_male", "amtl_rate", "is_human"]
-    print("\nNumeric summary statistics:")
-    print(df[numeric_cols].describe().T)
-
-    print("\nDistribution checks (categorical counts):")
-    print("Genus counts:")
+    print("Missing values:\n", df.isna().sum())
+    numeric_cols = ["num_amtl", "sockets", "age", "stdev_age", "prob_male", "amtl_rate"]
+    print("\nNumeric summary:")
+    print(df[numeric_cols].describe().round(4))
+    print("\nGenus counts:")
     print(df["genus"].value_counts())
-    print("Tooth class counts:")
+    print("\nTooth class counts:")
     print(df["tooth_class"].value_counts())
 
-    print("\nBivariate AMTL comparisons:")
-    by_human = df.groupby("is_human")["amtl_rate"].agg(["mean", "std", "median", "count"])
-    print(by_human)
-    by_genus = df.groupby("genus")["amtl_rate"].agg(["mean", "std", "median", "count"]).sort_values("mean", ascending=False)
+    genus_rate = df.groupby("genus", observed=False)["amtl_rate"].agg(["mean", "std", "count"])
+    tooth_rate = df.groupby("tooth_class", observed=False)["amtl_rate"].agg(
+        ["mean", "std", "count"]
+    )
     print("\nAMTL rate by genus:")
-    print(by_genus)
+    print(genus_rate.round(4))
+    print("\nAMTL rate by tooth_class:")
+    print(tooth_rate.round(4))
+    print("\nCorrelations (numeric):")
+    print(df[numeric_cols].corr().round(3))
 
-    corr_pearson = float(df["is_human"].corr(df["amtl_rate"]))
-    corr_spearman = float(df[["is_human", "amtl_rate"]].corr(method="spearman").iloc[0, 1])
-    ttest = stats.ttest_ind(
-        df.loc[df["is_human"] == 1, "amtl_rate"],
-        df.loc[df["is_human"] == 0, "amtl_rate"],
-        equal_var=False,
-    )
-    print(f"\nPearson corr(is_human, amtl_rate): {corr_pearson:.4f}")
-    print(f"Spearman corr(is_human, amtl_rate): {corr_spearman:.4f}")
-    print(f"Welch t-test human vs non-human amtl_rate: t={ttest.statistic:.4f}, p={ttest.pvalue:.4g}")
+    section("Bivariate Evidence: Homo sapiens vs Non-human")
+    human_rate = df.loc[df["homo_sapiens"] == 1, "amtl_rate"]
+    nonhuman_rate = df.loc[df["homo_sapiens"] == 0, "amtl_rate"]
+    mean_diff = float(human_rate.mean() - nonhuman_rate.mean())
+    welch = stats.ttest_ind(human_rate, nonhuman_rate, equal_var=False)
+    print(f"Human mean AMTL rate: {human_rate.mean():.5f}")
+    print(f"Non-human mean AMTL rate: {nonhuman_rate.mean():.5f}")
+    print(f"Mean difference (human - non-human): {mean_diff:.5f}")
+    print(f"Welch t-test statistic={welch.statistic:.4f}, p-value={welch.pvalue:.3e}")
 
-    print("\nCorrelation matrix (numeric variables):")
-    print(df[numeric_cols].corr())
+    biv_ols = smf.ols("amtl_rate ~ homo_sapiens", data=df).fit(cov_type="HC3")
+    print("\nBivariate OLS (HC3 robust SE):")
+    print(biv_ols.summary().tables[1])
 
-    print("\nStep 2: Controlled regression models")
-
-    # OLS on count with sockets as control (captures differing opportunity for AMTL)
-    ols_formula = "num_amtl ~ is_human + age + prob_male + stdev_age + sockets + C(tooth_class)"
-    ols_model = smf.ols(ols_formula, data=df).fit()
-    print("\nOLS model summary:")
-    print(ols_model.summary())
-
-    # Binomial GLM on AMTL frequency with sockets as binomial denominator
-    X_glm = pd.get_dummies(
-        df[["is_human", "age", "prob_male", "stdev_age", "tooth_class"]],
-        drop_first=True,
-        dtype=float,
-    )
-    X_glm = sm.add_constant(X_glm)
-    glm_model = sm.GLM(
-        df["amtl_rate"],
-        X_glm,
-        family=sm.families.Binomial(),
-        var_weights=df["sockets"],
-    ).fit()
-    print("\nBinomial GLM summary:")
-    print(glm_model.summary())
-
-    # Additional robustness: logistic for any AMTL event
-    logit_model = smf.logit(
-        "has_amtl ~ is_human + age + prob_male + stdev_age + C(tooth_class)",
+    section("Controlled Classical Test: Binomial GLM")
+    glm_main = smf.glm(
+        "amtl_rate ~ homo_sapiens + age + prob_male + C(tooth_class)",
         data=df,
-    ).fit(disp=0)
-    print("\nLogit(has_amtl) summary:")
-    print(logit_model.summary())
+        family=sm.families.Binomial(),
+        freq_weights=df["sockets"],
+    ).fit()
+    print(glm_main.summary())
 
-    print("\nStep 3: Interpretable models")
-    X_interp = df[["is_human", "age", "stdev_age", "prob_male", "sockets"]].copy()
-    tooth_dummies = pd.get_dummies(df["tooth_class"], prefix="tooth", drop_first=True, dtype=float)
-    X_interp = pd.concat([X_interp, tooth_dummies], axis=1)
-    y_interp = df["num_amtl"].astype(float)
+    homo_coef = float(glm_main.params["homo_sapiens"])
+    homo_p = float(glm_main.pvalues["homo_sapiens"])
+    homo_ci_low, homo_ci_high = glm_main.conf_int().loc["homo_sapiens"]
+    homo_or = float(np.exp(homo_coef))
+    print(
+        "\nKey controlled effect (homo_sapiens): "
+        f"log-odds coef={homo_coef:.4f}, OR={homo_or:.3f}, p={homo_p:.3e}, "
+        f"95% CI(log-odds)=[{homo_ci_low:.4f}, {homo_ci_high:.4f}]"
+    )
 
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y_interp)
-    smart_effects = smart.feature_effects()
+    glm_genus = smf.glm(
+        "amtl_rate ~ C(genus) + age + prob_male + C(tooth_class)",
+        data=df,
+        family=sm.families.Binomial(),
+        freq_weights=df["sockets"],
+    ).fit()
+    print("\nControlled GLM with genus-specific contrasts (baseline = Homo sapiens):")
+    print(glm_genus.summary().tables[1])
 
-    print("\nSmartAdditiveRegressor model:")
-    print(smart)
-    print("\nSmartAdditive feature effects:")
-    print(smart_effects)
+    section("Interpretable Models (agentic_imodels)")
+    X = pd.DataFrame(
+        {
+            "homo_sapiens": df["homo_sapiens"].astype(float),
+            "age": df["age"].astype(float),
+            "prob_male": df["prob_male"].astype(float),
+            "tooth_class_Posterior": (df["tooth_class"] == "Posterior").astype(float),
+            "tooth_class_Premolar": (df["tooth_class"] == "Premolar").astype(float),
+        }
+    )
+    y = df["amtl_rate"].astype(float).values
+    sockets = df["sockets"].astype(float).values
 
-    # Scale for hinge model so coefficient-based selection is not dominated by units
-    scaler = StandardScaler()
-    X_scaled = pd.DataFrame(scaler.fit_transform(X_interp), columns=X_interp.columns)
+    feature_map = {f"x{i}": col for i, col in enumerate(X.columns)}
+    print("Feature map for printed models:", feature_map)
 
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_scaled, y_interp)
-    hinge_effects = hinge.feature_effects()
+    model_classes = [
+        SmartAdditiveRegressor,
+        HingeEBMRegressor,
+        WinsorizedSparseOLSRegressor,
+    ]
 
-    print("\nHingeEBMRegressor model:")
-    print(hinge)
-    print("\nHingeEBM feature effects:")
-    print(hinge_effects)
+    model_summaries = {}
+    for cls in model_classes:
+        name = cls.__name__
+        model = cls()
+        try:
+            model.fit(X, y, sample_weight=sockets)
+        except TypeError:
+            model.fit(X, y)
+        model_text = str(model)
+        print(f"\n--- {name} ---")
+        print(model)
 
-    # Extract key coefficients/effects
-    human_rate = float(df.loc[df["is_human"] == 1, "amtl_rate"].mean())
-    nonhuman_rate = float(df.loc[df["is_human"] == 0, "amtl_rate"].mean())
+        preds = model.predict(X)
+        r2 = float(r2_score(y, preds))
+        pi = permutation_importance(
+            model,
+            X,
+            y,
+            n_repeats=10,
+            random_state=0,
+            scoring="neg_mean_squared_error",
+        )
+        importances = sorted(
+            zip(X.columns, pi.importances_mean), key=lambda x: x[1], reverse=True
+        )
+        print(f"In-sample R^2: {r2:.4f}")
+        print("Permutation importance ranking (higher = more important):")
+        for feat, imp in importances:
+            print(f"  {feat:24s} {imp:.6f}")
 
-    ols_coef = float(ols_model.params.get("is_human", np.nan))
-    ols_p = float(ols_model.pvalues.get("is_human", np.nan))
+        homo_model_coef = extract_x_coef(model_text, 0)
+        homo_zeroed = is_x_zeroed(model_text, 0)
+        model_summaries[name] = {
+            "homo_coef": homo_model_coef,
+            "homo_zeroed": homo_zeroed,
+            "r2": r2,
+            "top_feature": importances[0][0],
+        }
 
-    glm_coef = float(glm_model.params.get("is_human", np.nan))
-    glm_p = float(glm_model.pvalues.get("is_human", np.nan))
-    glm_or = float(math.exp(glm_coef))
+    section("Synthesis and Calibrated Likert Score")
+    positive_model_count = sum(
+        1
+        for s in model_summaries.values()
+        if s["homo_coef"] is not None and s["homo_coef"] > 0
+    )
+    zeroed_model_count = sum(1 for s in model_summaries.values() if s["homo_zeroed"])
 
-    logit_coef = float(logit_model.params.get("is_human", np.nan))
-    logit_p = float(logit_model.pvalues.get("is_human", np.nan))
-    logit_or = float(math.exp(logit_coef))
+    genus_terms = [t for t in glm_genus.params.index if t.startswith("C(genus)[T.")]
+    genus_all_lower_than_humans = all(
+        (glm_genus.params[t] < 0) and (glm_genus.pvalues[t] < 0.05) for t in genus_terms
+    )
 
-    smart_human = get_effect(smart_effects, "is_human")
-    hinge_human = get_effect(hinge_effects, "is_human")
-    smart_age = get_effect(smart_effects, "age")
-    hinge_age = get_effect(hinge_effects, "age")
-    smart_sockets = get_effect(smart_effects, "sockets")
-
-    age_shape_text = nonlinear_summary(smart, "age")
-
-    # Likert score heuristic (0-100)
-    score = 20
-
-    # Bivariate evidence
-    if human_rate > nonhuman_rate:
-        rate_ratio = human_rate / max(nonhuman_rate, 1e-8)
-        if rate_ratio > 4:
-            score += 22
-        elif rate_ratio > 2:
-            score += 16
-        else:
-            score += 8
-
-    if corr_pearson > 0.2:
+    score = 35
+    if mean_diff > 0 and welch.pvalue < 1e-3:
+        score += 15
+    elif mean_diff > 0 and welch.pvalue < 0.05:
         score += 8
-    elif corr_pearson > 0.1:
+
+    if homo_coef > 0 and homo_p < 1e-6:
+        score += 30
+    elif homo_coef > 0 and homo_p < 0.05:
+        score += 18
+    elif homo_coef <= 0:
+        score -= 15
+
+    if homo_or >= 3:
+        score += 5
+    elif homo_or >= 1.5:
+        score += 3
+
+    if positive_model_count >= 2:
+        score += 8
+    elif positive_model_count == 1:
+        score += 3
+
+    if zeroed_model_count >= 1:
+        score -= 10
+
+    if genus_all_lower_than_humans:
         score += 5
 
-    # Controlled models
-    if glm_coef > 0 and glm_p < 0.001:
-        score += 20
-    elif glm_coef > 0 and glm_p < 0.05:
-        score += 14
-    elif glm_coef > 0 and glm_p < 0.1:
-        score += 8
-    else:
-        score -= 8
-
-    if ols_coef > 0 and ols_p < 0.05:
-        score += 10
-    elif ols_coef > 0 and ols_p < 0.1:
-        score += 5
-    elif ols_coef > 0:
-        score += 2
-    else:
-        score -= 6
-
-    if logit_coef > 0 and logit_p < 0.01:
-        score += 10
-    elif logit_coef > 0 and logit_p < 0.05:
-        score += 7
-
-    # Interpretable models
-    if smart_human["direction"].startswith("positive") and smart_human["importance"] >= 0.05:
-        score += 7
-    elif smart_human["direction"].startswith("positive") and smart_human["importance"] > 0:
-        score += 4
-    elif smart_human["importance"] == 0:
-        score -= 5
-
-    if hinge_human["direction"].startswith("positive") and hinge_human["importance"] >= 0.05:
-        score += 7
-    elif hinge_human["direction"].startswith("positive") and hinge_human["importance"] > 0:
-        score += 4
-    elif hinge_human["importance"] == 0:
-        score -= 5
-
-    response = int(max(0, min(100, round(score))))
+    score = int(np.clip(round(score), 0, 100))
 
     explanation = (
-        f"Humans show higher AMTL frequency than non-human primates in bivariate comparisons "
-        f"(mean AMTL rate {human_rate:.3f} vs {nonhuman_rate:.3f}; Pearson r={corr_pearson:.3f}). "
-        f"After controls, the human effect remains positive in count OLS (coef={ols_coef:.3f}, p={ols_p:.3g}) "
-        f"and is strongly positive in binomial AMTL-rate GLM (coef={glm_coef:.3f}, p={glm_p:.3g}, OR={glm_or:.2f}) "
-        f"and in logistic AMTL-presence model (coef={logit_coef:.3f}, p={logit_p:.3g}, OR={logit_or:.2f}). "
-        f"SmartAdditive also gives a positive human effect (importance={smart_human['importance']:.1%}, "
-        f"rank={smart_human['rank']}) while showing that age is the dominant predictor "
-        f"(importance={smart_age['importance']:.1%}, rank={smart_age['rank']}) with nonlinear thresholds; "
-        f"{age_shape_text} "
-        f"Sockets and age-uncertainty also matter (sockets importance={smart_sockets['importance']:.1%}). "
-        f"HingeEBM confirms direction: human effect is positive and retained (importance={hinge_human['importance']:.1%}, "
-        f"rank={hinge_human['rank']}), but smaller than age (importance={hinge_age['importance']:.1%}, rank={hinge_age['rank']}). "
-        f"Overall this supports a robust Yes: humans have higher AMTL frequencies after accounting for age, sex, and tooth class, "
-        f"though age is the strongest confounder and contributes more than species identity."
+        f"Bivariate evidence shows higher AMTL in humans (mean rate {human_rate.mean():.3f}) "
+        f"than non-humans ({nonhuman_rate.mean():.3f}), with a strong Welch test "
+        f"(p={welch.pvalue:.2e}). In the controlled binomial GLM (adjusting for age, sex "
+        f"probability, and tooth class), the Homo sapiens indicator remains strongly positive "
+        f"(log-odds={homo_coef:.3f}, OR={homo_or:.2f}, p={homo_p:.2e}). Age is strongly positive, "
+        f"posterior teeth are higher-risk than anterior, and prob_male is negative. "
+        f"Interpretable agentic_imodels mostly agree on direction: SmartAdditiveRegressor and "
+        f"HingeEBMRegressor assign a positive human effect, while WinsorizedSparseOLSRegressor "
+        f"zeroes out the human term (null evidence under a sparse linear constraint). "
+        f"The signal is therefore strong but not perfectly uniform across model classes; overall "
+        f"evidence supports that modern humans have higher AMTL frequencies after controls."
     )
 
-    output = {"response": response, "explanation": explanation}
-    with open("conclusion.txt", "w", encoding="utf-8") as f:
-        f.write(json.dumps(output, ensure_ascii=True))
+    print(f"Likert score (0-100): {score}")
+    print("Explanation:", explanation)
 
-    print("\nWrote conclusion.txt")
-    print(json.dumps(output, indent=2))
+    with open("conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump({"response": score, "explanation": explanation}, f, ensure_ascii=True)
 
 
 if __name__ == "__main__":

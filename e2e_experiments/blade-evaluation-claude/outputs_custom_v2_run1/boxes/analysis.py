@@ -1,116 +1,141 @@
-import pandas as pd
-import numpy as np
-import statsmodels.api as sm
 import json
-import sys
-sys.path.insert(0, '/home/chansingh/imodels-evolve/e2e_experiments/blade-evaluation-claude/outputs_custom_v2_run1/boxes')
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+import warnings
+warnings.filterwarnings('ignore')
 
+import numpy as np
+import pandas as pd
+import statsmodels.api as sm
+from scipy import stats
+from agentic_imodels import SmartAdditiveRegressor, HingeEBMRegressor
+
+# ── 1. Load data ──────────────────────────────────────────────────────────────
 df = pd.read_csv('boxes.csv')
 print("Shape:", df.shape)
 print(df.describe())
+print("\nValue counts y:", df['y'].value_counts().sort_index())
+print("Culture counts:", df['culture'].value_counts().sort_index())
 
-# The DV is a 3-category outcome: 1=unchosen, 2=majority, 3=minority
-# Research question: how does reliance on majority preference develop with age across cultures?
-# Create binary DV: chose majority (2) vs not
+# ── 2. Create outcome: chose_majority (binary) ────────────────────────────────
 df['chose_majority'] = (df['y'] == 2).astype(int)
+print("\nMajority choice rate:", df['chose_majority'].mean().round(3))
 
-print("\nMajority choice rate by age:")
-print(df.groupby('age')['chose_majority'].mean())
+# ── 3. Bivariate: age vs majority choice ─────────────────────────────────────
+print("\n--- Bivariate: age vs. chose_majority ---")
+corr, pval = stats.pointbiserialr(df['age'], df['chose_majority'])
+print(f"Point-biserial r = {corr:.4f}, p = {pval:.4g}")
 
-print("\nMajority choice rate by culture:")
-print(df.groupby('culture')['chose_majority'].mean())
+# Age-group majority rates
+age_groups = pd.cut(df['age'], bins=[3,6,9,12,15], labels=['4-6','7-9','10-12','13-14'])
+print("\nMajority rate by age group:")
+print(df.groupby(age_groups)['chose_majority'].mean().round(3))
 
-print("\nCorrelation matrix:")
-numeric_cols = ['age', 'gender', 'majority_first', 'culture', 'chose_majority']
-print(df[numeric_cols].corr())
+# ── 4. Cross-cultural descriptives ────────────────────────────────────────────
+print("\nMajority rate by culture:")
+print(df.groupby('culture')['chose_majority'].agg(['mean','count']).round(3))
 
-# OLS with controls
-X = df[['age', 'gender', 'majority_first', 'culture']]
-X = sm.add_constant(X)
-model = sm.OLS(df['chose_majority'], X).fit()
-print("\nOLS Summary:")
-print(model.summary())
+# ── 5. Classical OLS with controls ────────────────────────────────────────────
+print("\n--- OLS with controls ---")
+X_ols = sm.add_constant(df[['age', 'culture', 'gender', 'majority_first']])
+ols = sm.OLS(df['chose_majority'], X_ols).fit()
+print(ols.summary())
 
-# SmartAdditiveRegressor
-numeric_columns = ['age', 'gender', 'majority_first', 'culture']
-X_df = df[numeric_columns]
-y = df['chose_majority']
+# ── 6. Logistic regression ────────────────────────────────────────────────────
+print("\n--- Logistic regression with controls ---")
+logit = sm.Logit(df['chose_majority'], X_ols).fit(maxiter=200, disp=False)
+print(logit.summary())
+print("\nOdds Ratios:")
+print(np.exp(logit.params).round(4))
 
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_df, y)
-print("\nSmartAdditiveRegressor:")
-print(smart)
-smart_effects = smart.feature_effects()
-print("Feature effects:", smart_effects)
+# ── 7. Interaction: age * culture ─────────────────────────────────────────────
+print("\n--- OLS with age x culture interaction ---")
+df['age_x_culture'] = df['age'] * df['culture']
+X_int = sm.add_constant(df[['age', 'culture', 'gender', 'majority_first', 'age_x_culture']])
+ols_int = sm.OLS(df['chose_majority'], X_int).fit()
+print(f"age coef={ols_int.params['age']:.4f} p={ols_int.pvalues['age']:.4g}")
+print(f"culture coef={ols_int.params['culture']:.4f} p={ols_int.pvalues['culture']:.4g}")
+print(f"age*culture coef={ols_int.params['age_x_culture']:.4f} p={ols_int.pvalues['age_x_culture']:.4g}")
 
-# HingeEBMRegressor (skip if interpret not available)
-hinge_effects = {}
-try:
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_df, y)
-    print("\nHingeEBMRegressor:")
-    print(hinge)
-    hinge_effects = hinge.feature_effects()
-    print("Feature effects:", hinge_effects)
-except Exception as e:
-    print(f"\nHingeEBMRegressor unavailable: {e}")
+# Per-culture age slopes
+print("\nPer-culture regression of age -> chose_majority:")
+culture_slopes = {}
+for c in sorted(df['culture'].unique()):
+    sub = df[df['culture'] == c]
+    if len(sub) < 10:
+        continue
+    r, p = stats.pointbiserialr(sub['age'], sub['chose_majority'])
+    culture_slopes[c] = (r, p, len(sub))
+    print(f"  culture {c}: r={r:.3f}, p={p:.4g}, n={len(sub)}")
 
-# Collect results
-age_ols_coef = model.params['age']
-age_ols_pval = model.pvalues['age']
-age_smart = smart_effects.get('age', {})
-age_hinge = hinge_effects.get('age', {})
+# ── 8. agentic_imodels ────────────────────────────────────────────────────────
+feature_cols = ['age', 'culture', 'gender', 'majority_first']
+X = df[feature_cols]
+y = df['chose_majority'].values.astype(float)
 
-print(f"\nAge OLS coef={age_ols_coef:.4f}, p={age_ols_pval:.4f}")
-print(f"Age SmartAdditive: {age_smart}")
-if age_hinge:
-    print(f"Age HingeEBM: {age_hinge}")
+print("\n=== SmartAdditiveRegressor ===")
+m1 = SmartAdditiveRegressor()
+m1.fit(X, y)
+print(m1)
 
-age_smart_importance = float(age_smart.get('importance', 0))
-age_smart_direction = age_smart.get('direction', 'N/A')
-age_smart_rank = age_smart.get('rank', 'N/A')
-majority_first_importance = float(smart_effects.get('majority_first', {}).get('importance', 0))
-culture_importance = float(smart_effects.get('culture', {}).get('importance', 0))
+print("\n=== HingeEBMRegressor ===")
+m2 = HingeEBMRegressor()
+m2.fit(X, y)
+print(m2)
 
-# Score: OLS p=0.803 (not significant), SmartAdditive shows age as nonlinear rank 2 (29% importance)
-# The OLS misses the nonlinear U-shape; SmartAdditive reveals nonlinear developmental pattern.
-# Age is not linearly significant but shows a meaningful nonlinear pattern.
-if age_ols_pval < 0.05:
-    if age_smart_importance > 0.15:
-        score = 80
-    else:
-        score = 65
-elif age_smart_importance > 0.20:
-    # Nonlinear effect captured by SmartAdditive even if OLS misses it
-    score = 60
-elif age_smart_importance > 0.10:
-    score = 45
-else:
-    score = 20
+# ── 9. Synthesize evidence ─────────────────────────────────────────────────────
+age_coef   = ols.params['age']
+age_pval   = ols.pvalues['age']
+int_pval   = ols_int.pvalues['age_x_culture']
 
-# Build explanation
-hinge_note = (f"HingeEBMRegressor: age importance={float(age_hinge.get('importance',0)):.3f}, "
-              f"direction={age_hinge.get('direction','N/A')}. " if age_hinge else
-              "HingeEBMRegressor unavailable (interpret module missing). ")
+# Majority choice rate by age (young vs old)
+young_rate = df[df['age'] <= 7]['chose_majority'].mean()
+old_rate   = df[df['age'] >= 12]['chose_majority'].mean()
+
+print(f"\nMajority rate young (age<=7): {young_rate:.3f}")
+print(f"Majority rate old   (age>=12): {old_rate:.3f}")
+print(f"\nOLS age coef={age_coef:.4f}, p={age_pval:.4g}")
+print(f"Age*culture interaction p={int_pval:.4g}")
+
+# ── 10. Write conclusion ────────────────────────────────────────────────────────
+# Research question: "How do children's reliance on majority preference develop
+# over growth in age across different cultural contexts?"
+# Score 0-100: strong No=0, strong Yes=100
+#
+# Evidence summary:
+# - Age NOT significant: OLS β=0.0019, p=0.803; logistic p=0.801
+# - HingeEBM ranks age LAST (coef=0.0019), majority_first & gender dominate
+# - SmartAdditive shows U-shaped age pattern (youngest and oldest higher), but
+#   the corrections are modest relative to majority_first (0.281)
+# - No significant age*culture interaction (p=0.513)
+# - Per-culture age slopes: all non-significant (p>0.13), mixed positive/negative
+# - Majority rate only goes 44.5% → 49.3% across age groups (small, non-sig)
+# - Overall: weak and inconsistent evidence for age-based development → 25-35
+
+score = 28
 
 explanation = (
-    f"Age has an OLS coefficient of {age_ols_coef:.3f} (p={age_ols_pval:.3f}) on majority-choice, "
-    f"which is not statistically significant after controlling for gender, majority_first, and culture. "
-    f"However, the SmartAdditiveRegressor reveals a nonlinear U-shaped developmental pattern: "
-    f"age is the 2nd most important predictor (importance={age_smart_importance:.1%}), with high majority-following "
-    f"in young children (age<=4.5), a dip in middle childhood (ages 6-11), and a recovery in adolescence (age>12.5). "
-    f"This nonlinear pattern is missed by OLS. {hinge_note}"
-    f"The dominant predictor is majority_first (importance={majority_first_importance:.1%}), "
-    f"a presentation-order effect. Cultural context is a weaker predictor (importance={culture_importance:.1%}). "
-    f"Overall: there is a moderate nonlinear developmental effect of age on majority preference "
-    f"that is robust in the SmartAdditive model but not captured by linear OLS, "
-    f"while cultural context plays a smaller role than age."
+    f"The data provide weak, non-significant evidence for an age-related increase "
+    f"in children's majority-preference reliance. "
+    f"OLS with controls yields β={age_coef:.4f} for age (p={age_pval:.3g}), and logistic "
+    f"regression gives OR=1.009 (p=0.80). "
+    f"HingeEBMRegressor assigns age the smallest coefficient (0.0019), far behind "
+    f"majority_first (0.2325) and gender (0.0351). "
+    f"SmartAdditiveRegressor reveals a non-linear U-shape (youngest ≤4.5 and oldest "
+    f">12.5 children show modest upward corrections), but the pattern is inconsistent "
+    f"with a monotonic developmental trajectory. "
+    f"Raw majority-choice rates change minimally across age groups (44–48% for ages "
+    f"4–12, 60% for 13–14 in one bin, but N is small). "
+    f"The age×culture interaction is not significant (p={int_pval:.3g}), and "
+    f"within-culture age slopes are all non-significant (all p>0.13) with mixed "
+    f"positive and negative directions across the 8 societies. "
+    f"The dominant predictors are presentation order and gender, not age. "
+    f"Overall, the evidence does not support a robust developmental increase in "
+    f"majority preference across age in these cross-cultural data."
 )
 
-result = {"response": score, "explanation": explanation}
-with open('conclusion.txt', 'w') as f:
-    json.dump(result, f)
+print("\nScore:", score)
+print("Explanation:", explanation)
 
-print("\nconclusion.txt written:")
-print(json.dumps(result, indent=2))
+with open('conclusion.txt', 'w') as f:
+    json.dump({"response": score, "explanation": explanation}, f)
+
+print("\nconclusion.txt written.")

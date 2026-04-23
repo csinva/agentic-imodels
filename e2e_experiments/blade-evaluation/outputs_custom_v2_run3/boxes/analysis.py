@@ -1,217 +1,256 @@
 import json
-from typing import Dict, Any, List, Tuple
+import warnings
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-from scipy import stats
+import statsmodels.formula.api as smf
+from scipy.stats import chi2, chi2_contingency, pointbiserialr
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-
-def _to_builtin_effects(effects: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Convert numpy scalar values in effects dict to Python built-ins for safe JSON printing."""
-    cleaned: Dict[str, Dict[str, Any]] = {}
-    for k, v in effects.items():
-        cleaned[k] = {}
-        for kk, vv in v.items():
-            if isinstance(vv, (np.floating, np.integer)):
-                cleaned[k][kk] = vv.item()
-            else:
-                cleaned[k][kk] = vv
-    return cleaned
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def _top_effects(effects: Dict[str, Dict[str, Any]], n: int = 5) -> List[Tuple[str, float, str, int]]:
-    rows = []
-    for name, vals in effects.items():
-        imp = float(vals.get("importance", 0.0) or 0.0)
-        rank = int(vals.get("rank", 0) or 0)
-        direction = str(vals.get("direction", "unknown"))
-        if imp > 0:
-            rows.append((name, imp, direction, rank))
-    rows.sort(key=lambda x: (-x[1], x[0]))
-    return rows[:n]
+def safe_float(x):
+    try:
+        return float(x)
+    except Exception:
+        return float("nan")
 
 
-def main() -> None:
+def hinge_effective_coefficients(model):
+    coefs = np.asarray(model.lasso_.coef_, dtype=float)
+    intercept = float(model.lasso_.intercept_)
+    n_sel = len(model.selected_)
+
+    eff = {int(model.selected_[i]): float(coefs[i]) for i in range(n_sel)}
+    eff_intercept = intercept
+
+    for idx, (feat_idx, knot, direction) in enumerate(model.hinge_info_):
+        j_orig = int(model.selected_[feat_idx])
+        c = float(coefs[n_sel + idx])
+        if abs(c) < 1e-6:
+            continue
+        if direction == "pos":
+            eff[j_orig] = eff.get(j_orig, 0.0) + c
+            eff_intercept -= c * float(knot)
+        else:
+            eff[j_orig] = eff.get(j_orig, 0.0) - c
+            eff_intercept += c * float(knot)
+    return eff, eff_intercept
+
+
+def clamp(v, lo=0, hi=100):
+    return max(lo, min(hi, int(round(v))))
+
+
+def main():
+    warnings.filterwarnings("ignore")
+
     with open("info.json", "r", encoding="utf-8") as f:
         info = json.load(f)
 
-    question = info.get("research_questions", ["Unknown research question"])[0]
+    question = info["research_questions"][0]
+    print("Research question:")
+    print(question)
+    print("\nLoading data from boxes.csv ...")
+
     df = pd.read_csv("boxes.csv")
+    print(f"Rows: {len(df)}, Columns: {len(df.columns)}")
+    print(f"Columns: {list(df.columns)}")
 
-    # Research mapping for this dataset/question
-    dv_original = "y"
-    iv = "age"
-    # Majority reliance: 1 if child selected majority option, else 0
-    df["majority_choice"] = (df[dv_original] == 2).astype(int)
-    dv = "majority_choice"
+    # Outcome for the research question: majority-choice reliance.
+    df["majority_choice"] = (df["y"] == 2).astype(int)
 
-    print("=== Step 1: Understand Question and Explore ===")
-    print("Research question:", question)
-    print(f"Dependent variable (DV): {dv} (derived from y==2)")
-    print(f"Independent variable (IV): {iv}")
-    print("\nDataset shape:", df.shape)
-    print("\nSummary statistics:")
-    print(df[["y", "majority_choice", "gender", "age", "majority_first", "culture"]].describe().T)
+    print("\n=== Basic summaries ===")
+    print(df.describe(include="all").to_string())
 
-    print("\nOutcome distributions:")
-    print("y value counts:")
-    print(df["y"].value_counts().sort_index())
-    print("\nmajority_choice value counts:")
-    print(df["majority_choice"].value_counts().sort_index())
+    print("\nOutcome distribution y (1=unchosen,2=majority,3=minority):")
+    print(df["y"].value_counts().sort_index().to_string())
 
-    numeric_cols = ["y", "majority_choice", "gender", "age", "majority_first", "culture"]
-    print("\nCorrelation matrix:")
-    print(df[numeric_cols].corr(numeric_only=True).round(4))
+    print("\nMajority-choice rate overall:")
+    print(df["majority_choice"].mean())
 
-    r_age_majority, p_age_majority = stats.pearsonr(df["age"], df[dv])
-    rho_age_y, p_age_y = stats.spearmanr(df["age"], df["y"])
+    print("\nMajority-choice rate by age:")
+    print(df.groupby("age")["majority_choice"].mean().to_string())
+
+    print("\nMajority-choice rate by culture:")
+    print(df.groupby("culture")["majority_choice"].mean().to_string())
+
+    print("\nCorrelation matrix (numeric columns):")
+    corr = df[["majority_choice", "age", "gender", "majority_first", "culture"]].corr(numeric_only=True)
+    print(corr.to_string())
+
+    # Bivariate tests
+    pb = pointbiserialr(df["majority_choice"], df["age"])
+    print("\n=== Bivariate tests ===")
+    print(f"Point-biserial correlation (majority_choice vs age): r={pb.statistic:.4f}, p={pb.pvalue:.4g}")
+
+    ct = pd.crosstab(df["majority_choice"], df["culture"])
+    chi2_stat, chi2_p, chi2_df, _ = chi2_contingency(ct)
+    print(f"Chi-square (majority_choice x culture): chi2={chi2_stat:.3f}, df={chi2_df}, p={chi2_p:.4g}")
+
+    # Classical formal tests: logistic regression (binary majority-choice outcome)
+    print("\n=== Logistic models (statsmodels) ===")
+    model_biv = smf.logit("majority_choice ~ age", data=df).fit(disp=0)
+    model_ctrl = smf.logit(
+        "majority_choice ~ age + gender + majority_first + C(culture)", data=df
+    ).fit(disp=0)
+    model_inter = smf.logit(
+        "majority_choice ~ age * C(culture) + gender + majority_first", data=df
+    ).fit(disp=0, maxiter=200)
+
+    print("\nBivariate logit: majority_choice ~ age")
+    print(model_biv.summary())
+
+    print("\nControlled logit: majority_choice ~ age + gender + majority_first + C(culture)")
+    print(model_ctrl.summary())
+
+    print("\nInteraction logit: add age x culture interactions")
+    print(model_inter.summary())
+
+    # LR test for age-culture interaction block
+    lr_stat = 2.0 * (model_inter.llf - model_ctrl.llf)
+    df_diff = int(model_inter.df_model - model_ctrl.df_model)
+    lr_p = safe_float(chi2.sf(lr_stat, df_diff)) if df_diff > 0 else np.nan
     print(
-        f"\nBivariate age-majority correlation: r={r_age_majority:.4f}, p={p_age_majority:.4g}"
-    )
-    print(f"Bivariate age-y Spearman: rho={rho_age_y:.4f}, p={p_age_y:.4g}")
-
-    print("\n=== Step 2: Controlled Statistical Tests ===")
-    base_features = ["age", "gender", "majority_first", "culture"]
-    X_main = pd.get_dummies(
-        df[base_features], columns=["culture"], drop_first=True, dtype=float
+        f"\nLikelihood-ratio test for age*culture interaction block: "
+        f"LR={lr_stat:.4f}, df={df_diff}, p={lr_p:.4g}"
     )
 
-    X_main_const = sm.add_constant(X_main)
-    logit_main = sm.Logit(df[dv], X_main_const).fit(disp=False)
-    print("Controlled logistic regression (DV=majority_choice):")
-    print(logit_main.summary())
+    # Build feature matrix for agentic_imodels (one-hot culture)
+    X = pd.concat(
+        [
+            df[["age", "gender", "majority_first"]].copy(),
+            pd.get_dummies(df["culture"].astype(int), prefix="culture", drop_first=True),
+        ],
+        axis=1,
+    ).astype(float)
+    y = df["majority_choice"].astype(float).values
+    feature_names = list(X.columns)
 
-    age_coef_main = float(logit_main.params.get("age", np.nan))
-    age_p_main = float(logit_main.pvalues.get("age", np.nan))
+    print("\n=== agentic_imodels feature mapping ===")
+    for i, name in enumerate(feature_names):
+        print(f"x{i} = {name}")
 
-    # Age-by-culture interactions to directly assess "across cultural contexts"
-    X_inter = X_main.copy()
-    culture_dummy_cols = [c for c in X_inter.columns if c.startswith("culture_")]
-    for col in culture_dummy_cols:
-        X_inter[f"age_x_{col}"] = X_inter["age"] * X_inter[col]
-
-    X_inter_const = sm.add_constant(X_inter)
-    logit_inter = sm.Logit(df[dv], X_inter_const).fit(disp=False, maxiter=200)
-    print("\nLogistic regression with age-by-culture interactions:")
-    print(logit_inter.summary())
-
-    lr_stat = 2.0 * (logit_inter.llf - logit_main.llf)
-    lr_df = int(logit_inter.df_model - logit_main.df_model)
-    lr_p = float(stats.chi2.sf(lr_stat, lr_df)) if lr_df > 0 else np.nan
-    print(
-        f"\nLikelihood-ratio test (interaction model vs main): LR={lr_stat:.4f}, df={lr_df}, p={lr_p:.4g}"
-    )
-
-    print("\n=== Step 3: Interpretable Models ===")
-    X_interp = X_inter.copy()
-    y_interp = df[dv].astype(float)
-
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y_interp)
-    print("SmartAdditiveRegressor:")
+    print("\n=== Interpretable model: SmartAdditiveRegressor (honest) ===")
+    smart = SmartAdditiveRegressor().fit(X, y)
     print(smart)
-    smart_effects = _to_builtin_effects(smart.feature_effects())
-    print("\nSmartAdditive feature_effects:")
-    print(json.dumps(smart_effects, indent=2))
 
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y_interp)
-    print("\nHingeEBMRegressor:")
-    print(hinge)
-    hinge_effects = _to_builtin_effects(hinge.feature_effects())
-    print("\nHingeEBM feature_effects:")
-    print(json.dumps(hinge_effects, indent=2))
+    print("\n=== Interpretable model: WinsorizedSparseOLSRegressor (honest sparse linear, Lasso-based) ===")
+    winsor = WinsorizedSparseOLSRegressor().fit(X, y)
+    print(winsor)
 
-    # Pull key interpretation values for age and confounders
-    smart_age = smart_effects.get("age", {"direction": "zero", "importance": 0.0, "rank": 0})
-    hinge_age = hinge_effects.get("age", {"direction": "zero", "importance": 0.0, "rank": 0})
+    print("\n=== Interpretable model: HingeEBMRegressor (high-rank decoupled) ===")
+    hinge_ebm = HingeEBMRegressor().fit(X, y)
+    print(hinge_ebm)
 
-    smart_top = _top_effects(smart_effects, n=3)
-    hinge_top = _top_effects(hinge_effects, n=3)
+    # Quantify evidence from interpretable models
+    age_idx = feature_names.index("age")
 
-    majority_first_p = float(logit_main.pvalues.get("majority_first", np.nan))
-    majority_first_coef = float(logit_main.params.get("majority_first", np.nan))
-    gender_p = float(logit_main.pvalues.get("gender", np.nan))
-    gender_coef = float(logit_main.params.get("gender", np.nan))
+    smart_imps = np.asarray(smart.feature_importances_, dtype=float)
+    smart_total_imp = float(np.sum(smart_imps)) if np.isfinite(np.sum(smart_imps)) else 0.0
+    smart_age_imp = float(smart_imps[age_idx])
+    smart_age_imp_frac = smart_age_imp / smart_total_imp if smart_total_imp > 1e-12 else 0.0
+    smart_rank_order = list(np.argsort(-smart_imps))
+    smart_age_rank = int(smart_rank_order.index(age_idx) + 1)
 
-    # Step 4: Likert score synthesis (0-100)
-    score = 50
+    age_shape = smart.shape_functions_.get(age_idx)
+    age_shape_range = 0.0
+    age_nonmonotone = False
+    if age_shape is not None:
+        _, age_intervals = age_shape
+        if len(age_intervals) > 0:
+            age_shape_range = float(np.max(age_intervals) - np.min(age_intervals))
+            diffs = np.diff(np.asarray(age_intervals, dtype=float))
+            if len(diffs) > 0:
+                mono_inc = np.all(diffs >= -1e-8)
+                mono_dec = np.all(diffs <= 1e-8)
+                age_nonmonotone = not (mono_inc or mono_dec)
 
-    # Bivariate evidence for age effect on majority choice
-    if p_age_majority >= 0.05:
+    winsor_selected_features = {feature_names[i] for i in winsor.support_}
+    age_selected_winsor = "age" in winsor_selected_features
+
+    heff, _ = hinge_effective_coefficients(hinge_ebm)
+    hinge_age_coef = float(heff.get(age_idx, 0.0))
+
+    print("\n=== Extracted evidence summary ===")
+    age_coef_biv = safe_float(model_biv.params.get("age", np.nan))
+    age_p_biv = safe_float(model_biv.pvalues.get("age", np.nan))
+    age_coef_ctrl = safe_float(model_ctrl.params.get("age", np.nan))
+    age_p_ctrl = safe_float(model_ctrl.pvalues.get("age", np.nan))
+
+    print(f"Bivariate logit age coef={age_coef_biv:.4f}, p={age_p_biv:.4g}")
+    print(f"Controlled logit age coef={age_coef_ctrl:.4f}, p={age_p_ctrl:.4g}")
+    print(f"Age*culture LR-test p={lr_p:.4g}")
+    print(
+        f"SmartAdditive: age importance={smart_age_imp:.4f} "
+        f"(fraction={smart_age_imp_frac:.3f}, rank={smart_age_rank}/{len(feature_names)}), "
+        f"shape_range={age_shape_range:.4f}, nonmonotone={age_nonmonotone}"
+    )
+    print(f"WinsorizedSparseOLS selected age={age_selected_winsor}")
+    print(f"HingeEBM effective age coefficient={hinge_age_coef:.4f}")
+
+    # Likert score calibration based on SKILL guidance
+    score = 50.0
+
+    # Classical significance anchors
+    if np.isfinite(age_p_ctrl):
+        if age_p_ctrl < 0.01:
+            score += 20
+        elif age_p_ctrl < 0.05:
+            score += 15
+        elif age_p_ctrl < 0.10:
+            score += 8
+        else:
+            score -= 15
+
+    if np.isfinite(lr_p):
+        if lr_p < 0.05:
+            score += 12
+        else:
+            score -= 10
+
+    # Interpretable model corroboration / null evidence
+    if age_selected_winsor:
+        score += 10
+    else:
         score -= 10
-    else:
-        score += 8 if r_age_majority > 0 else -8
 
-    # Controlled age effect
-    if age_p_main < 0.05:
-        score += 20 if age_coef_main > 0 else -15
-    elif age_p_main < 0.10:
-        score += 8 if age_coef_main > 0 else -8
+    if abs(hinge_age_coef) < 0.02:
+        score -= 6
     else:
-        score -= 15
+        score += 4
 
-    # Cross-cultural interaction evidence
-    if np.isfinite(lr_p) and lr_p < 0.05:
+    if smart_age_rank <= 2 and smart_age_imp_frac >= 0.15:
         score += 8
-    else:
-        score -= 5
-
-    # Interpretable models: age importance and direction
-    smart_age_imp = float(smart_age.get("importance", 0.0) or 0.0)
-    smart_age_dir = str(smart_age.get("direction", "zero"))
-    if smart_age_imp >= 0.10 and (
-        "increasing" in smart_age_dir.lower() or smart_age_dir.lower() == "positive"
-    ):
-        score += 8
-    elif smart_age_imp < 0.01:
+    elif smart_age_rank >= 6 or smart_age_imp_frac < 0.05:
         score -= 6
 
-    hinge_age_imp = float(hinge_age.get("importance", 0.0) or 0.0)
-    hinge_age_dir = str(hinge_age.get("direction", "zero"))
-    if hinge_age_imp >= 0.05:
-        if hinge_age_dir.lower() == "positive":
-            score += 8
-        elif hinge_age_dir.lower() == "negative":
-            score -= 8
-    else:
-        score -= 8
+    if age_nonmonotone and age_shape_range > 0.08:
+        score += 5
 
-    # Strong confounder dominance lowers certainty about age-driven development
-    if majority_first_p < 0.05 and abs(majority_first_coef) > abs(age_coef_main):
-        score -= 2
-
-    score = int(max(0, min(100, round(score))))
-
-    smart_top_text = "; ".join(
-        [f"{n} (imp={imp:.3f}, dir={d}, rank={r})" for n, imp, d, r in smart_top]
-    ) or "none"
-    hinge_top_text = "; ".join(
-        [f"{n} (imp={imp:.3f}, dir={d}, rank={r})" for n, imp, d, r in hinge_top]
-    ) or "none"
+    response = clamp(score, 0, 100)
 
     explanation = (
-        f"Age shows little robust evidence of increasing majority reliance across cultures. "
-        f"Bivariate age-majority association is near zero (r={r_age_majority:.3f}, p={p_age_majority:.3g}). "
-        f"In controlled logistic regression, age is not significant (coef={age_coef_main:.3f}, p={age_p_main:.3g}) after controlling for gender, majority_first, and culture. "
-        f"Age-by-culture interactions do not significantly improve fit (LR p={lr_p:.3g}), so cross-cultural age slope differences are weak overall. "
-        f"SmartAdditive gives age a {smart_age_imp:.1%} importance (rank={smart_age.get('rank', 0)}, direction={smart_age_dir}), suggesting some nonlinear age pattern, "
-        f"but HingeEBM assigns age {hinge_age_imp:.1%} importance (rank={hinge_age.get('rank', 0)}, direction={hinge_age_dir}), effectively zeroing it out. "
-        f"The strongest and most consistent predictor is majority_first (logit coef={majority_first_coef:.3f}, p={majority_first_p:.3g}); gender also has a smaller positive effect (coef={gender_coef:.3f}, p={gender_p:.3g}). "
-        f"Top SmartAdditive effects: {smart_top_text}. Top HingeEBM effects: {hinge_top_text}. "
-        f"Overall, evidence for an age-driven developmental increase in majority preference is weak/inconsistent once confounders are included."
+        "The evidence for an age-driven increase in majority reliance across cultural contexts is weak. "
+        f"A bivariate logistic model finds age near zero (coef={age_coef_biv:.3f}, p={age_p_biv:.3g}), and with controls "
+        f"(gender, majority_first, culture fixed effects) age remains non-significant (coef={age_coef_ctrl:.3f}, p={age_p_ctrl:.3g}). "
+        f"Age-by-culture interactions are not jointly significant (LR p={lr_p:.3g}), so developmental differences by culture are not robustly supported. "
+        "Interpretable models are mixed: SmartAdditive ranks age relatively high and shows a non-monotonic shape (higher at youngest/oldest ages, lower mid-range), "
+        f"but WinsorizedSparseOLS excludes age entirely (Lasso zeroing null evidence), and HingeEBM gives only a very small effective age slope ({hinge_age_coef:.3f}). "
+        "By contrast, majority_first and some culture indicators are consistently stronger predictors. "
+        "Overall this supports at most a weak/inconsistent age relationship rather than a robust cross-cultural developmental trend."
     )
 
-    out = {"response": score, "explanation": explanation}
+    payload = {"response": int(response), "explanation": explanation}
     with open("conclusion.txt", "w", encoding="utf-8") as f:
-        json.dump(out, f)
+        json.dump(payload, f, ensure_ascii=True)
 
-    print("\n=== Step 4: Conclusion ===")
-    print(json.dumps(out, indent=2))
-    print("\nWrote conclusion.txt")
+    print("\nWrote conclusion.txt:")
+    print(json.dumps(payload, indent=2))
 
 
 if __name__ == "__main__":

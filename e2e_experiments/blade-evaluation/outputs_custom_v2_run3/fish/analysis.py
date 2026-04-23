@@ -1,176 +1,298 @@
+#!/usr/bin/env python3
 import json
-from pathlib import Path
+import os
+import shutil
+import sys
+import warnings
+
+
+def maybe_reexec_with_py311() -> None:
+    """Run with python3.11 if `python3` points to an env missing required packages."""
+    if "--py311-reexec" in sys.argv:
+        return
+
+    if sys.version_info[:2] == (3, 11):
+        return
+
+    try:
+        import pandas  # noqa: F401
+        import sklearn  # noqa: F401
+        import statsmodels  # noqa: F401
+    except Exception:
+        py311 = shutil.which("python3.11")
+        if py311:
+            os.execv(py311, [py311, __file__, "--py311-reexec"])
+
+
+maybe_reexec_with_py311()
 
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    SparseSignedBasisPursuitRegressor,
+)
+from scipy import stats
+from sklearn.inspection import permutation_importance
+from sklearn.metrics import mean_absolute_error, r2_score
 
-from interp_models import HingeEBMRegressor, SmartAdditiveRegressor
-
-
-def clamp_int(x, lo=0, hi=100):
-    return int(max(lo, min(hi, round(float(x)))))
-
-
-def to_native(obj):
-    if isinstance(obj, (np.floating, np.integer)):
-        return obj.item()
-    if isinstance(obj, dict):
-        return {k: to_native(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [to_native(v) for v in obj]
-    return obj
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
-def main():
-    info_path = Path("info.json")
-    data_path = Path("fish.csv")
+def print_section(title: str) -> None:
+    print("\n" + "=" * 80)
+    print(title)
+    print("=" * 80)
 
-    info = json.loads(info_path.read_text())
-    df = pd.read_csv(data_path)
 
-    question = info["research_questions"][0]
-    print("Research question:")
-    print(question)
+def summarize_dataframe(df: pd.DataFrame) -> None:
+    print_section("DATA OVERVIEW")
+    print(f"Rows: {len(df)}")
+    print(f"Columns: {list(df.columns)}")
+    print("\nMissing values:")
+    print(df.isna().sum().to_string())
 
-    dv = "fish_caught"
-    iv = "hours"
+    print("\nSummary statistics:")
+    print(df.describe().to_string())
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    predictors = [c for c in numeric_cols if c != dv]
+    print("\nPairwise correlations:")
+    print(df.corr(numeric_only=True).round(3).to_string())
 
-    controls = [c for c in predictors if c != iv]
+    df = df.copy()
+    df["fish_per_hour"] = df["fish_caught"] / df["hours"]
+    print("\nFish-per-hour distribution (raw):")
+    print(df["fish_per_hour"].describe(percentiles=[0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]).to_string())
 
-    print("\nDV:", dv)
-    print("Primary IV:", iv)
-    print("Controls:", controls)
 
-    print("\n=== Summary statistics ===")
-    print(df[numeric_cols].describe().T)
+def bivariate_checks(df: pd.DataFrame) -> dict:
+    print_section("BIVARIATE CHECKS")
+    out = {}
 
-    print("\n=== Distribution checks (skewness) ===")
-    print(df[numeric_cols].skew())
+    work = df.copy()
+    work["fish_per_hour"] = work["fish_caught"] / work["hours"]
+    work["fish_per_hour_w"] = work["fish_per_hour"].clip(upper=work["fish_per_hour"].quantile(0.99))
 
-    print("\n=== Bivariate correlations with DV ===")
-    corrs = df[numeric_cols].corr(numeric_only=True)[dv].sort_values(ascending=False)
-    print(corrs)
+    total_rate = work["fish_caught"].sum() / work["hours"].sum()
+    out["weighted_rate"] = float(total_rate)
+    print(f"Overall weighted catch rate (total fish / total hours): {total_rate:.4f} fish/hour")
 
-    print("\n=== Average fish per hour (descriptive) ===")
-    fish_per_hour = (df[dv] / df[iv]).replace([np.inf, -np.inf], np.nan).dropna()
-    print(
+    binary_results = {}
+    for col in ["livebait", "camper"]:
+        g1 = work.loc[work[col] == 1, "fish_per_hour_w"]
+        g0 = work.loc[work[col] == 0, "fish_per_hour_w"]
+        t_stat, p_val = stats.ttest_ind(g1, g0, equal_var=False)
+        diff = g1.mean() - g0.mean()
+        binary_results[col] = {
+            "mean_1": float(g1.mean()),
+            "mean_0": float(g0.mean()),
+            "diff": float(diff),
+            "p": float(p_val),
+        }
+        print(
+            f"{col}: mean(1)={g1.mean():.4f}, mean(0)={g0.mean():.4f}, "
+            f"diff={diff:.4f}, Welch p={p_val:.4g}"
+        )
+
+    corr_results = {}
+    for col in ["persons", "child", "hours"]:
+        r, p_val = stats.pearsonr(work[col], work["fish_per_hour_w"])
+        corr_results[col] = {"r": float(r), "p": float(p_val)}
+        print(f"corr(fish_per_hour_w, {col}) = {r:.4f}, p={p_val:.4g}")
+
+    out["binary_tests"] = binary_results
+    out["corr_tests"] = corr_results
+    return out
+
+
+def fit_classical_models(df: pd.DataFrame) -> dict:
+    print_section("CLASSICAL COUNT MODELS WITH CONTROLS")
+
+    y = df["fish_caught"]
+    x_cols = ["livebait", "camper", "persons", "child"]
+    X = sm.add_constant(df[x_cols])
+    offset = np.log(df["hours"])
+
+    poisson_hc3 = sm.GLM(y, X, family=sm.families.Poisson(), offset=offset).fit(cov_type="HC3")
+    print("Poisson GLM (HC3 robust SE) summary:")
+    print(poisson_hc3.summary())
+
+    overdispersion = float(poisson_hc3.pearson_chi2 / poisson_hc3.df_resid)
+    print(f"\nPoisson overdispersion ratio (Pearson chi2 / df): {overdispersion:.3f}")
+
+    nb2 = sm.NegativeBinomial(y, X, loglike_method="nb2", offset=offset).fit(disp=0)
+    print("\nNegative Binomial NB2 summary (preferred for overdispersed counts):")
+    print(nb2.summary())
+
+    nb2_params = nb2.params.drop("alpha")
+    nb2_pvalues = nb2.pvalues.drop("alpha")
+    nb2_rate_ratios = np.exp(nb2_params)
+
+    coef_table = pd.DataFrame(
         {
-            "mean_fish_per_hour": float(fish_per_hour.mean()),
-            "median_fish_per_hour": float(fish_per_hour.median()),
-            "std_fish_per_hour": float(fish_per_hour.std()),
+            "coef": nb2_params,
+            "rate_ratio": nb2_rate_ratios,
+            "p_value": nb2_pvalues,
         }
     )
+    print("\nNB2 coefficient table (with rate ratios):")
+    print(coef_table.round(4).to_string())
 
-    print("\n=== OLS: bivariate (fish_caught ~ hours) ===")
-    X_biv = sm.add_constant(df[[iv]])
-    ols_biv = sm.OLS(df[dv], X_biv).fit()
-    print(ols_biv.summary())
+    return {
+        "poisson_hc3": poisson_hc3,
+        "nb2": nb2,
+        "nb2_coef_table": coef_table,
+        "overdispersion": overdispersion,
+    }
 
-    print("\n=== OLS: controlled (fish_caught ~ hours + controls) ===")
-    X_ctl = sm.add_constant(df[[iv] + controls])
-    ols_ctl = sm.OLS(df[dv], X_ctl).fit()
-    print(ols_ctl.summary())
 
-    print("\n=== SmartAdditiveRegressor ===")
-    X_interp = df[predictors]
-    y = df[dv]
+def fit_interpretable_models(df: pd.DataFrame) -> dict:
+    print_section("AGENTIC_IMODELS INTERPRETABLE REGRESSORS")
 
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y)
-    smart_effects = to_native(smart.feature_effects())
-    print(smart)
-    print("Feature effects:")
-    print(json.dumps(smart_effects, indent=2))
+    feature_cols = ["livebait", "camper", "persons", "child", "hours"]
+    X = df[feature_cols]
+    y = df["fish_caught"]
 
-    print("\n=== HingeEBMRegressor ===")
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y)
-    hinge_effects = to_native(hinge.feature_effects())
-    print(hinge)
-    print("Feature effects:")
-    print(json.dumps(hinge_effects, indent=2))
+    print("Feature mapping used by some model printouts:")
+    for i, col in enumerate(feature_cols):
+        print(f"x{i} -> {col}")
 
-    b_coef = float(ols_biv.params[iv])
-    b_p = float(ols_biv.pvalues[iv])
-    c_coef = float(ols_ctl.params[iv])
-    c_p = float(ols_ctl.pvalues[iv])
+    model_classes = [
+        SmartAdditiveRegressor,      # honest, good for shape
+        HingeEBMRegressor,           # high-rank decoupled model
+        SparseSignedBasisPursuitRegressor,  # honest sparse basis + zeroing evidence
+    ]
 
-    smart_iv = smart_effects.get(iv, {})
-    hinge_iv = hinge_effects.get(iv, {})
-    smart_imp = float(smart_iv.get("importance", 0.0))
-    hinge_imp = float(hinge_iv.get("importance", 0.0))
+    model_summaries = {}
 
-    robust_positive = (
-        (b_coef > 0)
-        and (c_coef > 0)
-        and ("positive" in str(hinge_iv.get("direction", "")).lower())
-        and (
-            "positive" in str(smart_iv.get("direction", "")).lower()
-            or "increasing" in str(smart_iv.get("direction", "")).lower()
+    for cls in model_classes:
+        model = cls().fit(X, y)
+        preds = model.predict(X)
+        r2 = r2_score(y, preds)
+        mae = mean_absolute_error(y, preds)
+
+        perm = permutation_importance(
+            model,
+            X,
+            y,
+            n_repeats=25,
+            random_state=0,
+            scoring="neg_mean_squared_error",
         )
-    )
+        importances = {
+            feature_cols[i]: float(perm.importances_mean[i]) for i in range(len(feature_cols))
+        }
+        ranked = sorted(importances.items(), key=lambda kv: kv[1], reverse=True)
 
-    if robust_positive and c_p < 0.05 and b_p < 0.05:
-        score = 80.0
-    elif robust_positive and c_p < 0.10:
-        score = 60.0
-    elif robust_positive and c_p < 0.20:
-        score = 48.0
-    elif robust_positive and b_p < 0.05:
-        score = 42.0
-    elif b_p < 0.10:
-        score = 30.0
-    else:
-        score = 12.0
+        print(f"\n--- {cls.__name__} ---")
+        print(f"In-sample R^2: {r2:.4f} | MAE: {mae:.4f}")
+        print("Permutation importance ranking (higher => more predictive impact):")
+        for name, val in ranked:
+            print(f"  {name}: {val:.6f}")
+        print("\nPrinted model form:")
+        print(model)
 
-    if smart_imp >= 0.50:
+        model_summaries[cls.__name__] = {
+            "r2": float(r2),
+            "mae": float(mae),
+            "importances": importances,
+            "model_text": str(model),
+        }
+
+    return model_summaries
+
+
+def build_conclusion(
+    info: dict,
+    bivariate: dict,
+    classical: dict,
+    model_summaries: dict,
+) -> dict:
+    nb2 = classical["nb2"]
+    coef = classical["nb2_coef_table"]
+
+    weighted_rate = bivariate["weighted_rate"]
+    llr_p = float(nb2.llr_pvalue)
+
+    p_livebait = float(coef.loc["livebait", "p_value"])
+    p_persons = float(coef.loc["persons", "p_value"])
+    p_camper = float(coef.loc["camper", "p_value"])
+    p_child = float(coef.loc["child", "p_value"])
+
+    rr_livebait = float(coef.loc["livebait", "rate_ratio"])
+    rr_persons = float(coef.loc["persons", "rate_ratio"])
+
+    # Calibrated Likert score for: "Do meaningful factors influence fish caught per hour?"
+    score = 50
+    if llr_p < 1e-6:
+        score += 12
+    if p_persons < 0.01:
+        score += 15
+    if p_livebait < 0.01:
+        score += 10
+
+    # Bivariate corroboration
+    if bivariate["binary_tests"]["livebait"]["p"] < 0.05:
         score += 5
-    elif smart_imp >= 0.25:
-        score += 2
+    if bivariate["corr_tests"]["persons"]["p"] < 0.01:
+        score += 5
 
-    if hinge_imp >= 0.15:
-        score += 3
-    elif hinge_imp >= 0.08:
-        score += 1
-
-    if c_p >= 0.05:
-        score -= 5
-    if c_p >= 0.10:
+    # Penalize uncertainty / null evidence on secondary covariates and overdispersion complexity
+    if p_camper > 0.1:
+        score -= 3
+    if p_child > 0.1:
+        score -= 3
+    if classical["overdispersion"] > 5:
         score -= 3
 
-    response = clamp_int(score)
+    # Sparse model zeroing as explicit null evidence for some features.
+    sparse_text = model_summaries["SparseSignedBasisPursuitRegressor"]["model_text"]
+    if "Zero-contribution features" in sparse_text:
+        score -= 2
 
-    confounders = []
-    for var in controls:
-        coef = float(ols_ctl.params[var])
-        pval = float(ols_ctl.pvalues[var])
-        direction = "positive" if coef > 0 else "negative"
-        sig = "(p<0.05)" if pval < 0.05 else "(ns/marginal)"
-        confounders.append(f"{var}: {direction} {sig}")
+    score = int(np.clip(score, 0, 100))
 
+    question = info.get("research_questions", ["Research question not provided"])[0]
     explanation = (
-        f"Primary test used DV={dv} and IV={iv}. Bivariate OLS shows a positive association "
-        f"(coef={b_coef:.3f}, p={b_p:.4f}). With controls ({', '.join(controls)}), the hours effect stays positive "
-        f"but weakens to marginal significance (coef={c_coef:.3f}, p={c_p:.4f}), so the relationship is partial rather "
-        f"than unequivocally strong. SmartAdditive ranks hours #{smart_iv.get('rank', 'NA')} with importance "
-        f"{smart_imp:.1%} and direction '{smart_iv.get('direction', 'unknown')}', showing a nonlinear increasing shape "
-        f"with stronger gains at higher hour ranges (threshold-like pattern). HingeEBM also keeps hours positive, "
-        f"rank #{hinge_iv.get('rank', 'NA')} with importance {hinge_imp:.1%}, supporting robustness of direction across "
-        f"interpretable models. Key confounders in controlled OLS are {', '.join(confounders)}; notably persons (+) and "
-        f"child (-) are strong, which explains why the pure hours effect attenuates after adjustment. Estimated average catch "
-        f"rate is {fish_per_hour.mean():.2f} fish/hour (median {fish_per_hour.median():.2f}). Overall evidence supports "
-        f"a real but moderate positive effect of hours on fish caught."
+        f"Question: {question} Weighted mean catch rate is {weighted_rate:.3f} fish/hour "
+        f"(824 fish over 1381.495 hours). In overdispersion-aware NB2 count models with "
+        f"log(hours) offset and controls, persons is strongly positive (IRR={rr_persons:.2f}, "
+        f"p={p_persons:.2e}) and livebait is also positive (IRR={rr_livebait:.2f}, p={p_livebait:.3g}), "
+        f"while camper and child are not statistically significant (p={p_camper:.3g}, {p_child:.3g}). "
+        f"Poisson HC3 keeps the same main significance pattern but shows heavy overdispersion "
+        f"(ratio={classical['overdispersion']:.2f}), so NB2 is emphasized. SmartAdditive and HingeEBM "
+        f"both rank persons/livebait as strong positive contributors and SmartAdditive shows a nonlinear "
+        f"hours shape; SparseSignedBasis keeps only persons/child/hours active and zeroes livebait/camper, "
+        f"adding some null evidence for secondary effects. Overall evidence that key factors materially "
+        f"influence fish caught per hour is strong but not universal across all covariates."
     )
 
-    payload = {"response": response, "explanation": explanation}
-    Path("conclusion.txt").write_text(json.dumps(payload, ensure_ascii=True))
+    return {"response": score, "explanation": explanation}
 
-    print("\n=== Final conclusion payload ===")
-    print(json.dumps(payload, indent=2))
+
+def main() -> None:
+    with open("info.json", "r", encoding="utf-8") as f:
+        info = json.load(f)
+
+    print_section("RESEARCH QUESTION")
+    print(info.get("research_questions", []))
+
+    df = pd.read_csv("fish.csv")
+
+    summarize_dataframe(df)
+    bivariate = bivariate_checks(df)
+    classical = fit_classical_models(df)
+    model_summaries = fit_interpretable_models(df)
+
+    result = build_conclusion(info, bivariate, classical, model_summaries)
+
+    with open("conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(result, f)
+
+    print_section("FINAL CONCLUSION JSON")
+    print(json.dumps(result, indent=2))
+    print("\nWrote conclusion.txt")
 
 
 if __name__ == "__main__":

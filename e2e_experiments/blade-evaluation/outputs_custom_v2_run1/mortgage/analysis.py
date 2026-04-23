@@ -1,303 +1,333 @@
 import json
-from pathlib import Path
+import warnings
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 from scipy import stats
 
-from interp_models import HingeEBMRegressor, SmartAdditiveRegressor
+from agentic_imodels import (
+    HingeEBMRegressor,
+    HingeGAMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def infer_variables(question: str, columns):
-    q = question.lower()
-    cols_lower = {c.lower(): c for c in columns}
+warnings.filterwarnings("ignore", category=FutureWarning)
 
-    # IV inference
-    iv = None
-    if "gender" in q and "female" in cols_lower:
-        iv = cols_lower["female"]
+
+@dataclass
+class ModelEvidence:
+    model_name: str
+    female_effect: float
+    female_active: bool
+    female_importance_share: float | None
+
+
+def load_metadata(path: str = "info.json"):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def prepare_data(path: str = "mortgage.csv") -> pd.DataFrame:
+    df = pd.read_csv(path)
+    if "Unnamed: 0" in df.columns:
+        df = df.drop(columns=["Unnamed: 0"])
+
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    return df
+
+
+def print_exploration(df: pd.DataFrame, features: list[str], outcome: str, iv: str):
+    print("\\n=== DATA OVERVIEW ===")
+    print(f"Rows: {len(df)}")
+    print(f"Columns: {len(df.columns)}")
+    print("Missing values per column:")
+    print(df.isna().sum().sort_values(ascending=False).to_string())
+
+    print("\\n=== SUMMARY STATISTICS ===")
+    print(df.describe().T.to_string())
+
+    print("\\n=== DISTRIBUTIONS ===")
+    binary_cols = [c for c in df.columns if set(df[c].dropna().unique()).issubset({0, 1})]
+    print("Binary-variable means (proportions):")
+    for c in binary_cols:
+        print(f"  {c}: {df[c].mean():.4f}")
+
+    numeric_for_hist = ["housing_expense_ratio", "PI_ratio", "loan_to_value"]
+    for c in numeric_for_hist:
+        if c in df.columns:
+            hist, bin_edges = np.histogram(df[c].dropna().values, bins=10)
+            print(f"\\nHistogram for {c}:")
+            for i in range(len(hist)):
+                print(f"  [{bin_edges[i]:.3f}, {bin_edges[i+1]:.3f}): {int(hist[i])}")
+
+    print("\\n=== CORRELATIONS ===")
+    corr = df[features + [outcome]].corr(numeric_only=True)
+    corr_with_outcome = corr[outcome].drop(outcome).sort_values(key=np.abs, ascending=False)
+    print(f"Correlation with {outcome}:")
+    print(corr_with_outcome.to_string())
+    print(f"\\nCorrelation {iv} vs {outcome}: {corr.loc[iv, outcome]:.4f}")
+
+
+def run_bivariate_tests(df: pd.DataFrame, iv: str, outcome: str):
+    print("\\n=== BIVARIATE TESTS ===")
+    d = df[[iv, outcome]].dropna()
+    ctab = pd.crosstab(d[iv], d[outcome])
+    print("Contingency table (female x accept):")
+    print(ctab.to_string())
+
+    chi2, p_chi2, dof, expected = stats.chi2_contingency(ctab)
+    print(f"Chi-square: chi2={chi2:.6f}, dof={dof}, p={p_chi2:.6g}")
+    print("Expected frequencies:")
+    print(pd.DataFrame(expected, index=ctab.index, columns=ctab.columns).to_string())
+
+    acceptance_by_gender = d.groupby(iv)[outcome].mean()
+    diff = acceptance_by_gender.loc[1.0] - acceptance_by_gender.loc[0.0]
+    print("Acceptance rate by gender:")
+    for k, v in acceptance_by_gender.items():
+        print(f"  female={int(k)}: {v:.4f}")
+    print(f"Rate difference (female - male): {diff:.6f}")
+
+    return {
+        "chi2": chi2,
+        "p_chi2": p_chi2,
+        "rate_female": acceptance_by_gender.loc[1.0],
+        "rate_male": acceptance_by_gender.loc[0.0],
+        "rate_diff": diff,
+    }
+
+
+def run_controlled_logit(df: pd.DataFrame, outcome: str, iv: str, controls: list[str]):
+    print("\\n=== CONTROLLED LOGISTIC REGRESSION (statsmodels.Logit) ===")
+    cols = [outcome, iv] + controls
+    d = df[cols].dropna().copy()
+
+    X = sm.add_constant(d[[iv] + controls], has_constant="add")
+    y = d[outcome]
+
+    logit = sm.Logit(y, X)
+    result = logit.fit(disp=0, maxiter=200)
+
+    print(result.summary())
+
+    beta = float(result.params[iv])
+    pval = float(result.pvalues[iv])
+    ci_low, ci_high = result.conf_int().loc[iv]
+    odds_ratio = float(np.exp(beta))
+    or_ci_low, or_ci_high = float(np.exp(ci_low)), float(np.exp(ci_high))
+
+    print(
+        f"\\nFemale coefficient: beta={beta:.6f}, p={pval:.6g}, "
+        f"OR={odds_ratio:.6f}, OR 95% CI=({or_ci_low:.6f}, {or_ci_high:.6f})"
+    )
+
+    return {
+        "n": len(d),
+        "beta": beta,
+        "pval": pval,
+        "or": odds_ratio,
+        "or_ci_low": or_ci_low,
+        "or_ci_high": or_ci_high,
+    }
+
+
+def hinge_ebm_effect(model: HingeEBMRegressor, feature_idx: int) -> float:
+    n_sel = len(model.selected_)
+    coefs = model.lasso_.coef_
+    effective = {int(model.selected_[i]): float(coefs[i]) for i in range(n_sel)}
+
+    for idx, (feat_idx, knot, direction) in enumerate(model.hinge_info_):
+        j_orig = int(model.selected_[feat_idx])
+        c = float(coefs[n_sel + idx])
+        if direction == "pos":
+            effective[j_orig] = effective.get(j_orig, 0.0) + c
+        else:
+            effective[j_orig] = effective.get(j_orig, 0.0) - c
+
+    return float(effective.get(feature_idx, 0.0))
+
+
+def extract_model_evidence(model, model_name: str, female_idx: int) -> ModelEvidence:
+    if isinstance(model, SmartAdditiveRegressor):
+        fi = np.asarray(model.feature_importances_, dtype=float)
+        total = float(fi.sum())
+        share = (float(fi[female_idx]) / total) if total > 0 else None
+        slope = float(model.linear_approx_.get(female_idx, (0.0, 0.0, 1.0))[0])
+        active = bool(female_idx in model.shape_functions_ and (share is not None and share >= 0.01))
+        effect = slope if active else 0.0
+        return ModelEvidence(model_name, effect, active, share)
+
+    if isinstance(model, HingeGAMRegressor):
+        fi = np.asarray(model.feature_importances_, dtype=float)
+        total = float(fi.sum())
+        share = (float(fi[female_idx]) / total) if total > 0 else None
+        slope = float(model.linear_approx_.get(female_idx, (0.0, 0.0, 1.0))[0])
+        active = bool(female_idx in model.shape_functions_ and (share is not None and share >= 0.01))
+        effect = slope if active else 0.0
+        return ModelEvidence(model_name, effect, active, share)
+
+    if isinstance(model, HingeEBMRegressor):
+        effect = hinge_ebm_effect(model, female_idx)
+        active = abs(effect) > 1e-6
+        return ModelEvidence(model_name, effect, active, None)
+
+    if isinstance(model, WinsorizedSparseOLSRegressor):
+        if female_idx in model.support_:
+            j = list(model.support_).index(female_idx)
+            effect = float(model.ols_coef_[j])
+            active = True
+        else:
+            effect = 0.0
+            active = False
+        return ModelEvidence(model_name, effect, active, None)
+
+    return ModelEvidence(model_name, 0.0, False, None)
+
+
+def run_interpretable_models(df: pd.DataFrame, features: list[str], outcome: str, iv: str):
+    print("\\n=== INTERPRETABLE MODELS (agentic_imodels) ===")
+    d = df[[outcome] + features].dropna().copy()
+    X = d[features]
+    y = d[outcome].astype(float)
+    female_idx = features.index(iv)
+
+    model_classes = [
+        SmartAdditiveRegressor,      # honest model for shape
+        HingeGAMRegressor,           # honest hinge model (zeroing evidence)
+        HingeEBMRegressor,           # high-rank decoupled model for robustness
+        WinsorizedSparseOLSRegressor # honest sparse linear with lasso-style selection
+    ]
+
+    evidence = []
+    for cls in model_classes:
+        print(f"\\n--- Fitting {cls.__name__} ---")
+        model = cls()
+        model.fit(X, y)
+        print(model)
+
+        ev = extract_model_evidence(model, cls.__name__, female_idx)
+        evidence.append(ev)
+        if ev.female_importance_share is None:
+            print(
+                f"[Female effect summary] active={ev.female_active}, "
+                f"effect={ev.female_effect:.6f}"
+            )
+        else:
+            print(
+                f"[Female effect summary] active={ev.female_active}, "
+                f"effect={ev.female_effect:.6f}, "
+                f"importance_share={ev.female_importance_share:.6f}"
+            )
+
+    return evidence
+
+
+def calibrate_score(
+    bivariate: dict,
+    controlled: dict,
+    model_evidence: list[ModelEvidence],
+) -> tuple[int, str]:
+    active_effects = [ev.female_effect for ev in model_evidence if ev.female_active]
+    zeroed_count = sum(1 for ev in model_evidence if not ev.female_active)
+    pos_count = sum(1 for e in active_effects if e > 0)
+    neg_count = sum(1 for e in active_effects if e < 0)
+
+    score = 50.0
+
+    # Controlled model carries more weight than bivariate.
+    p = controlled["pval"]
+    beta = controlled["beta"]
+    if p < 0.01:
+        score += 24
+    elif p < 0.05:
+        score += 14
+    elif p < 0.10:
+        score += 6
     else:
-        for c in columns:
-            if c.lower() in q:
-                iv = c
-                break
-    if iv is None and "female" in columns:
-        iv = "female"
+        score -= 16
 
-    # DV inference
-    dv = None
-    if any(k in q for k in ["approve", "approval", "accepted", "accept"]):
-        if "accept" in columns:
-            dv = "accept"
-    if dv is None and any(k in q for k in ["deny", "denied", "rejected"]):
-        if "deny" in columns:
-            dv = "deny"
-    if dv is None:
-        if "accept" in columns:
-            dv = "accept"
-        elif "deny" in columns:
-            dv = "deny"
+    if beta > 0:
+        score += 6
+    elif beta < 0:
+        score -= 6
 
-    return iv, dv
+    # Bivariate evidence is weak here; include but downweight.
+    p_bi = bivariate["p_chi2"]
+    if p_bi < 0.05:
+        score += 8
+    else:
+        score -= 4
 
+    # Robustness across interpretable models.
+    if pos_count >= 3:
+        score += 10
+    elif pos_count == 2:
+        score += 4
 
-def direction_from_smart(direction_text: str):
-    if not direction_text:
-        return None
-    txt = direction_text.lower()
-    if "positive" in txt or "increasing" in txt:
-        return 1
-    if "negative" in txt or "decreasing" in txt:
-        return -1
-    return 0
+    if neg_count > 0:
+        score -= 8
 
+    # Zeroing in sparse/hinge models is meaningful null evidence.
+    score -= 4 * zeroed_count
 
-def safe_top_effects(effects: dict, n=5, exclude=None):
-    exclude = set(exclude or [])
-    rows = []
-    for feat, meta in effects.items():
-        imp = float(meta.get("importance", 0.0))
-        rank = int(meta.get("rank", 0) or 0)
-        if feat in exclude or imp <= 0:
-            continue
-        rows.append((feat, imp, rank, meta.get("direction", "")))
-    rows.sort(key=lambda x: (x[2] if x[2] > 0 else 10**9, -x[1], x[0]))
-    return rows[:n]
+    # Cap and round to integer Likert.
+    score = int(round(min(100, max(0, score))))
+
+    direction = "higher acceptance odds for female applicants" if beta > 0 else "lower acceptance odds for female applicants"
+    explanation = (
+        f"Bivariate evidence is null (chi-square p={bivariate['p_chi2']:.3f}; "
+        f"acceptance rates female={bivariate['rate_female']:.3f}, male={bivariate['rate_male']:.3f}). "
+        f"After controlling for credit and financial covariates, female is statistically significant "
+        f"in logistic regression (beta={controlled['beta']:.3f}, p={controlled['pval']:.3f}, "
+        f"OR={controlled['or']:.2f}, 95% CI {controlled['or_ci_low']:.2f}-{controlled['or_ci_high']:.2f}), "
+        f"indicating {direction}. Interpretable models mostly agree on positive female effects "
+        f"(positive active effects={pos_count}, negative active effects={neg_count}, zeroed/excluded={zeroed_count}). "
+        f"Because significance is modest and one model zeroes female, evidence is moderate rather than strong."
+    )
+
+    return score, explanation
 
 
 def main():
-    root = Path(".")
-    info = json.loads((root / "info.json").read_text())
-    question = info["research_questions"][0]
-
-    df = pd.read_csv(root / "mortgage.csv")
-
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    iv, dv = infer_variables(question, df.columns.tolist())
-
-    if iv is None or dv is None:
-        raise ValueError(f"Could not infer IV/DV from question: iv={iv}, dv={dv}")
-
-    # Exclude obvious non-controls/leakage columns
-    outcome_complements = {"accept", "deny", "denied_PMI"}
-    exclude_controls = {"Unnamed: 0", iv, *outcome_complements}
-
-    controls = [c for c in numeric_cols if c not in exclude_controls]
-
-    use_cols = [iv, dv] + controls
-    model_df = df[use_cols].dropna().copy()
-
-    print("=" * 80)
+    meta = load_metadata("info.json")
+    question = meta.get("research_questions", [""])[0]
     print("Research question:")
     print(question)
-    print(f"Inferred IV: {iv}")
-    print(f"Inferred DV: {dv}")
-    print(f"Rows used after dropping missing values: {len(model_df)} / {len(df)}")
-    print("=" * 80)
 
-    # Step 1: Explore
-    print("\n[Step 1] Summary statistics")
-    print(model_df[[iv, dv] + controls].describe().T)
+    df = prepare_data("mortgage.csv")
 
-    print("\n[Step 1] Distributions")
-    print(f"{dv} value counts:\n{model_df[dv].value_counts(dropna=False).sort_index()}")
-    print(f"{iv} value counts:\n{model_df[iv].value_counts(dropna=False).sort_index()}")
+    outcome = "accept"   # 1 = approved
+    iv = "female"
+    controls = [
+        "black",
+        "housing_expense_ratio",
+        "self_employed",
+        "married",
+        "mortgage_credit",
+        "consumer_credit",
+        "bad_history",
+        "PI_ratio",
+        "loan_to_value",
+    ]
+    features = [iv] + controls
 
-    print("\n[Step 1] Bivariate relationship")
-    group_means = model_df.groupby(iv)[dv].mean()
-    print(f"Mean {dv} by {iv}:\n{group_means}")
-    corr_iv_dv = float(model_df[[iv, dv]].corr().iloc[0, 1])
-    print(f"Pearson correlation ({iv}, {dv}): {corr_iv_dv:.4f}")
+    print_exploration(df, features, outcome, iv)
+    bivariate = run_bivariate_tests(df, iv, outcome)
+    controlled = run_controlled_logit(df, outcome, iv, controls)
+    model_evidence = run_interpretable_models(df, features, outcome, iv)
 
-    # Bivariate logistic (if DV binary)
-    unique_y = set(model_df[dv].unique().tolist())
-    is_binary_y = unique_y.issubset({0, 1}) and len(unique_y) == 2
-    biv_p = np.nan
-    biv_coef = np.nan
-    if is_binary_y:
-        X_biv = sm.add_constant(model_df[[iv]], has_constant="add")
-        biv_logit = sm.Logit(model_df[dv], X_biv).fit(disp=False)
-        biv_coef = float(biv_logit.params[iv])
-        biv_p = float(biv_logit.pvalues[iv])
-        print(f"Bivariate logit {iv} coef={biv_coef:.4f}, p={biv_p:.4g}, OR={np.exp(biv_coef):.3f}")
+    response, explanation = calibrate_score(bivariate, controlled, model_evidence)
+    result = {"response": int(response), "explanation": explanation}
 
-    # Step 2: Controlled models
-    print("\n[Step 2] Controlled models")
-    X = sm.add_constant(model_df[[iv] + controls], has_constant="add")
-    y = model_df[dv]
+    with open("conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=True)
 
-    if is_binary_y:
-        logit_model = sm.Logit(y, X).fit(disp=False, maxiter=1000)
-        print("\nControlled logistic regression summary:")
-        print(logit_model.summary())
-        controlled_coef = float(logit_model.params[iv])
-        controlled_p = float(logit_model.pvalues[iv])
-        controlled_or = float(np.exp(controlled_coef))
-    else:
-        logit_model = None
-        controlled_coef = np.nan
-        controlled_p = np.nan
-        controlled_or = np.nan
-
-    ols_model = sm.OLS(y, X).fit()
-    print("\nControlled OLS summary (linear probability if DV is binary):")
-    print(ols_model.summary())
-    ols_coef = float(ols_model.params[iv])
-    ols_p = float(ols_model.pvalues[iv])
-
-    # Step 3: Interpretable models
-    print("\n[Step 3] Interpretable models")
-    X_interp = model_df[[iv] + controls]
-
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y)
-    smart_effects = smart.feature_effects()
-    print("\nSmartAdditiveRegressor model:")
-    print(smart)
-    print("\nSmartAdditive feature effects:")
-    print(smart_effects)
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y)
-    hinge_effects = hinge.feature_effects()
-    print("\nHingeEBMRegressor model:")
-    print(hinge)
-    print("\nHingeEBM feature effects:")
-    print(hinge_effects)
-
-    iv_smart = smart_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0})
-    iv_hinge = hinge_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0})
-
-    smart_imp = float(iv_smart.get("importance", 0.0) or 0.0)
-    hinge_imp = float(iv_hinge.get("importance", 0.0) or 0.0)
-
-    # Basic bivariate mean difference for interpretability
-    if 0 in group_means.index and 1 in group_means.index:
-        mean_diff = float(group_means.loc[1] - group_means.loc[0])
-    else:
-        # Fallback for unexpected coding
-        vals = group_means.values
-        mean_diff = float(vals[-1] - vals[0]) if len(vals) >= 2 else 0.0
-
-    # Likert score synthesis (0-100)
-    score = 5.0
-
-    # Bivariate evidence
-    if abs(mean_diff) > 0.02:
-        score += 12
-    elif abs(mean_diff) > 0.005:
-        score += 6
-    if not np.isnan(biv_p):
-        if biv_p < 0.05:
-            score += 8
-        elif biv_p < 0.10:
-            score += 4
-
-    # Controlled logistic evidence
-    if not np.isnan(controlled_p):
-        if controlled_p < 0.01:
-            score += 35
-        elif controlled_p < 0.05:
-            score += 28
-        elif controlled_p < 0.10:
-            score += 18
-
-    # Controlled OLS evidence
-    if ols_p < 0.01:
-        score += 14
-    elif ols_p < 0.05:
-        score += 10
-    elif ols_p < 0.10:
-        score += 6
-
-    # Effect size from OR
-    if not np.isnan(controlled_or):
-        log_or = abs(np.log(controlled_or))
-        if log_or > 0.5:
-            score += 8
-        elif log_or > 0.2:
-            score += 5
-        elif log_or > 0.1:
-            score += 2
-
-    # Interpretable model support
-    if smart_imp >= 0.05:
-        score += 15
-    elif smart_imp >= 0.02:
-        score += 8
-    elif smart_imp >= 0.01:
-        score += 4
-
-    if hinge_imp >= 0.05:
-        score += 12
-    elif hinge_imp >= 0.02:
-        score += 6
-    elif hinge_imp >= 0.01:
-        score += 3
-
-    # Consistency penalty
-    dir_signs = []
-    if abs(mean_diff) > 1e-9:
-        dir_signs.append(1 if mean_diff > 0 else -1)
-    if not np.isnan(controlled_coef) and abs(controlled_coef) > 1e-9:
-        dir_signs.append(1 if controlled_coef > 0 else -1)
-    smart_dir = direction_from_smart(str(iv_smart.get("direction", "")))
-    if smart_dir in (-1, 1):
-        dir_signs.append(smart_dir)
-    hinge_dir = str(iv_hinge.get("direction", "")).lower()
-    if hinge_dir == "positive":
-        dir_signs.append(1)
-    elif hinge_dir == "negative":
-        dir_signs.append(-1)
-
-    if dir_signs and (any(s > 0 for s in dir_signs) and any(s < 0 for s in dir_signs)):
-        score -= 12
-    elif smart_imp < 0.01 and hinge_imp < 0.03 and not np.isnan(controlled_p) and controlled_p < 0.05:
-        score -= 6
-
-    # Caps aligned with rubric
-    if (np.isnan(controlled_p) or controlled_p >= 0.10) and smart_imp < 0.02 and hinge_imp < 0.02:
-        score = min(score, 25)
-    if (not np.isnan(controlled_p) and controlled_p < 0.05) and smart_imp < 0.01 and hinge_imp < 0.03:
-        score = min(score, 55)
-
-    score = int(np.clip(round(score), 0, 100))
-
-    smart_top = safe_top_effects(smart_effects, n=4, exclude={iv})
-    hinge_top = safe_top_effects(hinge_effects, n=4, exclude={iv})
-
-    smart_top_str = ", ".join(
-        [f"{f} (rank {r}, imp {imp:.1%}, {d})" for f, imp, r, d in smart_top]
-    ) or "none"
-    hinge_top_str = ", ".join(
-        [f"{f} (rank {r}, imp {imp:.1%}, {d})" for f, imp, r, d in hinge_top]
-    ) or "none"
-
-    explanation = (
-        f"Question: {question} Using DV={dv} and IV={iv}. "
-        f"Bivariate evidence is weak (mean {dv} difference for {iv}=1 vs 0: {mean_diff:+.4f}; "
-        f"corr={corr_iv_dv:+.4f}; bivariate logit p={biv_p:.4g} if available). "
-        f"After controls, logistic regression gives {iv} coef={controlled_coef:+.4f} "
-        f"(OR={controlled_or:.3f}, p={controlled_p:.4g}), while controlled OLS gives coef={ols_coef:+.4f} "
-        f"(p={ols_p:.4g}). "
-        f"In interpretable models, SmartAdditive shows {iv} direction='{iv_smart.get('direction')}', "
-        f"importance={smart_imp:.1%}, rank={iv_smart.get('rank')}; this suggests "
-        f"{'little to no nonlinear/threshold signal' if smart_imp < 0.01 else 'a measurable shaped effect'}. "
-        f"HingeEBM shows {iv} direction='{iv_hinge.get('direction')}', importance={hinge_imp:.1%}, "
-        f"rank={iv_hinge.get('rank')}. "
-        f"Major confounders are stronger than {iv}: SmartAdditive top features: {smart_top_str}. "
-        f"HingeEBM top features: {hinge_top_str}. "
-        f"Overall, the gender effect appears positive after controls but small and not fully robust across "
-        f"interpretable models, so evidence is partial rather than strong."
-    )
-
-    result = {"response": score, "explanation": explanation}
-
-    with open(root / "conclusion.txt", "w", encoding="utf-8") as f:
-        f.write(json.dumps(result))
-
-    print("\n[Step 4] Wrote conclusion.txt:")
+    print("\\n=== FINAL CALIBRATED CONCLUSION ===")
     print(json.dumps(result, indent=2))
 
 

@@ -1,125 +1,117 @@
-import json
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from scipy import stats
+import json
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(__file__))
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'agentic_imodels'))
+from agentic_imodels import SmartAdditiveRegressor, HingeGAMRegressor
 
-# Load data
-df = pd.read_csv("amtl.csv")
+# ── 1. Load data ──────────────────────────────────────────────────────────────
+df = pd.read_csv('amtl.csv')
 print("Shape:", df.shape)
 print(df.head())
-print("\nGenus counts:\n", df['genus'].value_counts())
-print("\nSummary stats:\n", df.describe())
+print("\nGenus counts:")
+print(df['genus'].value_counts())
+print("\nTooth class counts:")
+print(df['tooth_class'].value_counts())
 
-# Create DV: AMTL rate
+# Outcome: proportion of teeth lost
 df['amtl_rate'] = df['num_amtl'] / df['sockets']
 print("\nAMTL rate by genus:")
 print(df.groupby('genus')['amtl_rate'].describe())
 
-# IV: is_homo_sapiens
-df['is_homo'] = (df['genus'] == 'Homo sapiens').astype(int)
+# ── 2. Classical GLM (Binomial) ──────────────────────────────────────────────
+# Encode species: is_human indicator
+df['is_human'] = (df['genus'] == 'Homo sapiens').astype(int)
+df['is_pan'] = (df['genus'] == 'Pan').astype(int)
+df['is_pongo'] = (df['genus'] == 'Pongo').astype(int)
 
-# Bivariate correlation
-from scipy import stats
-homo_rates = df[df['is_homo'] == 1]['amtl_rate']
-nonhomo_rates = df[df['is_homo'] == 0]['amtl_rate']
-t_stat, p_val = stats.ttest_ind(homo_rates, nonhomo_rates)
-print(f"\nBivariate t-test: t={t_stat:.4f}, p={p_val:.4e}")
-print(f"Homo mean AMTL rate: {homo_rates.mean():.4f}")
-print(f"Non-homo mean AMTL rate: {nonhomo_rates.mean():.4f}")
+# Tooth class dummies (reference = Anterior)
+tooth_dummies = pd.get_dummies(df['tooth_class'], drop_first=True, prefix='tooth')
 
-# Encode tooth_class as dummies
-tooth_dummies = pd.get_dummies(df['tooth_class'], prefix='tooth', drop_first=True).astype(float)
+df_model = pd.concat([df[['is_human', 'is_pan', 'is_pongo', 'age', 'prob_male', 'amtl_rate']], tooth_dummies], axis=1)
+df_model = df_model.dropna()
 
-# OLS with controls
-feature_cols = ['is_homo', 'age', 'prob_male'] + list(tooth_dummies.columns)
-X_ols = pd.concat([df[['is_homo', 'age', 'prob_male']], tooth_dummies], axis=1)
-X_ols = sm.add_constant(X_ols)
-model = sm.OLS(df['amtl_rate'], X_ols).fit()
-print("\n=== OLS REGRESSION ===")
-print(model.summary())
+X_glm = sm.add_constant(df_model.drop(columns='amtl_rate').astype(float))
+y_glm = df_model['amtl_rate']
 
-# Prepare X for interpretable models (all numeric, no string cols)
-X_interp = pd.concat([df[['is_homo', 'age', 'prob_male']], tooth_dummies], axis=1)
-y = df['amtl_rate']
+# Binomial GLM using proportion outcome with frequency weights
+n_success = df.loc[df_model.index, 'num_amtl'].values.astype(float)
+n_total = df.loc[df_model.index, 'sockets'].values.astype(float)
+endog = np.stack([n_success, n_total - n_success], axis=1)
+glm_model = sm.GLM(endog, X_glm, family=sm.families.Binomial()).fit()
+print("\n=== GLM Binomial Summary ===")
+print(glm_model.summary())
 
-# SmartAdditiveRegressor
+# Bivariate comparison: t-test on AMTL rates
+human_rates = df.loc[df['genus'] == 'Homo sapiens', 'amtl_rate'].dropna()
+nonhuman_rates = df.loc[df['genus'] != 'Homo sapiens', 'amtl_rate'].dropna()
+tstat, pval = stats.ttest_ind(human_rates, nonhuman_rates)
+print(f"\nBivariate t-test: human vs non-human AMTL rate")
+print(f"  Human mean: {human_rates.mean():.4f}, Non-human mean: {nonhuman_rates.mean():.4f}")
+print(f"  t={tstat:.3f}, p={pval:.4e}")
+
+# ── 3. Interpretable models ──────────────────────────────────────────────────
+feature_cols = ['is_human', 'is_pan', 'is_pongo', 'age', 'prob_male'] + list(tooth_dummies.columns)
+X_interp = df_model[feature_cols]
+y_interp = df_model['amtl_rate']
+
 print("\n=== SmartAdditiveRegressor ===")
-smart = SmartAdditiveRegressor(n_rounds=200)
-smart.fit(X_interp, y)
-print(smart)
-smart_effects = smart.feature_effects()
-print("\nFeature effects:", smart_effects)
+sar = SmartAdditiveRegressor()
+sar.fit(X_interp, y_interp)
+print(sar)
 
-# HingeEBMRegressor (skip if interpret not available)
-try:
-    print("\n=== HingeEBMRegressor ===")
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y)
-    print(hinge)
-    hinge_effects = hinge.feature_effects()
-    print("\nFeature effects:", hinge_effects)
-except Exception as e:
-    print(f"HingeEBMRegressor skipped: {e}")
-    hinge_effects = {}
+print("\n=== HingeGAMRegressor ===")
+hgam = HingeGAMRegressor()
+hgam.fit(X_interp, y_interp)
+print(hgam)
 
-# Gather results for conclusion
-ols_coef_homo = model.params['is_homo']
-ols_pval_homo = model.pvalues['is_homo']
-smart_homo = smart_effects.get('is_homo', {})
-hinge_homo = hinge_effects.get('is_homo', {})
+# ── 4. Conclusion ─────────────────────────────────────────────────────────────
+is_human_coef = glm_model.params.get('is_human', None)
+is_human_pval = glm_model.pvalues.get('is_human', None)
+
+human_mean = human_rates.mean()
+nonhuman_mean = nonhuman_rates.mean()
 
 print(f"\nSummary:")
-print(f"OLS is_homo coef={ols_coef_homo:.4f}, p={ols_pval_homo:.4e}")
-print(f"SmartAdditive is_homo: {smart_homo}")
-print(f"HingeEBM is_homo: {hinge_homo}")
+print(f"  GLM is_human coef (log-odds): {is_human_coef:.4f}, p={is_human_pval:.4e}")
+print(f"  Bivariate: human={human_mean:.4f}, non-human={nonhuman_mean:.4f}")
 
-# Determine score and explanation
-is_significant = ols_pval_homo < 0.05
-positive_direction = ols_coef_homo > 0
-smart_imp = float(smart_homo.get('importance', 0))
-hinge_imp = float(hinge_homo.get('importance', 0)) if hinge_homo else 0.0
-
-# Score based on guidelines
-# OLS non-significant after controls, but SmartAdditive shows positive with ~6.6% importance
-# Bivariate very strong, but confounded by age (85.2% importance in SmartAdditive)
-if is_significant and positive_direction and (smart_imp > 0.05 or hinge_imp > 0.05):
-    score = 85
-elif is_significant and positive_direction:
-    score = 75
-elif not is_significant and positive_direction and smart_imp > 0.05:
-    score = 45
-elif not is_significant and positive_direction and smart_imp > 0.02:
-    score = 30
-elif not is_significant and not positive_direction:
-    score = 10
+# Calibrate Likert score
+# Strong significant effect persisting across models → 75-100
+# is_human coef direction: positive → humans have higher AMTL
+if is_human_pval < 0.001 and is_human_coef > 0:
+    score = 90
+    reasoning = "very strong evidence"
+elif is_human_pval < 0.05 and is_human_coef > 0:
+    score = 70
+    reasoning = "moderate evidence"
+elif is_human_pval >= 0.05 and is_human_coef > 0:
+    score = 35
+    reasoning = "weak/marginal evidence"
 else:
     score = 15
+    reasoning = "no or negative evidence"
 
 explanation = (
-    f"Bivariate analysis shows Homo sapiens have dramatically higher AMTL rates "
-    f"(mean={homo_rates.mean():.4f}) compared to non-human primates "
-    f"(mean={nonhomo_rates.mean():.4f}), t={t_stat:.3f}, p={p_val:.2e}. "
-    f"However, OLS with controls (age, sex, tooth class) reveals the human effect is NOT "
-    f"significant: is_homo coef={ols_coef_homo:.4f}, p={ols_pval_homo:.2e}. "
-    f"Age is the dominant driver (OLS coef=0.0064, p<0.001). "
-    f"SmartAdditiveRegressor confirms: age ranks 1st (importance=85.2%, nonlinear increasing trend), "
-    f"while is_homo is 2nd (importance=6.6%, positive linear direction). "
-    f"The large bivariate difference is largely explained by age composition differences: "
-    f"human specimens tend to be older, and older individuals lose more teeth regardless of species. "
-    f"After controlling for age, sex, and tooth class, the human-specific AMTL effect is small "
-    f"and statistically non-significant in OLS, though the SmartAdditive model still shows a modest "
-    f"positive direction for is_homo. Overall, the evidence for a distinctly human elevation in AMTL "
-    f"beyond what age explains is weak and inconsistent across models."
+    f"Research question: Do modern humans have higher AMTL compared to non-human primates "
+    f"(Pan, Pongo, Papio) after controlling for age, sex, and tooth class? "
+    f"Bivariate analysis: human mean AMTL rate={human_mean:.4f} vs non-human={nonhuman_mean:.4f} "
+    f"(t-test p={pval:.4e}). "
+    f"Binomial GLM with controls (age, prob_male, tooth class, genus dummies): "
+    f"is_human coefficient={is_human_coef:.4f} (log-odds), p={is_human_pval:.4e}. "
+    f"SmartAdditiveRegressor and HingeGAMRegressor both fitted to examine feature importance and shape. "
+    f"Evidence: {reasoning}. "
+    f"Conclusion: Humans show {'higher' if is_human_coef > 0 else 'lower'} AMTL than non-human primates "
+    f"after controlling for confounders. Score={score}/100."
 )
 
 result = {"response": score, "explanation": explanation}
-print(f"\nFinal result: {result}")
-
-with open("conclusion.txt", "w") as f:
+with open('conclusion.txt', 'w') as f:
     json.dump(result, f)
-print("conclusion.txt written.")
+
+print("\nconclusion.txt written.")
+print(json.dumps(result, indent=2))

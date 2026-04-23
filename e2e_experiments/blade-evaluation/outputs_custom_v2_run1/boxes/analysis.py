@@ -1,255 +1,279 @@
 import json
+import warnings
 from pathlib import Path
+import sys
+import glob
+
+# Ensure this script can find the project virtualenv packages when invoked with system python3.
+for site_dir in sorted(glob.glob('/home/chansingh/imodels-evolve/.venv/lib/python*/site-packages')):
+    if site_dir not in sys.path:
+        sys.path.append(site_dir)
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
-from scipy import stats
+from scipy.stats import pointbiserialr, chi2
+import statsmodels.formula.api as smf
+from sklearn.metrics import r2_score
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
-
-
-def safe_float(x, default=np.nan):
-    try:
-        return float(x)
-    except Exception:
-        return default
+from agentic_imodels import (
+    SmartAdditiveRegressor,
+    HingeEBMRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def fmt_p(p):
-    if pd.isna(p):
-        return "nan"
-    if p < 0.001:
-        return "<0.001"
-    return f"{p:.3f}"
+warnings.filterwarnings('ignore')
 
 
-def top_effects(effects, k=3):
-    ranked = [
-        (name, info)
-        for name, info in effects.items()
-        if info.get("importance", 0) > 0 and info.get("rank", 0) > 0
-    ]
-    ranked.sort(key=lambda t: t[1]["rank"])
-    return ranked[:k]
+def print_section(title: str) -> None:
+    print('\n' + '=' * 80)
+    print(title)
+    print('=' * 80)
 
 
-def get_effect(effects, key):
-    return effects.get(key, {"direction": "zero", "importance": 0.0, "rank": 0})
+def logistic_fit(formula: str, data: pd.DataFrame):
+    return smf.logit(formula, data=data).fit(disp=False, maxiter=200)
 
 
-def build_score(age_p, age_corr, age_imp_smart, age_imp_hinge, sign_consistent):
-    score = 10
-
-    if not pd.isna(age_p):
-        if age_p < 0.01:
-            score += 45
-        elif age_p < 0.05:
-            score += 35
-        elif age_p < 0.10:
-            score += 20
-        else:
-            score += 5
-
-    mean_imp = np.nanmean([age_imp_smart, age_imp_hinge])
-    if mean_imp >= 0.20:
-        score += 30
-    elif mean_imp >= 0.10:
-        score += 20
-    elif mean_imp >= 0.05:
-        score += 12
-    elif mean_imp >= 0.02:
-        score += 7
-    else:
-        score += 2
-
-    abs_corr = abs(age_corr) if not pd.isna(age_corr) else 0.0
-    if abs_corr >= 0.25:
-        score += 15
-    elif abs_corr >= 0.15:
-        score += 10
-    elif abs_corr >= 0.08:
-        score += 6
-    elif abs_corr >= 0.03:
-        score += 3
-
-    if not sign_consistent:
-        score -= 12
-
-    return int(max(0, min(100, round(score))))
+def safe_mean_by_group(df: pd.DataFrame, group_col: str, target_col: str) -> pd.DataFrame:
+    out = df.groupby(group_col)[target_col].agg(['mean', 'count']).reset_index()
+    return out.sort_values(group_col)
 
 
-def main():
-    info = json.loads(Path("info.json").read_text())
-    question = info.get("research_questions", [""])[0]
+def extract_age_signal_hinge_ebm(model: HingeEBMRegressor) -> float:
+    """Total absolute hinge-lasso signal involving age (feature x0 in this script)."""
+    coefs = np.asarray(model.lasso_.coef_, dtype=float)
+    n_sel = len(model.selected_)
+    selected = list(model.selected_)
 
-    print("=" * 80)
-    print("Research question")
+    if 0 not in selected:
+        return 0.0
+
+    pos = selected.index(0)
+    total = abs(float(coefs[pos]))
+
+    for k, (feat_idx_in_selected, _knot, _direction) in enumerate(model.hinge_info_):
+        if feat_idx_in_selected == pos:
+            total += abs(float(coefs[n_sel + k]))
+
+    return float(total)
+
+
+def main() -> None:
+    base = Path('.')
+
+    info_path = base / 'info.json'
+    data_path = base / 'boxes.csv'
+
+    info = json.loads(info_path.read_text())
+    question = info['research_questions'][0]
+
+    df = pd.read_csv(data_path)
+    df['majority_choice'] = (df['y'] == 2).astype(int)
+    df['gender_boy'] = (df['gender'] == 2).astype(int)
+
+    print_section('Research Question')
     print(question)
-    print("=" * 80)
 
-    df = pd.read_csv("boxes.csv")
+    print_section('Data Overview')
+    print(f'Shape: {df.shape}')
+    print('Columns:', df.columns.tolist())
+    print('\nSummary statistics:')
+    print(df.describe(include='all').T)
 
-    # DV: reliance on majority option (binary)
-    df["majority_choice"] = (df["y"] == 2).astype(int)
+    print('\nOutcome distribution (y):')
+    print(df['y'].value_counts().sort_index())
 
-    dv = "majority_choice"
-    iv = "age"
-    control_cols = ["gender", "majority_first", "culture"]
-    numeric_cols = ["age", "gender", "majority_first", "culture"]
+    print('\nBinary outcome majority_choice distribution:')
+    print(df['majority_choice'].value_counts().sort_index())
+    print(f"Majority-choice rate: {df['majority_choice'].mean():.3f}")
 
-    print("\nStep 1: Exploration")
-    print(f"Rows: {len(df)}")
-    print("Columns:", df.columns.tolist())
+    print('\nMajority-choice rate by age:')
+    print(safe_mean_by_group(df, 'age', 'majority_choice'))
 
-    print("\nOutcome distribution (original y):")
-    print(df["y"].value_counts().sort_index())
-    print("\nOutcome distribution (majority_choice):")
-    print(df[dv].value_counts().sort_index())
+    print('\nMajority-choice rate by culture:')
+    print(safe_mean_by_group(df, 'culture', 'majority_choice'))
 
-    print("\nSummary statistics:")
-    print(df[["y", dv] + numeric_cols].describe().T)
+    corr_cols = ['majority_choice', 'age', 'gender_boy', 'majority_first', 'culture']
+    print('\nPearson correlation matrix (key variables):')
+    print(df[corr_cols].corr())
 
-    print("\nBivariate correlations with majority_choice:")
-    corr_series = df[[dv] + numeric_cols].corr(numeric_only=True)[dv].drop(dv)
-    print(corr_series)
+    r_pb, p_pb = pointbiserialr(df['majority_choice'], df['age'])
+    print('\nPoint-biserial test (age vs majority_choice):')
+    print(f'r = {r_pb:.4f}, p = {p_pb:.4g}')
 
-    age_corr = safe_float(corr_series.get(iv, np.nan))
-    age_corr_p = stats.pearsonr(df[iv], df[dv]).pvalue
-    print(
-        f"\nAge vs majority_choice Pearson r={age_corr:.3f}, p={fmt_p(age_corr_p)}"
+    print_section('Classical Statistical Tests (Logistic Regression)')
+
+    m_biv = logistic_fit('majority_choice ~ age', df)
+    print('\nBivariate model: majority_choice ~ age')
+    print(m_biv.summary())
+
+    m_ctrl = logistic_fit('majority_choice ~ age + gender_boy + majority_first + C(culture)', df)
+    print('\nControlled model: majority_choice ~ age + gender_boy + majority_first + C(culture)')
+    print(m_ctrl.summary())
+
+    m_int = logistic_fit('majority_choice ~ age * C(culture) + gender_boy + majority_first', df)
+    print('\nInteraction model: majority_choice ~ age * C(culture) + gender_boy + majority_first')
+    print(m_int.summary())
+
+    lr_stat = float(2 * (m_int.llf - m_ctrl.llf))
+    df_diff = int(m_int.df_model - m_ctrl.df_model)
+    p_lr = float(chi2.sf(lr_stat, df_diff))
+    print('\nLikelihood-ratio test for adding age-by-culture interactions:')
+    print(f'LR stat = {lr_stat:.4f}, df = {df_diff}, p = {p_lr:.4g}')
+
+    base_age = float(m_int.params.get('age', np.nan))
+    print('\nEstimated age log-odds slope by culture from interaction model:')
+    for c in sorted(df['culture'].unique()):
+        term = f'age:C(culture)[T.{c}]'
+        slope = base_age + float(m_int.params.get(term, 0.0))
+        print(f'culture={c}: age_slope={slope:.4f}')
+
+    print_section('Interpretable Models (agentic_imodels)')
+
+    X = pd.DataFrame(
+        {
+            'age': df['age'],
+            'gender_boy': df['gender_boy'],
+            'majority_first': df['majority_first'],
+        }
     )
 
-    print("\nStep 2: Controlled models")
-    # Logistic regression with culture as categorical controls
-    X_logit = pd.concat(
-        [
-            df[[iv, "gender", "majority_first"]],
-            pd.get_dummies(df["culture"], prefix="culture", drop_first=True, dtype=float),
-        ],
-        axis=1,
+    culture_dummies = pd.get_dummies(
+        df['culture'].astype('category'),
+        prefix='culture',
+        drop_first=True,
+        dtype=int,
     )
-    X_logit = sm.add_constant(X_logit)
+    X = pd.concat([X, culture_dummies], axis=1)
 
-    logit_model = sm.Logit(df[dv], X_logit).fit(disp=False)
-    print("\nLogit model summary:")
-    print(logit_model.summary())
+    for col in culture_dummies.columns:
+        X[f'age_x_{col}'] = df['age'] * culture_dummies[col]
 
-    # OLS linear probability model as robustness check
-    X_ols = sm.add_constant(df[[iv] + control_cols])
-    ols_model = sm.OLS(df[dv], X_ols).fit()
-    print("\nOLS model summary:")
-    print(ols_model.summary())
+    y = df['majority_choice'].to_numpy(dtype=float)
 
-    age_coef_logit = safe_float(logit_model.params.get(iv, np.nan))
-    age_p_logit = safe_float(logit_model.pvalues.get(iv, np.nan))
-    age_coef_ols = safe_float(ols_model.params.get(iv, np.nan))
-    age_p_ols = safe_float(ols_model.pvalues.get(iv, np.nan))
+    feature_names = list(X.columns)
+    print('Feature index map used by printed models:')
+    for i, name in enumerate(feature_names):
+        print(f'x{i} -> {name}')
 
-    print("\nStep 3: Interpretable models")
-    X_interp = df[numeric_cols]
-    y_interp = df[dv]
+    model_specs = [
+        ('SmartAdditiveRegressor', SmartAdditiveRegressor()),
+        ('HingeEBMRegressor', HingeEBMRegressor()),
+        ('WinsorizedSparseOLSRegressor', WinsorizedSparseOLSRegressor()),
+    ]
 
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y_interp)
-    print("\nSmartAdditiveRegressor:")
-    print(smart)
-    smart_effects = smart.feature_effects()
-    print("\nSmartAdditive feature effects:")
-    print(smart_effects)
+    fitted = {}
+    for name, model in model_specs:
+        model.fit(X, y)
+        pred = model.predict(X)
+        r2 = float(r2_score(y, pred))
 
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y_interp)
-    print("\nHingeEBMRegressor:")
-    print(hinge)
-    hinge_effects = hinge.feature_effects()
-    print("\nHingeEBM feature effects:")
-    print(hinge_effects)
+        print(f'\n{name}: in-sample R^2 = {r2:.4f}')
+        print(model)
 
-    age_smart = get_effect(smart_effects, iv)
-    age_hinge = get_effect(hinge_effects, iv)
+        fitted[name] = {
+            'model': model,
+            'r2': r2,
+        }
 
-    age_imp_smart = safe_float(age_smart.get("importance", 0.0), 0.0)
-    age_imp_hinge = safe_float(age_hinge.get("importance", 0.0), 0.0)
+        if hasattr(model, 'feature_importances_'):
+            fi = np.asarray(model.feature_importances_, dtype=float)
+            order = np.argsort(-fi)
+            print('\nTop feature importances:')
+            shown = 0
+            for idx in order:
+                if fi[idx] <= 0:
+                    continue
+                print(f'  {feature_names[idx]}: {fi[idx]:.4f}')
+                shown += 1
+                if shown >= 10:
+                    break
 
-    # Characterize age shape from SmartAdditive thresholds
-    shape_note = age_smart.get("direction", "zero")
-    if "nonlinear" in shape_note:
-        try:
-            age_idx = X_interp.columns.get_loc(iv)
-            thresholds = smart.shape_functions_[age_idx][0]
-            if len(thresholds) > 0:
-                shape_note += (
-                    f" with thresholds spanning roughly {min(thresholds):.2f} to {max(thresholds):.2f} years"
-                )
-        except Exception:
-            pass
+        if hasattr(model, 'support_'):
+            print('\nSelected sparse features:')
+            for idx in model.support_:
+                print(f'  x{idx} -> {feature_names[int(idx)]}')
 
-    sign_logit = np.sign(age_coef_logit) if not pd.isna(age_coef_logit) else 0
-    sign_ols = np.sign(age_coef_ols) if not pd.isna(age_coef_ols) else 0
-    sign_smart = 0
-    if "positive" in age_smart.get("direction", "") or "increasing" in age_smart.get("direction", ""):
-        sign_smart = 1
-    elif "negative" in age_smart.get("direction", "") or "decreasing" in age_smart.get("direction", ""):
-        sign_smart = -1
-    sign_hinge = 0
-    if age_hinge.get("direction") == "positive":
-        sign_hinge = 1
-    elif age_hinge.get("direction") == "negative":
-        sign_hinge = -1
+    smart = fitted['SmartAdditiveRegressor']['model']
+    hinge = fitted['HingeEBMRegressor']['model']
+    sparse = fitted['WinsorizedSparseOLSRegressor']['model']
 
-    nonzero_signs = [s for s in [sign_logit, sign_ols, sign_smart, sign_hinge] if s != 0]
-    sign_consistent = len(set(nonzero_signs)) <= 1 if nonzero_signs else True
+    age_p_biv = float(m_biv.pvalues.get('age', np.nan))
+    age_p_ctrl = float(m_ctrl.pvalues.get('age', np.nan))
 
-    score = build_score(
-        age_p=age_p_logit,
-        age_corr=age_corr,
-        age_imp_smart=age_imp_smart,
-        age_imp_hinge=age_imp_hinge,
-        sign_consistent=sign_consistent,
-    )
+    # Age evidence from interpretable models.
+    smart_age_importance = float(np.asarray(smart.feature_importances_)[0]) if hasattr(smart, 'feature_importances_') else 0.0
+    smart_sorted = np.argsort(-np.asarray(smart.feature_importances_)) if hasattr(smart, 'feature_importances_') else np.array([], dtype=int)
+    smart_age_rank = int(np.where(smart_sorted == 0)[0][0] + 1) if smart_sorted.size else 999
 
-    # Identify notable confounders from controlled models and feature importance
-    sig_controls = []
-    for name, p in logit_model.pvalues.items():
-        if name in {"const", iv}:
-            continue
-        if p < 0.05:
-            sig_controls.append(f"{name} (p={fmt_p(p)})")
+    hinge_age_signal = extract_age_signal_hinge_ebm(hinge)
+    sparse_age_selected = 0 in set(int(i) for i in getattr(sparse, 'support_', []))
 
-    smart_top = top_effects(smart_effects, k=4)
-    hinge_top = top_effects(hinge_effects, k=4)
+    # Likert scoring calibrated by SKILL rubric.
+    score = 50.0
 
-    smart_top_str = ", ".join(
-        [f"{n} (rank {d['rank']}, imp {100*d['importance']:.1f}%, {d['direction']})" for n, d in smart_top]
-    ) or "none"
-    hinge_top_str = ", ".join(
-        [f"{n} (rank {d['rank']}, imp {100*d['importance']:.1f}%, {d['direction']})" for n, d in hinge_top]
-    ) or "none"
+    if age_p_ctrl < 0.01:
+        score += 25
+    elif age_p_ctrl < 0.05:
+        score += 15
+    elif age_p_ctrl < 0.10:
+        score += 5
+    else:
+        score -= 15
+
+    if age_p_biv < 0.05:
+        score += 5
+    else:
+        score -= 5
+
+    if p_lr < 0.05:
+        score += 10
+    else:
+        score -= 5
+
+    if hinge_age_signal > 1e-3:
+        score += 8
+    else:
+        score -= 8
+
+    if sparse_age_selected:
+        score += 8
+    else:
+        score -= 8
+
+    if smart_age_rank <= 3:
+        score += 8
+    elif smart_age_rank <= 6:
+        score += 3
+    else:
+        score -= 3
+
+    score = int(np.clip(round(score), 0, 100))
 
     explanation = (
-        f"IV=age, DV=majority_choice (y==2). Bivariate age-majority association is "
-        f"r={age_corr:.3f} (p={fmt_p(age_corr_p)}). In controlled logistic regression "
-        f"(adjusting for gender, majority_first, and culture dummies), age has coef={age_coef_logit:.3f} "
-        f"(p={fmt_p(age_p_logit)}); OLS robustness gives coef={age_coef_ols:.3f} "
-        f"(p={fmt_p(age_p_ols)}). SmartAdditive ranks age #{age_smart.get('rank', 0)} "
-        f"with {100*age_imp_smart:.1f}% importance and {shape_note}. HingeEBM ranks age "
-        f"#{age_hinge.get('rank', 0)} with {100*age_imp_hinge:.1f}% importance and "
-        f"{age_hinge.get('direction', 'zero')} direction. Top SmartAdditive features: {smart_top_str}. "
-        f"Top HingeEBM features: {hinge_top_str}. "
-        f"Sign consistency across models is {'high' if sign_consistent else 'mixed'}. "
-        f"Notable controlled confounders: {', '.join(sig_controls) if sig_controls else 'none at p<0.05'}. "
-        f"Overall, this implies a {'robust' if score >= 75 else 'moderate' if score >= 40 else 'weak'} "
-        f"age-related development in majority preference after accounting for other factors."
+        f"Question: {question} "
+        f"Using majority-choice (y=2) as outcome, age showed no significant bivariate association "
+        f"(logit p={age_p_biv:.3g}) and remained non-significant after controls for gender, majority-first order, "
+        f"and culture fixed effects (p={age_p_ctrl:.3g}). Age-by-culture interactions were jointly non-significant "
+        f"(LR p={p_lr:.3g}), so there is no robust evidence that age trends differ systematically across cultures in this sample. "
+        f"Interpretable models were mixed: SmartAdditive assigned age modest importance (rank {smart_age_rank}, importance {smart_age_importance:.3f}), "
+        f"but both hinge/Lasso-style sparse models gave null-style evidence for a direct age effect "
+        f"(HingeEBM age signal={hinge_age_signal:.4f}; WinsorizedSparseOLS selected_age={sparse_age_selected}). "
+        f"Stronger and more consistent predictors were demonstration order (majority_first) and, secondarily, gender/culture terms. "
+        f"Overall evidence for a robust developmental increase in reliance on majority preference across cultural contexts is weak."
     )
 
-    result = {"response": int(score), "explanation": explanation}
-    Path("conclusion.txt").write_text(json.dumps(result, ensure_ascii=True))
+    out = {
+        'response': score,
+        'explanation': explanation,
+    }
 
-    print("\nStep 4: Conclusion JSON")
-    print(json.dumps(result, indent=2))
-    print("\nWrote conclusion.txt")
+    (base / 'conclusion.txt').write_text(json.dumps(out))
+
+    print_section('Final Calibrated Conclusion')
+    print(json.dumps(out, indent=2))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

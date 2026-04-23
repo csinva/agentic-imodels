@@ -1,243 +1,263 @@
 import json
 import re
-from typing import Dict, List, Tuple
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from scipy.stats import pearsonr, spearmanr
+from scipy import stats
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
-
-def infer_iv_dv(question: str, columns: List[str]) -> Tuple[str, str]:
-    q = question.lower()
-
-    # Dependent variable inference
-    if any(tok in q for tok in ["death", "fatal"]):
-        dv = "alldeaths" if "alldeaths" in columns else None
-    else:
-        dv = None
-
-    # Independent variable inference
-    if "feminine" in q or "mascul" in q or "gender" in q:
-        iv = "masfem" if "masfem" in columns else None
-    else:
-        iv = None
-
-    if dv is None:
-        # fallback: first plausible outcome-like numeric column
-        for cand in ["alldeaths", "ndam15", "ndam"]:
-            if cand in columns:
-                dv = cand
-                break
-    if iv is None:
-        for cand in ["masfem", "masfem_mturk", "gender_mf"]:
-            if cand in columns:
-                iv = cand
-                break
-
-    if dv is None or iv is None:
-        raise ValueError(f"Could not infer IV/DV from question. iv={iv}, dv={dv}")
-
-    return iv, dv
+warnings.filterwarnings("ignore")
 
 
-def build_ols(X: pd.DataFrame, y: pd.Series):
-    Xc = sm.add_constant(X, has_constant="add")
-    model = sm.OLS(y, Xc, missing="drop").fit()
-    return model
+def print_section(title: str) -> None:
+    print("\n" + "=" * 90)
+    print(title)
+    print("=" * 90)
 
 
-def sorted_effects(effects: Dict[str, Dict]) -> List[Tuple[str, Dict]]:
-    return sorted(effects.items(), key=lambda kv: kv[1].get("rank", 10_000) or 10_000)
+def format_float(x) -> str:
+    return f"{x:.4f}" if isinstance(x, (float, np.floating)) else str(x)
 
 
-def main():
-    # Step 1: Understand question and explore
-    with open("info.json", "r", encoding="utf-8") as f:
+def summarize_distributions(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    rows = []
+    for c in cols:
+        s = df[c]
+        rows.append(
+            {
+                "feature": c,
+                "mean": s.mean(),
+                "std": s.std(),
+                "min": s.min(),
+                "p25": s.quantile(0.25),
+                "median": s.median(),
+                "p75": s.quantile(0.75),
+                "max": s.max(),
+                "skew": s.skew(),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def extract_coef_from_model_text(model_text: str, feature_idx: int) -> float | None:
+    pat = rf"^\s*x{feature_idx}:\s*([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)\s*$"
+    for line in model_text.splitlines():
+        m = re.match(pat, line)
+        if m:
+            return float(m.group(1))
+    return None
+
+
+def feature_excluded_in_model_text(model_text: str, feature_idx: int) -> bool:
+    target = f"x{feature_idx}"
+    for line in model_text.splitlines():
+        if "excluded" in line.lower() and target in line:
+            return True
+    return False
+
+
+def rank_of_feature(importances: np.ndarray, feature_idx: int) -> int:
+    order = np.argsort(-importances)
+    return int(np.where(order == feature_idx)[0][0] + 1)
+
+
+def main() -> None:
+    root = Path(".")
+
+    with open(root / "info.json", "r", encoding="utf-8") as f:
         info = json.load(f)
 
-    question = info.get("research_questions", ["(missing question)"])[0]
-    print("Research question:")
+    question = info["research_questions"][0]
+
+    print_section("Research question")
     print(question)
-    print()
 
-    df = pd.read_csv("hurricane.csv")
-    print(f"Loaded hurricane.csv with shape={df.shape}")
+    df = pd.read_csv(root / "hurricane.csv")
 
-    iv, dv = infer_iv_dv(question, df.columns.tolist())
-    print(f"Inferred IV={iv}, DV={dv}")
+    # Outcome and predictors
+    iv = "masfem"  # femininity rating of hurricane name
+    dv_count = "alldeaths"  # deaths as a proxy for precautionary behavior failure
+    controls = ["wind", "min", "category", "log_ndam15", "year"]
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    print("\nNumeric columns:", numeric_cols)
+    # Derived variables
+    df["log_alldeaths"] = np.log1p(df[dv_count])
+    df["log_ndam15"] = np.log1p(df["ndam15"])
 
-    print("\nSummary statistics (numeric):")
-    print(df[numeric_cols].describe().T)
+    model_cols = [iv, dv_count, "log_alldeaths", *controls]
+    d = df[model_cols].dropna().copy()
+
+    print_section("Data overview")
+    print(f"Rows in raw data: {len(df)}")
+    print(f"Rows after dropping NA for modeling columns: {len(d)}")
+    print("Missing values by column:")
+    print(df.isna().sum().to_string())
+
+    numeric_cols = [
+        "masfem",
+        "masfem_mturk",
+        "gender_mf",
+        "alldeaths",
+        "wind",
+        "min",
+        "category",
+        "ndam15",
+        "year",
+    ]
+    print("\nSummary statistics (selected columns):")
+    print(df[numeric_cols].describe().T.to_string(float_format=lambda x: f"{x:0.4f}"))
 
     print("\nDistribution diagnostics:")
-    skew = df[numeric_cols].skew(numeric_only=True)
-    print(skew.sort_values(key=lambda s: s.abs(), ascending=False))
+    dist = summarize_distributions(d, [iv, dv_count, "log_alldeaths", "wind", "min", "category", "log_ndam15", "year"])
+    print(dist.to_string(index=False, float_format=lambda x: f"{x:0.4f}"))
 
-    # Bivariate correlations for primary IV-DV relationship
-    v = df[[iv, dv]].dropna()
-    pear_r, pear_p = pearsonr(v[iv], v[dv])
-    spear_r, spear_p = spearmanr(v[iv], v[dv])
-    log_dv = np.log1p(v[dv])
-    pear_r_log, pear_p_log = pearsonr(v[iv], log_dv)
-    spear_r_log, spear_p_log = spearmanr(v[iv], log_dv)
+    print("\nCorrelations with outcomes:")
+    corr_cols = [iv, "wind", "min", "category", "log_ndam15", "year", dv_count, "log_alldeaths"]
+    pearson_corr = d[corr_cols].corr(method="pearson")
+    spearman_corr = d[corr_cols].corr(method="spearman")
+    print("Pearson correlations vs outcomes:")
+    print(pearson_corr[[dv_count, "log_alldeaths"]].to_string(float_format=lambda x: f"{x:0.4f}"))
+    print("\nSpearman correlations vs outcomes:")
+    print(spearman_corr[[dv_count, "log_alldeaths"]].to_string(float_format=lambda x: f"{x:0.4f}"))
 
-    print("\nBivariate correlations (IV vs DV):")
-    print(f"Pearson (raw DV): r={pear_r:.4f}, p={pear_p:.4g}")
-    print(f"Spearman (raw DV): rho={spear_r:.4f}, p={spear_p:.4g}")
-    print(f"Pearson (log1p DV): r={pear_r_log:.4f}, p={pear_p_log:.4g}")
-    print(f"Spearman (log1p DV): rho={spear_r_log:.4f}, p={spear_p_log:.4g}")
+    print_section("Classical statistical tests")
 
-    # Step 2: OLS with controls
-    analysis_df = df.copy()
-    analysis_df["log_dv"] = np.log1p(analysis_df[dv])
+    # Bivariate nonparametric + bivariate OLS
+    spearman = stats.spearmanr(d[iv], d[dv_count], nan_policy="omit")
+    print(
+        f"Spearman({iv}, {dv_count}) = {spearman.statistic:.4f}, p = {spearman.pvalue:.4g}"
+    )
 
-    # Bivariate OLS
-    X_biv = analysis_df[[iv]]
-    y = analysis_df["log_dv"]
-    ols_biv = build_ols(X_biv, y)
+    X_bi = sm.add_constant(d[[iv]])
+    ols_bi = sm.OLS(d["log_alldeaths"], X_bi).fit()
+    print("\nBivariate OLS on log deaths:")
+    print(ols_bi.summary())
 
-    # Controlled OLS: relevant meteorological and era controls + source dummies
-    base_controls = [c for c in ["wind", "min", "category", "ndam15", "year", "gender_mf"] if c in analysis_df.columns]
-    X_ctrl = analysis_df[[iv] + base_controls].copy()
-    if "source" in analysis_df.columns:
-        source_dummies = pd.get_dummies(analysis_df["source"], prefix="source", drop_first=True, dtype=float)
-        X_ctrl = pd.concat([X_ctrl, source_dummies], axis=1)
-
-    ols_ctrl = build_ols(X_ctrl, y)
-
-    # Full-numeric sensitivity model: all numeric controls except obvious ID and DV itself
-    all_numeric_predictors = [c for c in numeric_cols if c not in {dv, "ind"}]
-    X_full = analysis_df[all_numeric_predictors].copy()
-    # Impute missing values for full model
-    X_full = X_full.fillna(X_full.median(numeric_only=True))
-    ols_full = build_ols(X_full, y)
-
-    print("\nOLS Bivariate summary (log DV ~ IV):")
-    print(ols_biv.summary())
-    print("\nOLS Controlled summary (log DV ~ IV + controls + source):")
+    # Controlled OLS on log outcome
+    X_ctrl = sm.add_constant(d[[iv, *controls]])
+    ols_ctrl = sm.OLS(d["log_alldeaths"], X_ctrl).fit(cov_type="HC3")
+    print("\nControlled OLS on log deaths (HC3 robust SE):")
     print(ols_ctrl.summary())
-    print("\nOLS Full-numeric sensitivity summary:")
-    print(ols_full.summary())
 
-    # Step 3: Interpretable models
-    X_interp = analysis_df[all_numeric_predictors].copy()
-    X_interp = X_interp.fillna(X_interp.median(numeric_only=True))
-    y_interp = y.values
+    # Count GLM (Negative Binomial) on raw death counts
+    glm_nb = sm.GLM(
+        d[dv_count],
+        X_ctrl,
+        family=sm.families.NegativeBinomial(alpha=1.0),
+    ).fit(cov_type="HC3")
+    print("\nControlled GLM NegativeBinomial on death counts (HC3 robust SE):")
+    print(glm_nb.summary())
 
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y_interp)
-    smart_effects = smart.feature_effects()
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y_interp)
-    hinge_effects = hinge.feature_effects()
-
-    print("\nSmartAdditiveRegressor model:")
-    print(smart)
-    print("\nSmartAdditive feature_effects():")
-    print(smart_effects)
-
-    print("\nHingeEBMRegressor model:")
-    print(hinge)
-    print("\nHingeEBM feature_effects():")
-    print(hinge_effects)
-
-    # Step 4: Rich conclusion with score
-    iv_biv_coef = float(ols_biv.params.get(iv, np.nan))
-    iv_biv_p = float(ols_biv.pvalues.get(iv, np.nan))
-    iv_ctrl_coef = float(ols_ctrl.params.get(iv, np.nan))
-    iv_ctrl_p = float(ols_ctrl.pvalues.get(iv, np.nan))
-
-    smart_iv = smart_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0})
-    hinge_iv = hinge_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0})
-
-    top_smart = [
-        (name, eff["importance"], eff["direction"])
-        for name, eff in sorted_effects(smart_effects)
-        if eff.get("rank", 0) > 0
-    ][:5]
-    top_hinge = [
-        (name, eff["importance"], eff["direction"])
-        for name, eff in sorted_effects(hinge_effects)
-        if eff.get("rank", 0) > 0
-    ][:5]
-
-    # Evidence-based score mapping
-    no_signal = (
-        pear_p >= 0.10
-        and iv_ctrl_p >= 0.10
-        and smart_iv.get("importance", 0.0) < 0.05
-        and hinge_iv.get("importance", 0.0) < 0.05
+    # Optional Poisson for overdispersion check
+    glm_pois = sm.GLM(d[dv_count], X_ctrl, family=sm.families.Poisson()).fit(cov_type="HC3")
+    overdisp_ratio = d[dv_count].var() / max(d[dv_count].mean(), 1e-9)
+    print(f"\nPoisson vs NB context: variance/mean for deaths = {overdisp_ratio:.2f} (>>1 suggests overdispersion)")
+    print(
+        f"Poisson masfem coef={glm_pois.params[iv]:.4f}, p={glm_pois.pvalues[iv]:.4g}; "
+        f"NB masfem coef={glm_nb.params[iv]:.4f}, p={glm_nb.pvalues[iv]:.4g}"
     )
 
-    strong_positive = (
-        pear_p < 0.05
-        and iv_ctrl_p < 0.05
-        and iv_ctrl_coef > 0
-        and smart_iv.get("importance", 0.0) >= 0.10
-        and ("positive" in smart_iv.get("direction", "") or "increasing" in smart_iv.get("direction", ""))
-        and hinge_iv.get("importance", 0.0) >= 0.05
-        and hinge_iv.get("direction") == "positive"
-    )
+    print_section("Interpretable modeling with agentic_imodels")
 
-    if strong_positive:
-        response = 85
-    elif no_signal:
-        response = 10
+    feature_order = [iv, "wind", "min", "category", "log_ndam15", "year"]
+    X_interp = d[feature_order]
+    y_interp = d["log_alldeaths"]
+
+    models = [
+        ("SmartAdditiveRegressor", SmartAdditiveRegressor()),  # honest
+        ("HingeEBMRegressor", HingeEBMRegressor()),  # high-rank decoupled
+        ("WinsorizedSparseOLSRegressor", WinsorizedSparseOLSRegressor()),  # sparse null evidence
+    ]
+
+    fitted = {}
+    for name, model in models:
+        model.fit(X_interp, y_interp)
+        fitted[name] = model
+        print(f"\n--- {name} ---")
+        print(model)  # required by prompt
+
+    # Extract interpretable evidence for masfem (x0)
+    masfem_idx = 0
+    smart = fitted["SmartAdditiveRegressor"]
+    smart_importances = getattr(smart, "feature_importances_", np.zeros(len(feature_order)))
+    smart_total = float(np.sum(np.abs(smart_importances))) if len(smart_importances) else 0.0
+    smart_share = float(abs(smart_importances[masfem_idx]) / smart_total) if smart_total > 0 else 0.0
+    smart_rank = rank_of_feature(np.abs(smart_importances), masfem_idx) if smart_total > 0 else len(feature_order)
+
+    smart_text = str(smart)
+    smart_linear_coef = extract_coef_from_model_text(smart_text, masfem_idx)
+    smart_excluded = feature_excluded_in_model_text(smart_text, masfem_idx)
+
+    hebm = fitted["HingeEBMRegressor"]
+    hebm_text = str(hebm)
+    hebm_coef = extract_coef_from_model_text(hebm_text, masfem_idx)
+    hebm_excluded = feature_excluded_in_model_text(hebm_text, masfem_idx)
+
+    wsols = fitted["WinsorizedSparseOLSRegressor"]
+    wsols_text = str(wsols)
+    wsols_coef = extract_coef_from_model_text(wsols_text, masfem_idx)
+    wsols_excluded = feature_excluded_in_model_text(wsols_text, masfem_idx)
+
+    print("\nMasfem-specific model evidence:")
+    print(f"SmartAdditive: excluded={smart_excluded}, linear_coef={format_float(smart_linear_coef)}, importance_share={smart_share:.3f}, importance_rank={smart_rank}/{len(feature_order)}")
+    print(f"HingeEBM: excluded={hebm_excluded}, coef={format_float(hebm_coef)}")
+    print(f"WinsorizedSparseOLS: excluded={wsols_excluded}, coef={format_float(wsols_coef)}")
+
+    print_section("Calibrated conclusion")
+
+    # Core statistical evidence
+    bi_p = float(ols_bi.pvalues[iv])
+    ctrl_ols_p = float(ols_ctrl.pvalues[iv])
+    ctrl_nb_p = float(glm_nb.pvalues[iv])
+
+    bi_coef = float(ols_bi.params[iv])
+    ctrl_ols_coef = float(ols_ctrl.params[iv])
+    ctrl_nb_coef = float(glm_nb.params[iv])
+
+    zero_count = int(smart_excluded) + int(hebm_excluded) + int(wsols_excluded)
+
+    # Likert scoring per SKILL.md guidance
+    if ctrl_nb_p >= 0.10 and ctrl_ols_p >= 0.10 and zero_count >= 2 and smart_share < 0.12:
+        score = 10
+    elif ctrl_nb_p >= 0.05 and ctrl_ols_p >= 0.05 and zero_count >= 1:
+        score = 20
+    elif (ctrl_nb_p < 0.05 or ctrl_ols_p < 0.05) and smart_rank > 2:
+        score = 45
+    elif (ctrl_nb_p < 0.05 or ctrl_ols_p < 0.05) and smart_rank <= 2:
+        score = 75
     else:
-        # Mixed evidence bucket
-        response = 45
+        score = 35
 
-    # Confounders that appear important
-    confounders = []
-    for col in ["ndam15", "min", "wind", "category", "year", "masfem_mturk", "ndam"]:
-        if col == iv:
-            continue
-        info_bits = []
-        if col in ols_ctrl.pvalues.index and ols_ctrl.pvalues[col] < 0.10:
-            info_bits.append(f"OLS p={ols_ctrl.pvalues[col]:.3g}")
-        seff = smart_effects.get(col)
-        if seff and seff.get("rank", 0) > 0 and seff.get("importance", 0.0) >= 0.05:
-            info_bits.append(f"Smart rank {seff['rank']} ({seff['importance']:.1%}, {seff['direction']})")
-        heff = hinge_effects.get(col)
-        if heff and heff.get("rank", 0) > 0 and heff.get("importance", 0.0) >= 0.05:
-            info_bits.append(f"Hinge rank {heff['rank']} ({heff['importance']:.1%}, {heff['direction']})")
-        if info_bits:
-            confounders.append(f"{col}: " + "; ".join(info_bits))
-
-    confounder_text = " | ".join(confounders[:4]) if confounders else "No strong confounder pattern detected."
+    score = int(np.clip(score, 0, 100))
 
     explanation = (
-        f"Using {dv} as the outcome and {iv} as the key predictor, the bivariate association is weak "
-        f"(Pearson r={pear_r:.3f}, p={pear_p:.3f}; Spearman rho={spear_r:.3f}, p={spear_p:.3f}). "
-        f"In OLS on log(1+{dv}), {iv} is not significant in the bivariate model "
-        f"(coef={iv_biv_coef:.3f}, p={iv_biv_p:.3f}) and remains non-significant after controls "
-        f"(coef={iv_ctrl_coef:.3f}, p={iv_ctrl_p:.3f}). "
-        f"SmartAdditive ranks {iv} at {smart_iv.get('rank', 0)} with {smart_iv.get('importance', 0.0):.1%} importance "
-        f"and {smart_iv.get('direction', 'zero')} shape, indicating a small/non-robust effect. "
-        f"HingeEBM gives {iv} rank {hinge_iv.get('rank', 0)} with {hinge_iv.get('importance', 0.0):.1%} importance "
-        f"({hinge_iv.get('direction', 'zero')}), effectively shrinking it out. "
-        f"By contrast, storm intensity/damage variables dominate feature importance across models "
-        f"(top SmartAdditive: {top_smart}; top HingeEBM: {top_hinge}). "
-        f"Overall, evidence does not support a robust positive femininity effect on deaths in this dataset. "
-        f"Key confounder pattern: {confounder_text}"
+        "Evidence does not support a meaningful relationship between hurricane-name femininity and deaths "
+        "in this dataset. Bivariate association is near zero "
+        f"(Spearman rho={spearman.statistic:.3f}, p={spearman.pvalue:.3g}; "
+        f"bivariate OLS beta={bi_coef:.3f}, p={bi_p:.3g}). "
+        "After controlling for storm severity and exposure proxies (wind, pressure, category, damage, year), "
+        f"the femininity coefficient remains non-significant in both controlled OLS (beta={ctrl_ols_coef:.3f}, "
+        f"p={ctrl_ols_p:.3g}) and Negative Binomial GLM (beta={ctrl_nb_coef:.3f}, p={ctrl_nb_p:.3g}). "
+        "Interpretable models agree: HingeEBM and WinsorizedSparseOLS exclude masfem (zero effect), while "
+        f"SmartAdditive assigns only modest/secondary importance (rank {smart_rank}/{len(feature_order)}, "
+        f"share={smart_share:.3f}). This convergence of non-significance plus sparse-model zeroing indicates "
+        "low evidence for the hypothesized effect."
     )
 
-    # Ensure clean ASCII-like plain text for JSON
-    explanation = re.sub(r"\s+", " ", explanation).strip()
+    result = {"response": score, "explanation": explanation}
 
-    payload = {"response": int(response), "explanation": explanation}
-    with open("conclusion.txt", "w", encoding="utf-8") as f:
-        json.dump(payload, f)
+    with open(root / "conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=True)
 
-    print("\nWrote conclusion.txt:")
-    print(json.dumps(payload, indent=2))
+    print(f"Likert response: {score}")
+    print("Wrote conclusion.txt")
 
 
 if __name__ == "__main__":

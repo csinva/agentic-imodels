@@ -1,178 +1,267 @@
 import json
-from typing import Dict, Any
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
+from scipy import stats
+import statsmodels.formula.api as smf
+from sklearn.metrics import mean_squared_error, r2_score
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+from agentic_imodels import (
+    HingeEBMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def to_native(obj: Any) -> Any:
-    """Recursively convert numpy types to native Python types for JSON-safe output."""
-    if isinstance(obj, dict):
-        return {k: to_native(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [to_native(v) for v in obj]
-    if isinstance(obj, tuple):
-        return tuple(to_native(v) for v in obj)
-    if isinstance(obj, (np.integer,)):
-        return int(obj)
-    if isinstance(obj, (np.floating,)):
-        return float(obj)
-    if isinstance(obj, (np.bool_,)):
-        return bool(obj)
-    return obj
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+
+def print_header(title: str) -> None:
+    print("\n" + "=" * 88)
+    print(title)
+    print("=" * 88)
+
+
+def safe_float(x):
+    try:
+        return float(x)
+    except Exception:
+        return np.nan
 
 
 def main() -> None:
-    with open("info.json", "r", encoding="utf-8") as f:
-        info = json.load(f)
+    info_path = Path("info.json")
+    data_path = Path("boxes.csv")
 
-    research_question = info["research_questions"][0]
-    df = pd.read_csv("boxes.csv")
+    info = json.loads(info_path.read_text())
+    question = info.get("research_questions", [""])[0]
 
-    # Operationalize "reliance on majority preference" as choosing the majority option.
-    # Original y: 1=unchosen, 2=majority, 3=minority.
+    print_header("Research Question")
+    print(question)
+
+    df = pd.read_csv(data_path)
+    print_header("Data Overview")
+    print(f"Rows: {len(df)}")
+    print(f"Columns: {list(df.columns)}")
+    print("\nDtypes:")
+    print(df.dtypes)
+    print("\nMissing values per column:")
+    print(df.isna().sum())
+
+    print_header("Summary Statistics")
+    print(df.describe().T)
+
+    # Primary outcome for this question: majority-choice reliance
     df["majority_choice"] = (df["y"] == 2).astype(int)
 
-    iv_col = "age"
-    dv_col = "majority_choice"
-    control_cols = ["gender", "majority_first", "culture"]
-    numeric_cols = ["age", "gender", "majority_first", "culture"]
-
-    print("=== Research Question ===")
-    print(research_question)
-    print("\n=== Variable Setup ===")
-    print(f"Dependent variable (DV): {dv_col} (1 if y==2 else 0)")
-    print(f"Independent variable (IV): {iv_col}")
-    print(f"Controls: {control_cols}")
-
-    # Step 1: Explore distributions and bivariate relationships
-    print("\n=== Step 1: Exploration ===")
-    print("Summary statistics:")
-    print(df[["y", dv_col] + numeric_cols].describe())
-
-    print("\nOutcome distribution (y):")
+    print_header("Distributions")
+    print("Outcome y counts (1=unchosen, 2=majority, 3=minority):")
     print(df["y"].value_counts().sort_index())
-
     print("\nMajority-choice rate:")
-    print(df[dv_col].value_counts().sort_index())
-    print(f"Mean majority-choice rate: {df[dv_col].mean():.4f}")
+    print(df["majority_choice"].mean())
+    print("\nMajority-choice rate by culture:")
+    print(df.groupby("culture")["majority_choice"].mean().sort_index())
+    print("\nMajority-choice rate by age:")
+    print(df.groupby("age")["majority_choice"].mean().sort_index())
 
-    corr_cols = [dv_col] + numeric_cols
-    corr_mat = df[corr_cols].corr(numeric_only=True)
-    print("\nCorrelations with majority_choice:")
-    print(corr_mat[dv_col].sort_values(ascending=False))
+    print_header("Correlations")
+    corr_cols = ["majority_choice", "age", "gender", "majority_first", "culture"]
+    print(df[corr_cols].corr())
 
-    # Bivariate logistic model: DV ~ age
-    X_biv = sm.add_constant(df[[iv_col]].astype(float))
-    model_biv = sm.Logit(df[dv_col], X_biv).fit(disp=False)
-    print("\nBivariate logistic: majority_choice ~ age")
-    print(model_biv.summary())
+    print_header("Bivariate Statistical Tests")
+    age_yes = df.loc[df["majority_choice"] == 1, "age"]
+    age_no = df.loc[df["majority_choice"] == 0, "age"]
+    ttest = stats.ttest_ind(age_yes, age_no, equal_var=False)
+    pb = stats.pointbiserialr(df["majority_choice"], df["age"])
+    chi2, chi2_p, _, _ = stats.chi2_contingency(pd.crosstab(df["culture"], df["majority_choice"]))
 
-    # Step 2: Controlled models
-    print("\n=== Step 2: Controlled Models ===")
-    X_ctrl = df[[iv_col, "gender", "majority_first", "culture"]].copy()
-    X_ctrl = pd.get_dummies(X_ctrl, columns=["culture"], drop_first=True)
-    X_ctrl = sm.add_constant(X_ctrl.astype(float))
-    model_ctrl = sm.Logit(df[dv_col], X_ctrl).fit(disp=False)
-    print("Controlled logistic (with culture fixed effects):")
-    print(model_ctrl.summary())
+    print(f"Welch t-test(age | majority vs non-majority): statistic={ttest.statistic:.4f}, p={ttest.pvalue:.4g}")
+    print(f"Point-biserial corr(age, majority_choice): r={pb.statistic:.4f}, p={pb.pvalue:.4g}")
+    print(f"Chi-square(culture x majority_choice): chi2={chi2:.4f}, p={chi2_p:.4g}")
 
-    # Age-by-culture interaction model (to probe "across cultural contexts")
-    X_int_base = df[[iv_col, "gender", "majority_first", "culture"]].copy()
-    culture_dummies = pd.get_dummies(X_int_base["culture"], prefix="culture", drop_first=True)
-    X_int = pd.concat([X_int_base.drop(columns=["culture"]), culture_dummies], axis=1)
-    for c in culture_dummies.columns:
-        X_int[f"age_x_{c}"] = X_int[iv_col] * X_int[c]
-    X_int = sm.add_constant(X_int.astype(float))
-    model_int = sm.Logit(df[dv_col], X_int).fit(disp=False, maxiter=300)
-    print("\nLogistic with age*culture interactions:")
-    print(model_int.summary())
+    print_header("Classical Controlled Models (statsmodels)")
+    # Baseline and controlled logistic models for majority-choice reliance.
+    logit_age = smf.logit("majority_choice ~ age", data=df).fit(disp=0)
+    logit_ctrl = smf.logit(
+        "majority_choice ~ age + gender + majority_first + C(culture)",
+        data=df,
+    ).fit(disp=0)
+    logit_interact = smf.logit(
+        "majority_choice ~ age * C(culture) + gender + majority_first",
+        data=df,
+    ).fit(disp=0, maxiter=200)
 
-    # Step 3: Interpretable models
-    print("\n=== Step 3: Interpretable Models ===")
-    X_interpret = df[numeric_cols]
-    y_interpret = df[dv_col]
+    print("\n[Model] majority_choice ~ age")
+    print(logit_age.summary())
+    print("\n[Model] majority_choice ~ age + gender + majority_first + C(culture)")
+    print(logit_ctrl.summary())
+    print("\n[Model] majority_choice ~ age * C(culture) + gender + majority_first")
+    print(logit_interact.summary())
 
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interpret, y_interpret)
-    smart_effects: Dict[str, Dict[str, Any]] = to_native(smart.feature_effects())
-    print("SmartAdditiveRegressor:")
-    print(smart)
-    print("Smart effects:")
-    print(smart_effects)
+    # LR test for whether age-by-culture interactions improve fit
+    lr_stat = 2.0 * (logit_interact.llf - logit_ctrl.llf)
+    lr_df = int(logit_interact.df_model - logit_ctrl.df_model)
+    lr_p = 1 - stats.chi2.cdf(lr_stat, lr_df)
+    print(f"\nLikelihood-ratio test for adding age*culture interactions: chi2={lr_stat:.4f}, df={lr_df}, p={lr_p:.4g}")
 
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interpret, y_interpret)
-    hinge_effects: Dict[str, Dict[str, Any]] = to_native(hinge.feature_effects())
-    print("\nHingeEBMRegressor:")
-    print(hinge)
-    print("Hinge effects:")
-    print(hinge_effects)
+    print_header("Interpretable Models (agentic_imodels)")
+    X = df[["age", "gender", "majority_first", "culture"]].copy()
+    X = pd.get_dummies(X, columns=["culture"], prefix="culture", drop_first=True)
+    y = df["majority_choice"].to_numpy(dtype=float)
 
-    # Step 4: Build conclusion score + explanation
-    age_corr = float(corr_mat.loc[dv_col, iv_col])
-    age_biv_coef = float(model_biv.params[iv_col])
-    age_biv_p = float(model_biv.pvalues[iv_col])
-    age_ctrl_coef = float(model_ctrl.params[iv_col])
-    age_ctrl_p = float(model_ctrl.pvalues[iv_col])
+    feature_names = list(X.columns)
+    print("Feature columns fed to interpretable regressors:")
+    for idx, name in enumerate(feature_names):
+        print(f"  x{idx}: {name}")
 
-    age_or = float(np.exp(age_ctrl_coef))
-    age_int_pvals = {
-        k: float(v)
-        for k, v in model_int.pvalues.items()
-        if k.startswith("age_x_")
-    }
-    min_age_int_p = min(age_int_pvals.values()) if age_int_pvals else 1.0
+    model_specs = [
+        ("SmartAdditiveRegressor", SmartAdditiveRegressor()),
+        ("HingeEBMRegressor", HingeEBMRegressor()),
+        ("WinsorizedSparseOLSRegressor", WinsorizedSparseOLSRegressor()),
+    ]
 
-    smart_age = smart_effects.get("age", {"direction": "unknown", "importance": 0.0, "rank": 0})
-    hinge_age = hinge_effects.get("age", {"direction": "zero", "importance": 0.0, "rank": 0})
+    model_results = {}
+    for model_name, model in model_specs:
+        print(f"\n--- Fitting {model_name} ---")
+        model.fit(X, y)
+        print(model)  # Required: capture interpretable printed form verbatim.
 
-    # Scoring rubric aligned with prompt guidance.
-    if age_ctrl_p < 0.05 and smart_age.get("importance", 0) >= 0.10 and hinge_age.get("importance", 0) >= 0.05:
-        score = 85
-    elif age_ctrl_p < 0.10 and (smart_age.get("importance", 0) >= 0.08 or hinge_age.get("importance", 0) >= 0.05):
-        score = 60
-    elif smart_age.get("importance", 0) >= 0.20 and hinge_age.get("importance", 0) < 0.02 and age_ctrl_p >= 0.10:
-        score = 25
-    elif age_ctrl_p >= 0.10 and smart_age.get("importance", 0) < 0.08 and hinge_age.get("importance", 0) < 0.02:
-        score = 10
+        pred = model.predict(X)
+        model_results[model_name] = {
+            "r2": safe_float(r2_score(y, pred)),
+            "mse": safe_float(mean_squared_error(y, pred)),
+        }
+        print(f"In-sample R^2: {model_results[model_name]['r2']:.4f}")
+        print(f"In-sample MSE: {model_results[model_name]['mse']:.4f}")
+
+        if hasattr(model, "feature_importances_"):
+            importances = np.asarray(model.feature_importances_, dtype=float)
+            ranked = sorted(
+                [(feature_names[i], importances[i]) for i in range(len(feature_names))],
+                key=lambda t: abs(t[1]),
+                reverse=True,
+            )
+            print("Top feature importances (abs scale):")
+            for f_name, score in ranked[:6]:
+                print(f"  {f_name}: {score:.4f}")
+            model_results[model_name]["importances"] = {k: safe_float(v) for k, v in ranked}
+
+        if hasattr(model, "support_") and hasattr(model, "ols_coef_"):
+            support = list(model.support_)
+            coefs = [safe_float(c) for c in model.ols_coef_]
+            selected = {feature_names[j]: coefs[i] for i, j in enumerate(support)}
+            excluded = [f for i, f in enumerate(feature_names) if i not in support]
+            print("Sparse selected coefficients:")
+            for f_name, coef in selected.items():
+                print(f"  {f_name}: {coef:+.4f}")
+            print(f"Excluded (zeroed) features: {excluded}")
+            model_results[model_name]["selected"] = selected
+            model_results[model_name]["excluded"] = excluded
+
+    print_header("Cross-Culture Age Checks")
+    per_culture_age = {}
+    for c, sub in df.groupby("culture"):
+        mod = smf.logit("majority_choice ~ age + gender + majority_first", data=sub).fit(disp=0)
+        per_culture_age[int(c)] = {
+            "coef": safe_float(mod.params.get("age", np.nan)),
+            "p": safe_float(mod.pvalues.get("age", np.nan)),
+            "n": int(len(sub)),
+        }
+    for c in sorted(per_culture_age):
+        row = per_culture_age[c]
+        print(f"culture={c}: age_coef={row['coef']:+.4f}, p={row['p']:.4g}, n={row['n']}")
+
+    # Evidence synthesis for calibrated Likert score.
+    age_coef_ctrl = safe_float(logit_ctrl.params["age"])
+    age_p_ctrl = safe_float(logit_ctrl.pvalues["age"])
+    age_coef_biv = safe_float(logit_age.params["age"])
+    age_p_biv = safe_float(logit_age.pvalues["age"])
+
+    age_interaction_ps = [
+        safe_float(v)
+        for k, v in logit_interact.pvalues.items()
+        if k.startswith("age:C(culture)")
+    ]
+    min_interaction_p = float(np.min(age_interaction_ps)) if age_interaction_ps else np.nan
+
+    sparse_selected = model_results.get("WinsorizedSparseOLSRegressor", {}).get("selected", {})
+    age_selected_sparse = "age" in sparse_selected
+
+    smart_importance_age = np.nan
+    if "SmartAdditiveRegressor" in model_results and "importances" in model_results["SmartAdditiveRegressor"]:
+        smart_importance_age = safe_float(model_results["SmartAdditiveRegressor"]["importances"].get("age", np.nan))
+
+    hinge_importance_age = np.nan
+    if "HingeEBMRegressor" in model_results and "importances" in model_results["HingeEBMRegressor"]:
+        hinge_importance_age = safe_float(model_results["HingeEBMRegressor"]["importances"].get("age", np.nan))
+
+    # Start from neutral and move by evidence strength from SKILL rubric.
+    score = 50
+
+    # Classical test evidence (weighted most heavily)
+    if age_p_ctrl > 0.10:
+        score -= 20
+    elif age_p_ctrl > 0.05:
+        score -= 10
     else:
-        score = 35
+        score += 20
 
-    majority_first_coef = float(model_ctrl.params["majority_first"])
-    majority_first_p = float(model_ctrl.pvalues["majority_first"])
-    gender_coef = float(model_ctrl.params["gender"])
-    gender_p = float(model_ctrl.pvalues["gender"])
+    if age_p_biv > 0.10:
+        score -= 10
+    elif age_p_biv < 0.05:
+        score += 10
+
+    # Across-culture moderation evidence
+    if lr_p > 0.10:
+        score -= 8
+    elif lr_p < 0.05:
+        score += 10
+
+    # Sparse-zeroing/null evidence
+    if not age_selected_sparse:
+        score -= 12
+    else:
+        score += 8
+
+    # Importance/shape evidence from interpretable models
+    if np.isfinite(smart_importance_age):
+        if smart_importance_age < 0.05:
+            score -= 6
+        elif smart_importance_age > 0.15:
+            score += 6
+
+    if np.isfinite(hinge_importance_age):
+        if hinge_importance_age < 0.05:
+            score -= 4
+        elif hinge_importance_age > 0.15:
+            score += 4
+
+    # Sign consistency on age across classical models
+    if np.sign(age_coef_biv) != np.sign(age_coef_ctrl) and abs(age_coef_biv) > 1e-8 and abs(age_coef_ctrl) > 1e-8:
+        score -= 5
+
+    score = int(np.clip(round(score), 0, 100))
 
     explanation = (
-        f"The evidence for age-driven growth in majority reliance is weak and not robust. "
-        f"Bivariately, age is near-zero related to majority choice (corr={age_corr:.3f}; "
-        f"logit coef={age_biv_coef:.3f}, p={age_biv_p:.3f}). With controls for gender, "
-        f"majority-first demonstration, and culture fixed effects, age remains non-significant "
-        f"(coef={age_ctrl_coef:.3f}, OR={age_or:.3f}, p={age_ctrl_p:.3f}). "
-        f"Age-by-culture interactions are also non-significant (minimum interaction p={min_age_int_p:.3f}), "
-        f"so there is no strong evidence that age trends differ reliably across cultures. "
-        f"In interpretable models, SmartAdditive ranks age #{smart_age.get('rank', 0)} with "
-        f"{100*float(smart_age.get('importance', 0.0)):.1f}% importance and a "
-        f"{smart_age.get('direction', 'unknown')} shape, indicating nonlinearity/thresholds, "
-        f"but HingeEBM largely shrinks age toward zero (rank {hinge_age.get('rank', 0)}, "
-        f"importance {100*float(hinge_age.get('importance', 0.0)):.1f}%). "
-        f"The most robust predictor is majority_first (coef={majority_first_coef:.3f}, p={majority_first_p:.3g}), "
-        f"with gender also contributing (coef={gender_coef:.3f}, p={gender_p:.3f}). "
-        f"Overall, any age effect appears weak/inconsistent relative to stronger confounders."
+        "The evidence does not support a robust age-driven increase in majority preference across cultures. "
+        f"Bivariate age effect is near zero (logit coef={age_coef_biv:+.3f}, p={age_p_biv:.3f}; "
+        f"t-test p={ttest.pvalue:.3f}). After controls (gender, majority_first, culture), age remains "
+        f"non-significant (coef={age_coef_ctrl:+.3f}, p={age_p_ctrl:.3f}). Age-by-culture interaction terms are "
+        f"not jointly significant (LR p={lr_p:.3f}, min interaction p={min_interaction_p:.3f}), and per-culture age "
+        "slopes are all non-significant. Interpretable models agree that other predictors dominate: "
+        "majority_first and some culture indicators are stronger, while sparse winsorized OLS zeros out age "
+        f"(age selected={age_selected_sparse}). SmartAdditive/HingeEBM show at most weak, unstable age contribution "
+        "relative to stronger covariates. Overall this is weak-to-null evidence for an age effect in this dataset."
     )
 
-    result = {"response": int(score), "explanation": explanation}
+    result = {"response": score, "explanation": explanation}
+    Path("conclusion.txt").write_text(json.dumps(result, ensure_ascii=True))
 
-    with open("conclusion.txt", "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=True)
-
-    print("\n=== Final Conclusion JSON ===")
+    print_header("Final Likert Conclusion")
     print(json.dumps(result, indent=2))
-    print("Wrote conclusion.txt")
+    print("\nWrote conclusion.txt")
 
 
 if __name__ == "__main__":

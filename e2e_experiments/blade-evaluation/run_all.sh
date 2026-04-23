@@ -47,7 +47,7 @@ fi
 
 # Get Azure Entra ID token (keyless)
 refresh_token() {
-    export AZURE_OPENAI_API_KEY="$(python3 -c '
+    export AZURE_OPENAI_API_KEY="$(uv run --project /home/chansingh/imodels-evolve python -c '
 from azure.identity import ChainedTokenCredential, AzureCliCredential, ManagedIdentityCredential
 cred = ChainedTokenCredential(AzureCliCredential(), ManagedIdentityCredential())
 print(cred.get_token("https://cognitiveservices.azure.com/.default").token)

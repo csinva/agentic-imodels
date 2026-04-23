@@ -1,212 +1,275 @@
 import json
+import re
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from scipy import stats
+from sklearn.exceptions import ConvergenceWarning
 
-from interp_models import SmartAdditiveRegressor, HingeEBMRegressor
+from agentic_imodels import (
+    HingeEBMRegressor,
+    HingeGAMRegressor,
+    SmartAdditiveRegressor,
+    WinsorizedSparseOLSRegressor,
+)
 
 
-def build_features(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+np.random.seed(0)
 
-    # Parse date fields used to approximate cycle timing / fertility window.
-    date_cols = ["DateTesting", "StartDateofLastPeriod", "StartDateofPeriodBeforeLast"]
-    for col in date_cols:
-        out[col] = pd.to_datetime(out[col], format="%m/%d/%y", errors="coerce")
 
-    # DV: average religiosity across three survey items.
-    out["Religiosity"] = out[["Rel1", "Rel2", "Rel3"]].mean(axis=1, skipna=True)
+def parse_excluded_features(model_text: str) -> set[str]:
+    excluded = set()
+    for line in model_text.splitlines():
+        if "excluded" in line.lower() and "x" in line:
+            excluded.update(re.findall(r"x\d+", line))
+    return excluded
 
-    # Cycle features.
-    out["InferredCycleLength"] = (
-        out["StartDateofLastPeriod"] - out["StartDateofPeriodBeforeLast"]
-    ).dt.days.astype(float)
-    out["CycleLength"] = out["ReportedCycleLength"].fillna(out["InferredCycleLength"])
-    out["CycleLength"] = out["CycleLength"].clip(lower=20, upper=45)
 
-    out["CycleDay"] = (out["DateTesting"] - out["StartDateofLastPeriod"]).dt.days + 1
+def summarize_model_feature_use(model_text: str, feature_map: dict[str, str], key_features: list[str]) -> dict[str, str]:
+    all_tokens = set(re.findall(r"x\d+", model_text))
+    excluded = parse_excluded_features(model_text)
+    included = all_tokens - excluded
 
-    # Approximate ovulation day ~ 14 days before next period.
-    out["EstimatedOvulationDay"] = out["CycleLength"] - 14
-    out["DaysFromOvulation"] = (out["CycleDay"] - out["EstimatedOvulationDay"]).abs()
-
-    # Primary IV: smooth fertile-window index in [0, 1].
-    out["FertilityIndex"] = (1 - out["DaysFromOvulation"] / 6).clip(lower=0, upper=1)
-
-    # Alternate IV representation for robustness checks.
-    out["HighFertility"] = (out["DaysFromOvulation"] <= 3).astype(int)
-
+    out = {}
+    for feat in key_features:
+        idx_token = feature_map[feat]
+        if idx_token in included:
+            out[feat] = "included"
+        elif idx_token in excluded:
+            out[feat] = "excluded"
+        else:
+            out[feat] = "not_present"
     return out
 
 
+def calibrate_score(
+    p_ols_cont: float,
+    p_ols_binary: float,
+    sparse_zero_count: int,
+    any_positive_robust_signal: bool,
+) -> int:
+    if p_ols_cont < 0.01 and p_ols_binary < 0.05 and any_positive_robust_signal:
+        return 90
+    if p_ols_cont < 0.05 and any_positive_robust_signal:
+        return 78
+    if p_ols_cont < 0.1 or p_ols_binary < 0.1:
+        return 45
+    if sparse_zero_count >= 2 and not any_positive_robust_signal:
+        return 10
+    if sparse_zero_count >= 1:
+        return 20
+    return 30
+
+
 def main() -> None:
-    info_path = Path("info.json")
-    data_path = Path("fertility.csv")
+    root = Path(".")
 
-    info = json.loads(info_path.read_text())
+    with open(root / "info.json", "r", encoding="utf-8") as f:
+        info = json.load(f)
+
     research_question = info["research_questions"][0]
-
-    df_raw = pd.read_csv(data_path)
-    df = build_features(df_raw)
-
-    # Core variables for this research question.
-    dv = "Religiosity"
-    iv = "FertilityIndex"
-
-    print("=== Research Question ===")
+    print("Research question:")
     print(research_question)
-    print("DV:", dv)
-    print("IV:", iv)
+    print()
 
-    print("\n=== Step 1: Summary Statistics ===")
-    summary_cols = [
-        dv,
-        iv,
-        "HighFertility",
-        "CycleDay",
-        "CycleLength",
-        "Relationship",
+    df = pd.read_csv(root / "fertility.csv")
+
+    # Parse dates and construct fertility proxies from cycle timing.
+    date_cols = ["DateTesting", "StartDateofLastPeriod", "StartDateofPeriodBeforeLast"]
+    for c in date_cols:
+        df[c] = pd.to_datetime(df[c], format="%m/%d/%y")
+
+    # Outcome: mean religiosity across available items.
+    rel_cols = ["Rel1", "Rel2", "Rel3"]
+    df["religiosity_mean"] = df[rel_cols].mean(axis=1, skipna=True)
+
+    # Estimated cycle length: reported value if available, else previous-cycle difference.
+    df["calc_cycle_len"] = (
+        df["StartDateofLastPeriod"] - df["StartDateofPeriodBeforeLast"]
+    ).dt.days
+    df["cycle_len_used"] = df["ReportedCycleLength"].fillna(df["calc_cycle_len"]).clip(21, 40)
+
+    # Position in cycle at survey date.
+    df["days_since_last"] = (df["DateTesting"] - df["StartDateofLastPeriod"]).dt.days
+    df["ovulation_day_est"] = df["cycle_len_used"] - 14
+    df["days_from_ovulation"] = df["days_since_last"] - df["ovulation_day_est"]
+
+    # Continuous fertility proxy and binary high-fertility window.
+    sigma_days = 2.5
+    df["fertility_score"] = np.exp(-0.5 * (df["days_from_ovulation"] / sigma_days) ** 2)
+    df["high_fertility"] = df["days_from_ovulation"].between(-5, 0).astype(int)
+
+    # Additional control for secular trend over the survey window.
+    df["test_day_index"] = (df["DateTesting"] - df["DateTesting"].min()).dt.days
+
+    # Drop any residual missing values in analysis columns.
+    analysis_cols = [
+        "religiosity_mean",
+        "fertility_score",
+        "high_fertility",
+        "days_from_ovulation",
+        "days_since_last",
+        "cycle_len_used",
         "Sure1",
         "Sure2",
+        "Relationship",
+        "test_day_index",
     ]
-    print(df[summary_cols].describe().T)
+    dfa = df[analysis_cols].dropna().copy()
 
-    print("\n=== Distributions (value counts for key discrete vars) ===")
-    print("Relationship counts:")
-    print(df["Relationship"].value_counts().sort_index())
-    print("HighFertility counts:")
-    print(df["HighFertility"].value_counts().sort_index())
+    print("=== Data overview ===")
+    print(f"Rows used for analysis: {len(dfa)}")
+    print("\nSummary statistics:")
+    print(dfa.describe().round(3).to_string())
 
-    corr_cols = [dv, iv, "HighFertility", "Relationship", "Sure1", "Sure2", "CycleLength", "CycleDay"]
-    corr = df[corr_cols].corr(numeric_only=True)[dv].sort_values(ascending=False)
-    print("\n=== Bivariate Correlations With DV ===")
-    print(corr)
+    print("\nBinned distributions (counts):")
+    fert_bins = np.histogram(dfa["fertility_score"], bins=[0, 0.2, 0.4, 0.6, 0.8, 1.0])[0]
+    rel_bins = np.histogram(dfa["religiosity_mean"], bins=[1, 3, 5, 7, 9.1])[0]
+    print("fertility_score bins [0-0.2,0.2-0.4,0.4-0.6,0.6-0.8,0.8-1.0]:", fert_bins.tolist())
+    print("religiosity_mean bins [1-3,3-5,5-7,7-9]:", rel_bins.tolist())
 
-    print("\n=== Step 2: Regression Tests With Controls ===")
-    # Bivariate OLS.
-    X_biv = sm.add_constant(df[[iv]])
-    model_biv = sm.OLS(df[dv], X_biv).fit()
-    print("\nBivariate OLS: Religiosity ~ FertilityIndex")
-    print(model_biv.summary())
+    corr_cols = [
+        "religiosity_mean",
+        "fertility_score",
+        "high_fertility",
+        "days_from_ovulation",
+        "days_since_last",
+        "cycle_len_used",
+        "Sure1",
+        "Sure2",
+        "Relationship",
+        "test_day_index",
+    ]
+    print("\nCorrelation matrix (Pearson):")
+    print(dfa[corr_cols].corr().round(3).to_string())
 
-    # Controlled OLS.
-    controls = ["Relationship", "Sure1", "Sure2", "CycleLength", "CycleDay"]
-    X_ctrl = sm.add_constant(df[[iv] + controls])
-    model_ctrl = sm.OLS(df[dv], X_ctrl).fit()
-    print("\nControlled OLS: Religiosity ~ FertilityIndex + controls")
-    print(model_ctrl.summary())
-
-    # Robustness with binary high-fertility indicator.
-    X_alt = sm.add_constant(df[["HighFertility"] + controls])
-    model_alt = sm.OLS(df[dv], X_alt).fit()
-    print("\nRobustness OLS: Religiosity ~ HighFertility + controls")
-    print(model_alt.summary())
-
-    print("\n=== Step 3: Interpretable Models ===")
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-
-    # Exclude identifier and DV-source components to avoid target leakage.
-    exclude = {"WorkerID", dv, "Rel1", "Rel2", "Rel3"}
-    feature_cols = [c for c in numeric_cols if c not in exclude]
-
-    X_interp = df[feature_cols].copy()
-    X_interp = X_interp.fillna(X_interp.median(numeric_only=True))
-    y = df[dv]
-
-    smart = SmartAdditiveRegressor(n_rounds=200)
-    smart.fit(X_interp, y)
-    smart_effects = smart.feature_effects()
-
-    print("\nSmartAdditiveRegressor:")
-    print(smart)
-    print("\nSmartAdditive feature_effects():")
-    print(smart_effects)
-
-    hinge = HingeEBMRegressor(n_knots=3)
-    hinge.fit(X_interp, y)
-    hinge_effects = hinge.feature_effects()
-
-    print("\nHingeEBMRegressor:")
-    print(hinge)
-    print("\nHingeEBM feature_effects():")
-    print(hinge_effects)
-
-    print("\n=== Step 4: Conclusion Synthesis ===")
-    corr_iv = float(df[[iv, dv]].corr().iloc[0, 1])
-
-    biv_coef = float(model_biv.params[iv])
-    biv_p = float(model_biv.pvalues[iv])
-
-    ctrl_coef = float(model_ctrl.params[iv])
-    ctrl_p = float(model_ctrl.pvalues[iv])
-
-    alt_coef = float(model_alt.params["HighFertility"])
-    alt_p = float(model_alt.pvalues["HighFertility"])
-
-    rel_coef = float(model_ctrl.params["Relationship"])
-    rel_p = float(model_ctrl.pvalues["Relationship"])
-
-    smart_iv = smart_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0})
-    smart_iv_direction = str(smart_iv.get("direction", "zero"))
-    smart_iv_importance = float(smart_iv.get("importance", 0.0))
-    smart_iv_rank = int(smart_iv.get("rank", 0) or 0)
-
-    hinge_iv = hinge_effects.get(iv, {"direction": "zero", "importance": 0.0, "rank": 0}) if hinge_effects else {"direction": "zero", "importance": 0.0, "rank": 0}
-    hinge_iv_direction = str(hinge_iv.get("direction", "zero"))
-    hinge_iv_importance = float(hinge_iv.get("importance", 0.0))
-    hinge_iv_rank = int(hinge_iv.get("rank", 0) or 0)
-
-    # Identify strongest non-IV predictors from SmartAdditive for confounder context.
-    smart_sorted = sorted(
-        [(k, v) for k, v in smart_effects.items() if k != iv and float(v.get("importance", 0.0)) > 0],
-        key=lambda kv: float(kv[1]["importance"]),
-        reverse=True,
+    print("\n=== Classical statistical tests ===")
+    pearson = stats.pearsonr(dfa["fertility_score"], dfa["religiosity_mean"])
+    ttest = stats.ttest_ind(
+        dfa.loc[dfa["high_fertility"] == 1, "religiosity_mean"],
+        dfa.loc[dfa["high_fertility"] == 0, "religiosity_mean"],
+        equal_var=False,
     )
-    top_conf = smart_sorted[:2]
+    print(
+        "Bivariate Pearson correlation (fertility_score vs religiosity_mean): "
+        f"r={pearson.statistic:.4f}, p={pearson.pvalue:.4g}"
+    )
+    print(
+        "High-fertility vs others t-test on religiosity_mean: "
+        f"t={ttest.statistic:.4f}, p={ttest.pvalue:.4g}"
+    )
 
-    if top_conf:
-        conf_desc = "; ".join(
-            [
-                f"{name} ranked #{int(eff.get('rank', 0) or 0)} with importance {float(eff.get('importance', 0.0)):.1%} ({eff.get('direction', 'unknown')})"
-                for name, eff in top_conf
-            ]
+    ols_cont = smf.ols(
+        "religiosity_mean ~ fertility_score + Sure1 + Sure2 + cycle_len_used + C(Relationship) + test_day_index",
+        data=dfa,
+    ).fit()
+    print("\nControlled OLS with continuous fertility score:")
+    print(ols_cont.summary())
+
+    ols_binary = smf.ols(
+        "religiosity_mean ~ high_fertility + Sure1 + Sure2 + cycle_len_used + C(Relationship) + test_day_index",
+        data=dfa,
+    ).fit()
+    print("\nControlled OLS with high-fertility indicator:")
+    print(ols_binary.summary())
+
+    print("\n=== agentic_imodels fits (interpretable forms) ===")
+    feature_names = [
+        "fertility_score",
+        "high_fertility",
+        "days_from_ovulation",
+        "days_since_last",
+        "cycle_len_used",
+        "Sure1",
+        "Sure2",
+        "Relationship",
+        "test_day_index",
+    ]
+    feature_map = {name: f"x{i}" for i, name in enumerate(feature_names)}
+
+    X = dfa[feature_names]
+    y = dfa["religiosity_mean"]
+
+    model_classes = [
+        WinsorizedSparseOLSRegressor,  # honest sparse linear (lasso/zeroing evidence)
+        HingeGAMRegressor,  # honest hinge additive model (zeroing + direction)
+        SmartAdditiveRegressor,  # honest shape discovery
+        HingeEBMRegressor,  # high-rank decoupled model
+    ]
+
+    model_texts = {}
+    model_summaries = {}
+    key_features = ["fertility_score", "high_fertility", "days_from_ovulation"]
+
+    for cls in model_classes:
+        print(f"\n--- {cls.__name__} ---")
+        model = cls()
+        model.fit(X, y)
+        text = str(model)
+        print(text)
+        model_texts[cls.__name__] = text
+        model_summaries[cls.__name__] = summarize_model_feature_use(
+            text, feature_map=feature_map, key_features=key_features
         )
-    else:
-        conf_desc = "no other feature had meaningful importance"
 
-    # Likert score (0-100): low when no robust evidence across analyses.
-    if biv_p >= 0.10 and ctrl_p >= 0.10 and alt_p >= 0.10 and smart_iv_importance < 0.05 and hinge_iv_importance < 0.05:
-        score = 8
-    elif ctrl_p >= 0.10 and smart_iv_importance < 0.10:
-        score = 20
-    elif ctrl_p < 0.05 and smart_iv_importance >= 0.10 and hinge_iv_importance >= 0.05:
-        score = 80
-    elif ctrl_p < 0.05:
-        score = 65
-    else:
-        score = 35
+    print("\nModel feature-use summary for fertility-related predictors:")
+    for model_name, summary in model_summaries.items():
+        print(model_name, summary)
+
+    # Evidence synthesis.
+    p_ols_cont = float(ols_cont.pvalues.get("fertility_score", np.nan))
+    beta_ols_cont = float(ols_cont.params.get("fertility_score", np.nan))
+    p_ols_binary = float(ols_binary.pvalues.get("high_fertility", np.nan))
+    beta_ols_binary = float(ols_binary.params.get("high_fertility", np.nan))
+
+    sparse_zero_count = 0
+    robust_positive_signals = 0
+    for model_name in ["WinsorizedSparseOLSRegressor", "HingeGAMRegressor", "HingeEBMRegressor"]:
+        summary = model_summaries.get(model_name, {})
+        if (
+            summary.get("fertility_score") == "excluded"
+            and summary.get("high_fertility") == "excluded"
+            and summary.get("days_from_ovulation") == "excluded"
+        ):
+            sparse_zero_count += 1
+
+    for summary in model_summaries.values():
+        included_any = any(summary.get(k) == "included" for k in key_features)
+        if included_any:
+            robust_positive_signals += 1
+
+    any_positive_robust_signal = robust_positive_signals >= 2
+    score = calibrate_score(
+        p_ols_cont=p_ols_cont,
+        p_ols_binary=p_ols_binary,
+        sparse_zero_count=sparse_zero_count,
+        any_positive_robust_signal=any_positive_robust_signal,
+    )
 
     explanation = (
-        f"The estimated fertility effect on religiosity is weak and not robust. "
-        f"Bivariate association is near zero (corr={corr_iv:.3f}; OLS coef={biv_coef:.3f}, p={biv_p:.3f}). "
-        f"After controls (relationship status, date-certainty measures, cycle length, cycle day), the effect remains near zero "
-        f"(coef={ctrl_coef:.3f}, p={ctrl_p:.3f}). A binary fertile-window robustness check is also null "
-        f"(HighFertility coef={alt_coef:.3f}, p={alt_p:.3f}). "
-        f"In SmartAdditive, FertilityIndex is {smart_iv_direction} with low relative importance "
-        f"({smart_iv_importance:.1%}, rank #{smart_iv_rank}), indicating only a minor nonlinear pattern at most. "
-        f"HingeEBM assigns FertilityIndex direction={hinge_iv_direction} with importance {hinge_iv_importance:.1%} "
-        f"(rank #{hinge_iv_rank}), effectively shrinking it to negligible influence. "
-        f"Other variables matter more: {conf_desc}. "
-        f"Overall, evidence does not support a meaningful effect of fertility-related hormonal fluctuations on religiosity in this sample."
+        f"Research question: {research_question} "
+        f"Using {len(dfa)} women, bivariate evidence was near-zero "
+        f"(Pearson r={pearson.statistic:.3f}, p={pearson.pvalue:.3g}; "
+        f"high-fertility t-test p={ttest.pvalue:.3g}). "
+        f"In controlled OLS, fertility_score was not significant "
+        f"(beta={beta_ols_cont:.3f}, p={p_ols_cont:.3g}) and the high_fertility indicator "
+        f"was also not significant (beta={beta_ols_binary:.3f}, p={p_ols_binary:.3g}). "
+        f"Interpretable models largely gave null evidence: {sparse_zero_count} sparse/hinge models "
+        f"explicitly excluded fertility-related predictors. One additive model showed limited nonzero terms, "
+        f"but this was not robust across model classes. Overall evidence for a fertility-linked effect on "
+        f"religiosity is weak and inconsistent, so the calibrated answer is near 'No'."
     )
 
-    result = {"response": int(score), "explanation": explanation}
-    Path("conclusion.txt").write_text(json.dumps(result))
+    conclusion = {"response": int(score), "explanation": explanation}
+    with open(root / "conclusion.txt", "w", encoding="utf-8") as f:
+        json.dump(conclusion, f)
 
-    print("Likert response:", score)
-    print("Wrote conclusion.txt")
+    print("\n=== Final calibrated conclusion ===")
+    print(json.dumps(conclusion, indent=2))
 
 
 if __name__ == "__main__":
