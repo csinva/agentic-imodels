@@ -135,12 +135,6 @@ Each iteration is a single git commit. Both metrics matter — neither is a hard
 - **Generalization** ([`generalization_experiments/`](generalization_experiments/)): the evolved models retain their Pareto advantage on **new** OpenML regression suites and on a **new 157-test** interpretability suite written from scratch (separate from the 43 dev tests).
 - **End-to-end ADS** ([`e2e_experiments/`](e2e_experiments/)): plugging the evolved models into Claude Code, Codex, and Copilot CLI improves their scores on the BLADE end-to-end data-science benchmark by **8%–47%** vs. standard interpretability tools.
 
-## Paper
-
-> *Interpretable Tabular Regressors Discovered by an Agentic Coding Loop.* 2026.
-
-Source in [`paper-imodels-agentic/`](paper-imodels-agentic/) (`main.pdf`).
-
 ## Related
 
 - [`imodels`](https://github.com/csinva/imodels) — the human-designed sibling library this project extends.
