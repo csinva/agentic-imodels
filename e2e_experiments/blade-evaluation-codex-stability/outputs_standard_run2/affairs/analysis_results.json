@@ -1,0 +1,617 @@
+{
+  "research_question": "Does having children decrease (if at all) the engagement in extramarital affairs?",
+  "eda": {
+    "shape": [
+      601,
+      12
+    ],
+    "columns": [
+      "rownames",
+      "affairs",
+      "gender",
+      "age",
+      "yearsmarried",
+      "children",
+      "religiousness",
+      "education",
+      "occupation",
+      "rating",
+      "children_yes",
+      "affair_any"
+    ],
+    "missing_per_col": {
+      "rownames": 0,
+      "affairs": 0,
+      "gender": 0,
+      "age": 0,
+      "yearsmarried": 0,
+      "children": 0,
+      "religiousness": 0,
+      "education": 0,
+      "occupation": 0,
+      "rating": 0,
+      "children_yes": 0,
+      "affair_any": 0
+    },
+    "summary_numeric": {
+      "rownames": {
+        "count": 601.0,
+        "mean": 1059.7221,
+        "std": 914.9046,
+        "min": 4.0,
+        "25%": 528.0,
+        "50%": 1009.0,
+        "75%": 1453.0,
+        "max": 9029.0
+      },
+      "affairs": {
+        "count": 601.0,
+        "mean": 1.4559,
+        "std": 3.2988,
+        "min": 0.0,
+        "25%": 0.0,
+        "50%": 0.0,
+        "75%": 0.0,
+        "max": 12.0
+      },
+      "age": {
+        "count": 601.0,
+        "mean": 32.4875,
+        "std": 9.2888,
+        "min": 17.5,
+        "25%": 27.0,
+        "50%": 32.0,
+        "75%": 37.0,
+        "max": 57.0
+      },
+      "yearsmarried": {
+        "count": 601.0,
+        "mean": 8.1777,
+        "std": 5.5713,
+        "min": 0.125,
+        "25%": 4.0,
+        "50%": 7.0,
+        "75%": 15.0,
+        "max": 15.0
+      },
+      "religiousness": {
+        "count": 601.0,
+        "mean": 3.1165,
+        "std": 1.1675,
+        "min": 1.0,
+        "25%": 2.0,
+        "50%": 3.0,
+        "75%": 4.0,
+        "max": 5.0
+      },
+      "education": {
+        "count": 601.0,
+        "mean": 16.1664,
+        "std": 2.4026,
+        "min": 9.0,
+        "25%": 14.0,
+        "50%": 16.0,
+        "75%": 18.0,
+        "max": 20.0
+      },
+      "occupation": {
+        "count": 601.0,
+        "mean": 4.1947,
+        "std": 1.8194,
+        "min": 1.0,
+        "25%": 3.0,
+        "50%": 5.0,
+        "75%": 6.0,
+        "max": 7.0
+      },
+      "rating": {
+        "count": 601.0,
+        "mean": 3.9318,
+        "std": 1.1032,
+        "min": 1.0,
+        "25%": 3.0,
+        "50%": 4.0,
+        "75%": 5.0,
+        "max": 5.0
+      },
+      "children_yes": {
+        "count": 601.0,
+        "mean": 0.7155,
+        "std": 0.4516,
+        "min": 0.0,
+        "25%": 0.0,
+        "50%": 1.0,
+        "75%": 1.0,
+        "max": 1.0
+      },
+      "affair_any": {
+        "count": 601.0,
+        "mean": 0.2496,
+        "std": 0.4331,
+        "min": 0.0,
+        "25%": 0.0,
+        "50%": 0.0,
+        "75%": 0.0,
+        "max": 1.0
+      }
+    },
+    "affairs_distribution": {
+      "0": 451,
+      "1": 34,
+      "2": 17,
+      "3": 19,
+      "7": 42,
+      "12": 38
+    },
+    "children_distribution": {
+      "yes": 430,
+      "no": 171
+    },
+    "group_means_affairs_by_children": {
+      "count": {
+        "no": 171,
+        "yes": 430
+      },
+      "mean": {
+        "no": 0.9123,
+        "yes": 1.6721
+      },
+      "std": {
+        "no": 2.7221,
+        "yes": 3.4811
+      },
+      "median": {
+        "no": 0.0,
+        "yes": 0.0
+      }
+    },
+    "corr_with_affairs": {
+      "affairs": 1.0,
+      "affair_any": 0.7659,
+      "yearsmarried": 0.1868,
+      "children_yes": 0.104,
+      "age": 0.0952,
+      "occupation": 0.0496,
+      "education": -0.0024,
+      "rownames": -0.0275,
+      "religiousness": -0.1445,
+      "rating": -0.2795
+    }
+  },
+  "statistical_tests": {
+    "welch_ttest_yes_vs_no": {
+      "t": 2.8412397231212143,
+      "p": 0.0047257171278030875,
+      "mean_yes": 1.672093023255814,
+      "mean_no": 0.9122807017543859
+    },
+    "mannwhitney_yes_vs_no": {
+      "u": 41501.5,
+      "p": 0.0011646274247592325
+    },
+    "pointbiserial_children_yes_vs_affairs": {
+      "r": 0.10401005669146862,
+      "p": 0.010727485265172584
+    },
+    "oneway_anova_yes_vs_no": {
+      "F": 6.550905339832957,
+      "p": 0.010727485265172556
+    },
+    "ols_simple_children": {
+      "coef": 0.7598123215014273,
+      "p": 0.010727485265172462,
+      "ci_low": 0.17679404185863545,
+      "ci_high": 1.342830601144219,
+      "r2": 0.010818091892962456
+    },
+    "ols_adjusted_children": {
+      "coef": -0.1426244618811064,
+      "p": 0.6839562021808289,
+      "ci_low": -0.8304011667878879,
+      "ci_high": 0.5451522430256752,
+      "r2": 0.13173808357958827
+    },
+    "anova_two_way": {
+      "sum_sq": {
+        "C(children)": 69.867901,
+        "C(gender)": 0.13501,
+        "C(children):C(gender)": 1.223341,
+        "Residual": 6457.090976
+      },
+      "df": {
+        "C(children)": 1.0,
+        "C(gender)": 1.0,
+        "C(children):C(gender)": 1.0,
+        "Residual": 597.0
+      },
+      "F": {
+        "C(children)": 6.459741,
+        "C(gender)": 0.012483,
+        "C(children):C(gender)": 0.113106,
+        "Residual": NaN
+      },
+      "PR(>F)": {
+        "C(children)": 0.011286,
+        "C(gender)": 0.911079,
+        "C(children):C(gender)": 0.736754,
+        "Residual": NaN
+      }
+    }
+  },
+  "sklearn_models": {
+    "LinearRegression": {
+      "test_r2": 0.043435584625162615,
+      "top_abs_coefficients": [
+        [
+          "num__rating",
+          -0.7634980160240229
+        ],
+        [
+          "num__religiousness",
+          -0.4301940203464084
+        ],
+        [
+          "cat__gender_male",
+          -0.2364267542052564
+        ],
+        [
+          "num__occupation",
+          0.20978292043865204
+        ],
+        [
+          "num__yearsmarried",
+          0.18142858882898583
+        ],
+        [
+          "cat__children_yes",
+          -0.09386747410727646
+        ],
+        [
+          "num__education",
+          -0.06425932092364729
+        ],
+        [
+          "num__age",
+          -0.04504918925516044
+        ]
+      ],
+      "children_coef": -0.09386747410727646
+    },
+    "Ridge": {
+      "test_r2": 0.04363368550739122,
+      "top_abs_coefficients": [
+        [
+          "num__rating",
+          -0.7619909996386869
+        ],
+        [
+          "num__religiousness",
+          -0.42960784854364614
+        ],
+        [
+          "cat__gender_male",
+          -0.23338882629530952
+        ],
+        [
+          "num__occupation",
+          0.20935544650805646
+        ],
+        [
+          "num__yearsmarried",
+          0.18140367488248965
+        ],
+        [
+          "cat__children_yes",
+          -0.09266870827627977
+        ],
+        [
+          "num__education",
+          -0.06435540096942013
+        ],
+        [
+          "num__age",
+          -0.04506226496280553
+        ]
+      ],
+      "children_coef": -0.09266870827627977
+    },
+    "Lasso": {
+      "test_r2": 0.04654365989454634,
+      "top_abs_coefficients": [
+        [
+          "num__rating",
+          -0.7542937047351337
+        ],
+        [
+          "num__religiousness",
+          -0.42363207834832706
+        ],
+        [
+          "num__occupation",
+          0.2016741346415685
+        ],
+        [
+          "cat__gender_male",
+          -0.1888111086622215
+        ],
+        [
+          "num__yearsmarried",
+          0.1772174598749767
+        ],
+        [
+          "num__education",
+          -0.06282096912909114
+        ],
+        [
+          "num__age",
+          -0.04472641326889603
+        ],
+        [
+          "cat__children_yes",
+          -0.02358858862731695
+        ]
+      ],
+      "children_coef": -0.02358858862731695
+    },
+    "DecisionTreeRegressor": {
+      "test_r2": 0.027725275649616576,
+      "top_feature_importances": [
+        [
+          "num__rating",
+          0.44963715853677977
+        ],
+        [
+          "num__age",
+          0.19984063954761475
+        ],
+        [
+          "num__religiousness",
+          0.17985991675796134
+        ],
+        [
+          "num__yearsmarried",
+          0.1448190285814336
+        ],
+        [
+          "num__education",
+          0.025843256576210477
+        ],
+        [
+          "cat__gender_male",
+          0.0
+        ],
+        [
+          "cat__children_yes",
+          0.0
+        ],
+        [
+          "num__occupation",
+          0.0
+        ]
+      ],
+      "children_importance": 0.0
+    },
+    "DecisionTreeClassifier_any_affair": {
+      "top_feature_importances": [
+        [
+          "num__rating",
+          0.35808294352923353
+        ],
+        [
+          "num__religiousness",
+          0.27811882987560366
+        ],
+        [
+          "cat__children_yes",
+          0.16175536985519431
+        ],
+        [
+          "num__age",
+          0.14874037471227647
+        ],
+        [
+          "num__occupation",
+          0.053302482027691986
+        ],
+        [
+          "cat__gender_male",
+          0.0
+        ],
+        [
+          "num__yearsmarried",
+          0.0
+        ],
+        [
+          "num__education",
+          0.0
+        ]
+      ],
+      "children_importance": 0.16175536985519431
+    }
+  },
+  "imodels_models": {
+    "RuleFitRegressor": {
+      "num_nonzero_rules": 55,
+      "top_rules": [
+        {
+          "rule": "num__age <= 44.5 and num__age > 39.5 and num__yearsmarried > 8.5 and num__education <= 16.5 and num__rating <= 2.5",
+          "type": "rule",
+          "coef": 6.779158824801162,
+          "importance": 0.6739620535460765
+        },
+        {
+          "rule": "num__age <= 47.0 and num__yearsmarried > 5.5 and num__religiousness > 2.5 and num__education <= 19.0 and num__rating <= 2.5",
+          "type": "rule",
+          "coef": 2.5448839703935895,
+          "importance": 0.587928485017029
+        },
+        {
+          "rule": "num__religiousness <= 1.5 and num__rating <= 3.5",
+          "type": "rule",
+          "coef": 4.098533422045273,
+          "importance": 0.49777847977621154
+        },
+        {
+          "rule": "num__religiousness <= 3.5 and num__occupation > 1.5",
+          "type": "rule",
+          "coef": 0.9356471722758486,
+          "importance": 0.4668375557258632
+        },
+        {
+          "rule": "num__age > 39.5 and num__religiousness <= 3.5 and num__religiousness > 1.5",
+          "type": "rule",
+          "coef": -1.67955087321558,
+          "importance": 0.44652327198581115
+        },
+        {
+          "rule": "cat__children_yes > 0.5 and num__age <= 54.5 and num__rating <= 4.5",
+          "type": "rule",
+          "coef": 0.8819309187984297,
+          "importance": 0.4399381541117221
+        },
+        {
+          "rule": "num__age > 19.75 and num__yearsmarried > 2.75 and num__religiousness <= 3.5",
+          "type": "rule",
+          "coef": 0.6704910311428381,
+          "importance": 0.3294780917729428
+        },
+        {
+          "rule": "num__yearsmarried <= 12.5 and num__rating <= 2.5",
+          "type": "rule",
+          "coef": 1.334300486798444,
+          "importance": 0.32868480993703586
+        },
+        {
+          "rule": "num__yearsmarried > 8.5 and num__religiousness <= 3.5 and num__rating <= 2.5",
+          "type": "rule",
+          "coef": 1.6365339464776372,
+          "importance": 0.3267621856527728
+        },
+        {
+          "rule": "num__age <= 19.75 and num__education <= 13.0 and num__rating > 2.5",
+          "type": "rule",
+          "coef": 5.659043413616541,
+          "importance": 0.3259094569983883
+        },
+        {
+          "rule": "num__age > 34.5 and num__yearsmarried > 5.5 and num__religiousness <= 1.5 and num__rating > 4.5",
+          "type": "rule",
+          "coef": 3.7531090823068642,
+          "importance": 0.3051644058020435
+        },
+        {
+          "rule": "num__yearsmarried <= 8.5 and num__religiousness <= 3.5",
+          "type": "rule",
+          "coef": -0.5443326251495864,
+          "importance": 0.2603727664712595
+        }
+      ],
+      "children_terms": [
+        {
+          "rule": "cat__children_yes",
+          "type": "linear",
+          "coef": -0.5123170421458649,
+          "importance": 0.23115144560897385
+        },
+        {
+          "rule": "cat__children_yes > 0.5 and num__age > 19.75 and num__education <= 16.5 and num__rating <= 4.5",
+          "type": "rule",
+          "coef": -0.45858406500902826,
+          "importance": 0.19890203121258587
+        },
+        {
+          "rule": "cat__children_yes > 0.5 and num__age <= 54.5 and num__rating <= 4.5",
+          "type": "rule",
+          "coef": 0.8819309187984297,
+          "importance": 0.4399381541117221
+        },
+        {
+          "rule": "cat__children_yes > 0.5 and num__age > 19.75 and num__education <= 17.5 and num__education > 16.5 and num__rating <= 4.5",
+          "type": "rule",
+          "coef": 1.0210251983998242,
+          "importance": 0.24848946676514166
+        }
+      ]
+    },
+    "FIGSRegressor": {
+      "top_feature_importances": [
+        [
+          "num__rating",
+          0.4735964549502501
+        ],
+        [
+          "num__age",
+          0.21910276733407563
+        ],
+        [
+          "num__occupation",
+          0.08744297184748334
+        ],
+        [
+          "num__education",
+          0.07860989141663224
+        ],
+        [
+          "num__religiousness",
+          0.07435543918970827
+        ],
+        [
+          "cat__children_yes",
+          0.035933945453587135
+        ],
+        [
+          "num__yearsmarried",
+          0.030958529808263354
+        ],
+        [
+          "cat__gender_male",
+          0.0
+        ]
+      ],
+      "children_importance": 0.035933945453587135,
+      "model_text": "> ------------------------------\n> FIGS-Fast Interpretable Greedy-Tree Sums:\n> \tPredictions are made by summing the \"Val\" reached by traversing each tree.\n> \tFor classifiers, a softmax function is then applied to the sum.\n> ------------------------------\nnum__rating <= 2.500 (Tree #0 root)\n\tnum__age <= 49.500 (split)\n\t\tnum__age <= 29.500 (split)\n\t\t\tnum__occupation <= 5.500 (split)\n\t\t\t\tVal: 1.129 (leaf)\n\t\t\t\tVal: 5.385 (leaf)\n\t\t\tnum__education <= 10.500 (split)\n\t\t\t\tVal: 12.146 (leaf)\n\t\t\t\tcat__children_yes <= 0.500 (split)\n\t\t\t\t\tVal: 10.466 (leaf)\n\t\t\t\t\tnum__occupation <= 6.500 (split)\n\t\t\t\t\t\tVal: 5.362 (leaf)\n\t\t\t\t\t\tVal: -1.081 (leaf)\n\t\tVal: 0.0 (leaf)\n\tVal: 1.067 (leaf)\n\n\t+\nnum__religiousness <= 3.500 (Tree #1 root)\n\tnum__yearsmarried <= 8.500 (split)\n\t\tnum__age <= 19.750 (split)\n\t\t\tnum__occupation <= 4.000 (split)\n\t\t\t\tVal: 10.933 (leaf)\n\t\t\t\tVal: -1.067 (leaf)\n\t\t\tVal: -0.192 (leaf)\n\t\tnum__education <= 16.500 (split)\n\t\t\tVal: 0.248 (leaf)\n\t\t\tnum__religiousness <= 1.500 (split)\n\t\t\t\tnum__rating <= 4.500 (split)\n\t\t\t\t\tVal: 2.533 (leaf)\n\t\t\t\t\tVal: 7.933 (leaf)\n\t\t\t\tnum__age <= 39.500 (split)\n\t\t\t\t\tVal: 2.702 (leaf)\n\t\t\t\t\tVal: 0.312 (leaf)\n\tVal: -0.541 (leaf)\n"
+    },
+    "HSTreeRegressor": {
+      "top_feature_importances": [
+        [
+          "num__age",
+          0.42994680155994425
+        ],
+        [
+          "num__rating",
+          0.3567045277212223
+        ],
+        [
+          "num__religiousness",
+          0.07403078910096601
+        ],
+        [
+          "cat__children_yes",
+          0.07297333231819121
+        ],
+        [
+          "num__education",
+          0.06634454929967636
+        ],
+        [
+          "cat__gender_male",
+          0.0
+        ],
+        [
+          "num__yearsmarried",
+          0.0
+        ],
+        [
+          "num__occupation",
+          0.0
+        ]
+      ],
+      "children_importance": 0.07297333231819121,
+      "model_text": "> ------------------------------\n> Decision Tree with Hierarchical Shrinkage\n> \tPrediction is made by looking at the value in the appropriate leaf of the tree\n> ------------------------------\n|--- num__rating <= 2.50\n|   |--- num__age <= 49.50\n|   |   |--- num__age <= 29.50\n|   |   |   |--- value: [1.99]\n|   |   |--- num__age >  29.50\n|   |   |   |--- cat__children_yes <= 0.50\n|   |   |   |   |--- value: [11.84]\n|   |   |   |--- cat__children_yes >  0.50\n|   |   |   |   |--- value: [5.50]\n|   |--- num__age >  49.50\n|   |   |--- value: [0.04]\n|--- num__rating >  2.50\n|   |--- num__religiousness <= 3.50\n|   |   |--- num__education <= 16.50\n|   |   |   |--- num__age <= 19.75\n|   |   |   |   |--- value: [11.93]\n|   |   |   |--- num__age >  19.75\n|   |   |   |   |--- value: [0.79]\n|   |   |--- num__education >  16.50\n|   |   |   |--- value: [2.15]\n|   |--- num__religiousness >  3.50\n|   |   |--- value: [0.53]\n"
+    }
+  },
+  "conclusion": {
+    "response": 15,
+    "explanation": "The data do not support that having children decreases extramarital affairs. Unadjusted comparisons show higher mean affairs for couples with children (1.67) than without (0.91), with a significant Welch t-test (p=0.004726). After adjustment for age, years married, religiousness, education, occupation, rating, and gender, the children coefficient is small and not significant (coef=-0.143, p=0.684, 95% CI [-0.830, 0.545]). Interpretable models (linear/ridge/lasso, trees, and imodels RuleFit/FIGS/HSTree) also indicate children is not a dominant driver versus marital rating, religiousness, age, and years married."
+  }
+}

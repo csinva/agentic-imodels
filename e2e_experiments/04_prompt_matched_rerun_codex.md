@@ -1,0 +1,4 @@
+We now want to rerun the experiments in `blade-evaluation-codex` (standard setting only) to test prompt stability. To do this, make a copy of the `blade-evaluation-codex` folder and name it `blade-evaluation-codex-stability`. In this setting,
+make a minor variation to the prompt so that it is as similar as possible to the existing prompt used for the custom runs (e.g. AGENTS_MD_CUSTOM_V2 in the prepare_run.py folder). The only change should be that it points to the imodels repo <https://github.com/csinva/imodels> instead of the `SKILLS.md` in agentic-imodels.
+
+Rerun the experiments (standard setting only) and then add a plot to the Appendix (in the subsection "Extended results on the BLADE end-to-end ADS analysis") showing the results from this stability run alongside the original `blade-evaluation-codex` results to visualize any differences in performance due to the minor prompt variation.

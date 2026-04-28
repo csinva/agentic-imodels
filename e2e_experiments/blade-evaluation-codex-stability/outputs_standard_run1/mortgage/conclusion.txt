@@ -1,0 +1,1 @@
+{"response": 45, "explanation": "Evidence is mixed. Adjusted OLS shows female coefficient=0.0381 (p=0.02672), and unadjusted OLS p=0.9878. Estimated effect size is about 3.81 percentage points (higher approval for women). Interpretable models agree: LinearRegression female coef=0.0429, DecisionTree female importance=0.0000, RuleFit female rule |coef|max=0.0005."}
