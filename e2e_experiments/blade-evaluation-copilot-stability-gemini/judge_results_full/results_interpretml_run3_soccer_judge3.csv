@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+soccer,ok,90,4,3,3,"The AI agent delivers a high Likert score based solely on a significant p-value, lacking justification from model robustness, effect size, or feature importance across modeling approaches. It fails to control for confounding factors or investigate the relationship's shape. The explanation is shallow, as it doesn't quantify the effect or clarify its directionality, limits, or robustness."

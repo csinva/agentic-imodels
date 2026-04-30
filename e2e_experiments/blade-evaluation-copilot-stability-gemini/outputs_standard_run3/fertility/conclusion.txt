@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "T-test results: t-statistic=0.401, p-value=0.689. OLS regression results: fertility coefficient=0.200, p-value=0.658. There is no statistically significant relationship between fertility and religiosity based on the t-test and OLS regression."}

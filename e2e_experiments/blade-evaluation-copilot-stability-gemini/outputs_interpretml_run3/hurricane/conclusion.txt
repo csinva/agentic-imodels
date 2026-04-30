@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "There is no statistically significant relationship (p=0.262) between the femininity of a hurricane's name and the number of deaths."}

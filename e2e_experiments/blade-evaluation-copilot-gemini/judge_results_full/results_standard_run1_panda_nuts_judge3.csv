@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+panda_nuts,ok,66,5,4,4,"The AI agent identified significant influences from age and sex but did not justify these with effect sizes or feature importance. The conclusion lacks depth, relying on p-values without discussing the shape of relationships or controlling for confounders. The explanation is unclear, with no description of model robustness or interaction insights from the FIGS model. The Likert score feels miscalibrated given limited evidence and lack of support for 'help' influence."

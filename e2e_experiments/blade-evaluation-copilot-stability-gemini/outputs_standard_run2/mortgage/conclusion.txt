@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "There is no statistically significant relationship between gender and mortgage denial (p-value: 1.0000). The logistic regression coefficient for 'female' is -0.6160, which is not statistically significant."}

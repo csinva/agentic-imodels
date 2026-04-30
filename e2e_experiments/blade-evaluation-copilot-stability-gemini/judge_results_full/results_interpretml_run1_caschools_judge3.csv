@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+caschools,ok,90,5,3,4,"The AI agent provided a Likert score without context beyond significance. This overly depends on a single model coefficient and p-value, offering no evidence from multiple models or effect size comparisons. There is no mention of controls or feature importance, thus lacking depth. The explanation mentions a negative relationship but doesn’t explore relative importance or robustness across models."

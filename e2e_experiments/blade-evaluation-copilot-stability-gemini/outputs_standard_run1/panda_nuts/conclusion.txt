@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "Based on the analysis:\\nStatsmodels OLS p-values for age, sex, and help are 0.000, 0.000, and 0.132 respectively.\\nThe following features have a statistically significant impact on nut-cracking efficiency: age, sex.\\nRuleFitRegressor provides additional insights into feature interactions."}

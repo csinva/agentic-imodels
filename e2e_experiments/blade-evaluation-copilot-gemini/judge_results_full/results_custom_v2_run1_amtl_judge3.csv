@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+amtl,ok,95,9,9,9,"The AI agent reaches a well-supported conclusion with a Likert score of 95, well-aligned with strong evidence across multiple models, corroborated by significant coefficients and importance rankings. Completeness is high due to the use of GLM with controls and interpretable models to check robustness. Clarity is strong, explaining the direction and magnitude of the human effect along with model consistency."

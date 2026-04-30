@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+amtl,ok,10,9,9,9,"The AI agent correctly dismisses 'is_human' as a key predictor based on multiple models. The evidence is well-presented with OLS showing no significant effect and interpretable models excluding the variable. Performance of no direct effect is well justified, reflecting a well-calibrated Likert score. Multiple approaches validate this non-effect, with attention to model exclusion adding depth to the analysis."

@@ -1,0 +1,4 @@
+{
+  "response": 95,
+  "explanation": "The coefficient for 'is_human' in the binomial regression model is 1.5349 with a p-value of 0.0026. This indicates that being human is significantly associated with a higher rate of antemortem tooth loss, after controlling for age, sex, and tooth class."
+}

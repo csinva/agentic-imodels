@@ -1,0 +1,4 @@
+{
+    "response": 85,
+    "explanation": "A statistically significant positive correlation (p=0.000) was found between beauty and teaching evaluations. The linear regression coefficient of 0.133 indicates that for every one-unit increase in beauty rating, the teaching evaluation score increases by 0.133 points, suggesting that more attractive teachers tend to receive higher evaluations."
+}

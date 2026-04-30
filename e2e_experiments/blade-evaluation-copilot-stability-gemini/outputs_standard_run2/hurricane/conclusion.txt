@@ -1,0 +1,1 @@
+{"response": 15, "explanation": "There is no statistically significant relationship (p-value: 0.2316) between the femininity of a hurricane's name ('masfem') and the number of deaths. The OLS regression results do not support the hypothesis that feminine-named hurricanes are perceived as less threatening and thus cause more deaths."}

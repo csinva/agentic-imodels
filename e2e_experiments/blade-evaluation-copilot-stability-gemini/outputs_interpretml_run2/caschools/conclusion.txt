@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "The OLS regression coefficient for student_teacher_ratio is -0.4228 with a p-value of 0.0984. The relationship is not statistically significant, so we cannot conclude that a lower student-teacher ratio is associated with higher performance. The Explainable Boosting Regressor shows an average effect of 7.9916 for the student-teacher ratio."}

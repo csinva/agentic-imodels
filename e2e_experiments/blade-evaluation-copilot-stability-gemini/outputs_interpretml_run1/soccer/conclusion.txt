@@ -1,0 +1,1 @@
+{"response": 67, "explanation": "The model found a positive relationship between skin tone and red cards. The feature importance for skin tone was 0.0678, and the average effect on the log-odds of receiving a red card was 0.0414. This suggests that, holding other factors constant, players with darker skin tones are more likely to receive red cards."}

@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+mortgage,ok,90,4,3,3,"The AI's conclusion is inadequately justified with only a significant p-value, lacking robustness from multiple models or feature importance rankings. The analysis lacks completeness, as it does not explore control variables like credit scores or debt ratios. Clarity is also poor, only stating significance without explaining the effect's direction or comparing with other predictors. The high Likert score is miscalibrated given the limited evidence provided."

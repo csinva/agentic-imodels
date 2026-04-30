@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+crofoot,ok,80,5,4,4,"The AI Agent concludes that relative group size is most important based on positive correlation, but lacks multi-model confirmation or a full justification for the Likert score. No evidence is presented on location influence or control for confounders, affecting completeness and correctness. The explanation is shallow, as it lacks detail on effect size, importance ranking, and relationship shapes beyond correlation."

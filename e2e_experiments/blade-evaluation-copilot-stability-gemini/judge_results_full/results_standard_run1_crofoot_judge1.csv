@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+crofoot,ok,20,4,3,3,"The AI agent concludes there is no effect of group size or location but does not justify the Likert score of 20 based on multiple models or metrics. It lacks discussion of effect sizes, feature importance, or robustness checks. There's no investigation into the shape of relationships or control for confounders, and the explanation is shallow, not providing insight into effect directions or importance."

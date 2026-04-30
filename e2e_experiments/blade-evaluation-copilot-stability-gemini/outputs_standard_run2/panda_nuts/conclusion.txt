@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "Age is the most significant factor influencing nut-cracking efficiency. Older, more experienced chimpanzees are more efficient."}

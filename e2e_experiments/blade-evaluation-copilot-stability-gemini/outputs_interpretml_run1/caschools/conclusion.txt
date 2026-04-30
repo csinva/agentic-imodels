@@ -1,0 +1,1 @@
+{"response": 90, "explanation": "The coefficient for the student-teacher ratio is -0.5604 with a p-value of 0.0146. This indicates a statistically significant negative relationship between student-teacher ratio and academic performance. Lower student-teacher ratios are associated with higher scores."}

@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "The t-test was significant, but showed that people with children had *more* affairs (p-value: 0.001). This contradicts the research question."}

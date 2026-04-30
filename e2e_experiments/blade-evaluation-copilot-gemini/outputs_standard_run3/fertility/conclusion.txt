@@ -1,0 +1,1 @@
+{"response": 50, "explanation": "A t-test was performed to compare religiosity between fertile and non-fertile groups. The p-value is 0.529. There is no statistically significant difference in religiosity between the two groups."}

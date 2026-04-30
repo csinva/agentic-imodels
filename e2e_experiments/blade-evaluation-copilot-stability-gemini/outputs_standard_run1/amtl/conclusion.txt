@@ -1,0 +1,1 @@
+{"response": 100, "explanation": "The p-value for the intercept in the binomial regression model is 0.0000. This indicates a significant difference in AMTL rates between humans and non-human primates, even after accounting for age, sex, and tooth class. The RuleFit model further provides interpretable rules that highlight the specific factors contributing to this difference."}

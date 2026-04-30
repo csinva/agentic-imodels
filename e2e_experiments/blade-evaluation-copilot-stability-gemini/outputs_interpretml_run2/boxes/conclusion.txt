@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "No, there is not a clear positive relationship. The model does not show a consistent increase in the likelihood of choosing the majority option with age."}

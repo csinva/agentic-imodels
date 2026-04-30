@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+affairs,ok,10,3,2,2,"The AI concludes a Likert score of 10 suggesting a strong 'No', which conflicts with a p-value suggesting significance. This misalignment shows incorrect conclusion calibration. Completeness is low as it solely relies on a t-test, ignoring control for confounders or feature importance. Clarity suffers due to the contradiction between the score and p-value without explaining feature effects or importance."

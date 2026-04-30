@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+caschools,ok,85,8,9,8,"The agent provides a well-supported conclusion with evidence from bivariate and multivariate analyses. The negative relationship is consistent across models, and the Likert score reflects strong evidence. Completeness is high due to controls for confounders and nonlinear pattern exploration. Clarity is good, reporting negative effect direction and robustness across multiple models, though clarity can improve with clearer connection of statistics to interpretations."

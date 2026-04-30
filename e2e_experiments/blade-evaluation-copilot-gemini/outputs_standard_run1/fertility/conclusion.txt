@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "There is no statistically significant relationship between fertility and religiosity (t-test p-value: 0.332, regression p-value: 0.332)."}

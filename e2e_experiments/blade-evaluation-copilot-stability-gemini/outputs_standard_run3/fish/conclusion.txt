@@ -1,0 +1,4 @@
+{
+  "response": 85,
+  "explanation": "The most significant factors influencing the number of fish caught are the number of hours spent, the number of people, and the use of live bait. The model generated several rules. For example, rules indicate that spending more hours and having more people in a group significantly increases the number of fish caught. Using live bait also has a positive impact. The camper variable had a less significant, but still present, effect. The number of children had a small negative correlation in some rules, suggesting groups with more children caught slightly fewer fish per person. The model's R-squared is 0.91, indicating a good fit to the data. The average rate of fish caught is 1.11 per hour."
+}

@@ -1,0 +1,1 @@
+{"response": 90, "explanation": "The coefficient for is_human is 1.169. This suggests that humans have a higher rate of antemortem tooth loss compared to other primates, after controlling for age, sex, and tooth class."}

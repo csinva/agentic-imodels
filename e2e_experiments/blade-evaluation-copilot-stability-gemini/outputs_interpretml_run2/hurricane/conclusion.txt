@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "The regression model does not show a statistically significant positive relationship between the femininity of a hurricane's name and the number of deaths (p-value: 0.2316). This does not support the hypothesis."}

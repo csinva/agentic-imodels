@@ -1,0 +1,1 @@
+{"response": 95, "explanation": "The model shows a statistically significant positive relationship (p < 0.05) between being a modern human and the frequency of antemortem tooth loss, after controlling for age, sex, and tooth class. The coefficient for 'is_human' is positive, indicating that humans have a higher likelihood of AMTL."}

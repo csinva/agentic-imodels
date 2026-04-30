@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "No, there is not a statistically significant relationship between having children and the number of extramarital affairs. The p-value is 0.560, which is greater than 0.05."}

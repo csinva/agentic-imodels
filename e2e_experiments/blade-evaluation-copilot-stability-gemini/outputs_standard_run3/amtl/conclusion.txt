@@ -1,0 +1,1 @@
+{"response": 90, "explanation": "The coefficients for all other primate genera (Pan, Papio, Pongo) are negative, which indicates that modern humans (Homo sapiens), the reference category, have a significantly higher likelihood of antemortem tooth loss compared to other primate genera in the dataset, even after accounting for age, sex, and tooth class."}

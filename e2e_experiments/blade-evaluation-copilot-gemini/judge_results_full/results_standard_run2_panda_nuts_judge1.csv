@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+panda_nuts,ok,80,5,4,4,"The AI agent concludes that age and sex have a significant influence based on p-values, but the justification is weak. The Likert score of 80 is high despite limited evidence on the strength or relative importance of these predictors. No evidence is provided on effect sizes, importance rankings, or robustness across models. Confounders or nonlinear effects are not discussed, impairing completeness. Explanation is shallow, lacking details on effect directions or rankings."

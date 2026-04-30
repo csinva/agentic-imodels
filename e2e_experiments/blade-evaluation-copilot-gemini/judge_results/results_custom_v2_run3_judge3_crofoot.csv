@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+crofoot,ok,85,9,8,9,"The AI agent provided a well-supported and defensible conclusion. The analysis used GLM and interpretable models and found consistent significance in relative group size, which was reported as the most important feature. While the location effect was not statistically significant, its consistent direction across models adds depth. The explanation clearly quantified relative importance and described the effect shapes, showing strong analytical insight."

@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+crofoot,ok,50,5,5,5,"The AI agent correctly suggests group size difference affects winning while contest location does not, based on significance. However, it lacks depth in justifying the Likert score of 50, which is poorly calibrated without discussing effect sizes or feature importance. The explanation doesn't explore control variables, effect shapes, or robustness across models, and it doesn't clearly quantify or rank variable importance."

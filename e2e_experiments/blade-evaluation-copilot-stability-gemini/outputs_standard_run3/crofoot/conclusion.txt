@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "There is no statistically significant relationship between relative group size (n_diff) and the probability of winning. The p-value for the relative group size is 0.147, which is greater than 0.05. The logistic regression coefficient for n_diff is 0.094. The RuleFit model's rules do not consistently show a strong effect of group size."}

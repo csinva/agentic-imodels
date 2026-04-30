@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "There is no statistically significant relationship (p=0.077) between skin tone and red cards."}

@@ -1,0 +1,4 @@
+{
+  "response": 75,
+  "explanation": "The correlation between beauty and teaching evaluation is 0.189 (p-value: 0.000). The linear regression coefficient is 0.133, suggesting a positive relationship. For every one-unit increase in the beauty score, the teaching evaluation score increases by 0.133 on average."
+}

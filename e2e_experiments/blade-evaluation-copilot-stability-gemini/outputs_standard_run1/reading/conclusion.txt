@@ -1,0 +1,1 @@
+{"response": 50, "explanation": "There is no statistically significant difference in reading speed for individuals with dyslexia when using Reader View (p-value >= 0.05)."}

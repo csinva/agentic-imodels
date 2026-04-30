@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "The coefficient for Homo sapiens is -0.0038. The non-positive coefficient suggests that Homo sapiens do not have a higher rate of antemortem tooth loss compared to the reference primate genus (Pan). Note: p-value not calculated with sklearn."}

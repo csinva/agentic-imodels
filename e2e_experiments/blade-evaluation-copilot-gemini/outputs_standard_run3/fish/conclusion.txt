@@ -1,0 +1,1 @@
+{"response": 100, "explanation": "The average number of fish caught per hour is 1.11. To understand the factors influencing the number of fish caught, a multiple regression analysis was performed. The statistically significant factors (p < 0.05) are: persons, child. This means that changes in these factors are associated with changes in the number of fish caught. "}

@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+reading,ok,10,5,3,3,"The AI agent correctly identifies the lack of statistical significance, but the Likert score (10) contradicts its conclusion of 'not enough evidence.' The analysis lacks depth, failing to explore potential confounders, effect sizes, or multiple models. Explanation is limited to p-values without discussing relationships or relative importance."

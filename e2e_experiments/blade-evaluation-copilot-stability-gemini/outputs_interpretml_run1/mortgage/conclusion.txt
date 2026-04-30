@@ -1,0 +1,4 @@
+{
+  "response": 75,
+  "explanation": "There is a statistically significant relationship between gender and mortgage application approval (p-value: 0.0161). The logistic regression model shows that being female is associated with a higher likelihood of denial. The Explainable Boosting Classifier also identifies 'female' as a feature with non-zero importance (0.0520), although it is not one of the most important predictors. This suggests that while gender does play a role, other factors are more influential in the decision."
+}

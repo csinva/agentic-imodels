@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+caschools,ok,90,5,4,5,"The AI agent concluded with a high Likert score based solely on statistical significance, lacking depth and calibration with effect size or feature importance. There is no evidence of considering confounders, multiple analyses, or model validation. The explanation lacks depth in terms of relationship shapes, relative importance, or cross-model robustness."

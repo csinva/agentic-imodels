@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "Neither relative group size nor contest location has a statistically significant impact on the probability of winning."}

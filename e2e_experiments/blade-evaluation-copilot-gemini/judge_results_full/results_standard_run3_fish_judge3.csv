@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+fish,ok,100,4,3,4,"The AI agent provides a Likert score of 100, which is not well-calibrated, as the analysis only identifies 'persons' and 'child' as significant without detailing effect sizes or importance. Completeness is low due to absence of controls, no exploration of effect sizes, or robustness checks across models. Clarity is poor, as the explanation focuses only on significance without discussing direction, magnitude, or interpreting the implications on fish caught per hour."

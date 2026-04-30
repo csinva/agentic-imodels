@@ -1,0 +1,1 @@
+{"response": 15, "explanation": "No statistically significant relationship was found between skin tone and the likelihood of receiving red cards."}

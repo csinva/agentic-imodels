@@ -1,0 +1,1 @@
+{"response": 90, "explanation": "Gender has a statistically significant effect on mortgage denial (p-value: 0.0161). The negative coefficient (-0.4929) suggests that being female decreases the likelihood of denial, holding other factors constant."}

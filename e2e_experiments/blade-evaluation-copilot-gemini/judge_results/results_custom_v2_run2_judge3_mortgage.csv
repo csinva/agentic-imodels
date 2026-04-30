@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+mortgage,ok,30,8,7,9,"The AI agent's analysis correctly identifies a statistically significant effect in the logistic regression but calibrates the Likert score acknowledging weak evidence across other models. Completeness is good, with consideration of multiple models, but could explore effect shapes or control variables more deeply. Clarity is high; the explanation differentiates model results, reports effect direction and magnitude, and aligns statistical evidence with the Likert score."

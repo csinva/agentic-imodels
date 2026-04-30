@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+panda_nuts,ok,53,4,3,5,"The AI agent's Likert score is not well-calibrated to the explanations provided, with contradictions such as claiming both positive and negative association with receiving help. The analysis lacks depth in multivariate modeling. It incorrectly states relationships without clear evidence across models. No use of confounder analysis or effect size calibration."

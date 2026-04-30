@@ -1,0 +1,1 @@
+{"response": 89, "explanation": "There is a statistically significant relationship between beauty and teaching evaluations (p-value: 0.0000). The coefficient for beauty is 0.1458, suggesting that for each unit increase in beauty, the teaching evaluation is expected to increase by 0.1458, holding all other factors constant."}

@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "The regression model does not show a statistically significant (p=0.157) or the expected positive relationship between the femininity of a hurricane's name and the number of deaths. The coefficient for 'masfem' was 1.591. This does not support the hypothesis."}

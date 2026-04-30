@@ -1,0 +1,1 @@
+{"response": 50, "explanation": "Based on the analysis: Relative group size is not a statistically significant predictor. Contest location is not a statistically significant predictor. "}

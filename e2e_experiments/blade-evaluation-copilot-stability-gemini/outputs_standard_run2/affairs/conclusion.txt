@@ -1,0 +1,1 @@
+{"response": 5, "explanation": "Having children appears to significantly increase or have no decreasing effect on extramarital affairs (p-value: 0.0047). The average number of affairs for those with children is 1.67, compared to 0.91 for those without."}

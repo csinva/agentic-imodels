@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "There is no statistically significant relationship between being in the fertile window and religiosity (p-value = 0.5178). The regression model shows that fertility does not have a significant effect on religiosity when controlling for other factors."}

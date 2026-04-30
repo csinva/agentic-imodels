@@ -1,0 +1,1 @@
+{"response": 90, "explanation": "The p-value for gender in the logistic regression model is 0.031, which is statistically significant at the 0.05 level. This suggests that gender has a significant impact on mortgage denial, after controlling for other factors. The coefficient for female was -0.446. The t-test p-value of 0.914 also supports this conclusion."}

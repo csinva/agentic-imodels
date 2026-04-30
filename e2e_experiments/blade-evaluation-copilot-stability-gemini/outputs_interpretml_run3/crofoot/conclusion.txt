@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "Relative group size is the most important factor in determining the winner of a contest. The model shows a strong positive correlation between a larger group size and the probability of winning."}

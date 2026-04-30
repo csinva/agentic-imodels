@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+teachingratings,ok,85,9,9,9,"The AI agent provides a well-justified conclusion, supported by multiple models, appropriately calibrated confidence in the Likert score, and acknowledges feature importance. The analysis includes controls and examines both effect sizes and feature importance, indicating a deep understanding. The explanation is clear, describing the direction and magnitude of effects, and demonstrating robustness across models."

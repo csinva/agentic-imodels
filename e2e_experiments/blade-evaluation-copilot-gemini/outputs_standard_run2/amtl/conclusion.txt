@@ -1,0 +1,1 @@
+{"response": 95, "explanation": "The coefficient for 'is_human' is 1.5349 with a p-value of 0.0026. This indicates that humans have a statistically significant higher frequency of antemortem tooth loss compared to non-human primates, after controlling for age, sex, and tooth class."}

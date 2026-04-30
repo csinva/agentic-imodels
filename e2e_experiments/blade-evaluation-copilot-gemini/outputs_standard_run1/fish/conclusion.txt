@@ -1,0 +1,1 @@
+{"response": 85, "explanation": "The average number of fish caught per hour is 1.11. Several factors significantly influence the total number of fish caught. The most significant factors are: persons, child. The coefficient for persons is 4.58, suggesting a positive correlation. The coefficient for child is -4.87, suggesting a positive correlation. "}

@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "The p-value from the t-test is 0.9878. This does not indicate a statistically significant difference in mortgage denial rates between genders. The Explainable Boosting Model assigned a feature importance of 0.0408 to the 'female' feature. "}

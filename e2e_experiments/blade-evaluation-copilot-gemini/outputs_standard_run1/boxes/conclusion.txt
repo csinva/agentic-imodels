@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "There is no significant relationship (or a negative one) between age and choosing the majority option (coefficient: -0.036, p-value: 0.502). The data does not support the idea that reliance on majority preference increases with age in this context."}

@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "The coefficient for beauty is 0.1458 with a p-value of 0.0000. This indicates a statistically significant positive relationship between beauty and teaching evaluations. As the beauty score increases, the teaching evaluation tends to increase as well."}

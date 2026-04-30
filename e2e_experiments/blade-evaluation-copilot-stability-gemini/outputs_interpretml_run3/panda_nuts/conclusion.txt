@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "Linear Regression MSE: 0.0564, EBM MSE: 0.0618. OLS p-values for age, sex, and help are 0.0001, 0.0014, and 0.1173 respectively. The features age, sex are statistically significant predictors of nut-cracking efficiency."}

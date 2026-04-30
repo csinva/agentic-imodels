@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+caschools,ok,90,5,3,4,"The AI agent's conclusion is mainly based on statistical significance without mentioning other evidence. The agent didn't discuss effect sizes, importance, or controls for confounders. Explanation is limited to p-value without exploring relationship details like linearity or importance. The Likert score seems inflated given the minimal justification provided."

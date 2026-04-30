@@ -1,0 +1,1 @@
+{"response": 25, "explanation": "The OLS model does not show a statistically significant relationship between 'Reader View' and reading speed for individuals with dyslexia (p > 0.1). The interpretable models show a very small or negligible effect. Therefore, there is not enough evidence to conclude that 'Reader View' improves reading speed for this group."}

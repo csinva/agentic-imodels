@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "The average rate of fish caught per hour is approximately 1.11. To determine the factors influencing the number of fish caught, a linear regression model was fitted. The statistically significant factors (p < 0.05) are: persons, child. This suggests that these factors have a meaningful impact on the number of fish caught."}

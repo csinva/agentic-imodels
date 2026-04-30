@@ -1,0 +1,1 @@
+{"response": 95, "explanation": "The coefficient for 'is_human' is 1.535 with a p-value of 0.003. This indicates that modern humans have a statistically significant higher frequency of AMTL compared to non-human primates, after controlling for age, sex, and tooth class."}

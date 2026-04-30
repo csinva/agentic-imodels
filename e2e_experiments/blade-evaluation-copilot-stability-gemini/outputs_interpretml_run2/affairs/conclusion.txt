@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "The relationship between having children and engaging in extramarital affairs is not statistically significant (p-value: 0.1341, coefficient: 0.4354). Therefore, we cannot conclude that having children decreases engagement in affairs."}

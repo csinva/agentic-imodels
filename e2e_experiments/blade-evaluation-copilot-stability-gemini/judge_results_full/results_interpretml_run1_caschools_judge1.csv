@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+caschools,ok,90,5,4,5,"Correct direction but weak justification for high Likert score; relied solely on p-value and coefficient from one model, lacks validation across approaches. Completeness is limited as no control variables or confounders are mentioned. Clarity lacks depth in explaining relationship beyond significance."

@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+soccer,ok,80,2,3,3,The conclusion is flawed due to contradictory evidence across models—statistical significance in OLS contrasts with zero importance in other models. This undermines the justification for a high Likert score. Completeness is low as it fails to account for confounders or explore nonlinearities. Clarity suffers from listing statistics without meaningful interpretation of effects or evidence synthesis across models.

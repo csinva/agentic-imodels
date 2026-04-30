@@ -1,0 +1,1 @@
+{"response": 15, "explanation": "The analysis does not show a statistically significant improvement in reading speed for individuals with dyslexia when using Reader View. The t-test p-value is 0.6965. The mean reading speed with reader view was 323.34 compared to 342.27 without. The regression model did not show a significant interaction effect (p=0.9250)."}

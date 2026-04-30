@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+hurricane,ok,15,4,4,4,"The AI agent's analysis is poorly justified. It relies solely on the p-value without considering other evidence. There is no mention of effect size, feature importance, or robustness across different models. The explanation lacks depth, only reporting significance and offering little insight into relationships between variables."

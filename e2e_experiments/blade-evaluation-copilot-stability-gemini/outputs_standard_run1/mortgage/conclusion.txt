@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "Gender appears to have a statistically significant effect on mortgage application approval, with a p-value of 0.0257. This suggests that gender is a significant predictor of the outcome, even after accounting for other variables."}

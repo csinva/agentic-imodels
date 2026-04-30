@@ -1,0 +1,1 @@
+{"response": 5, "explanation": "The coefficient for 'is_human' is -3305224795188098.5000 with a p-value of 0.0000. This indicates that modern humans have a statistically significant lower frequency of antemortem tooth loss compared to non-human primates, after controlling for age, sex, and tooth class."}

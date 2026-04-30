@@ -1,0 +1,1 @@
+{"response": 10, "explanation": "The p-value for relative group size is 0.225 and for contest location (distance difference) is 0.365. Neither relative group size nor contest location are statistically significant predictors."}

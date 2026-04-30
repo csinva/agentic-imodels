@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+amtl,ok,95,5,3,4,"The AI agent reaches the right direction but fails to justify the Likert score through multiple approaches or feature importance. The analysis lacks depth in exploring confounders thoroughly and explaining how the 'is_human' variable ranks compared to others. The explanation only reports significance without describing associations, effect sizes, or robustness in depth."

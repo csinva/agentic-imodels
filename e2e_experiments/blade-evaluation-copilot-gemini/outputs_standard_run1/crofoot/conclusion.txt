@@ -1,0 +1,4 @@
+{
+  "response": 85,
+  "explanation": "A logistic regression model was fitted to predict the probability of a focal group winning a contest. The coefficient for relative group size (n_diff) is positive (0.09), suggesting that larger groups are more likely to win. The coefficient for contest location (dist_diff) is negative (-0.00), suggesting that groups are more likely to win contests that occur closer to their home range. Both factors are statistically significant (p < 0.05 in a Wald test)."
+}

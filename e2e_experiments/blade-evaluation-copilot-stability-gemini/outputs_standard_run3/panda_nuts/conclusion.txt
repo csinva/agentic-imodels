@@ -1,0 +1,1 @@
+{"response": 80, "explanation": "The analysis indicates a statistically significant relationship between nut-cracking efficiency and the following factors: age, sex. The p-values for these variables were less than 0.05, suggesting they are important predictors of efficiency."}

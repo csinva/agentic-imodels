@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+affairs,ok,90,4,4,5,"The Likert score of 90 is highly miscalibrated given the evidence against the hypothesis. Multiple models show children as a non-significant predictor, so the score should reflect that by being much lower. The analysis lacks depth, failing to explore the relationship beyond significance and importance, such as potential nonlinear effects. The clarity is basic, reporting results without meaningful insight into relationships or importance."

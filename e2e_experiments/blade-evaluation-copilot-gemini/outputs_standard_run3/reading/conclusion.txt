@@ -1,0 +1,1 @@
+{"response": 50, "explanation": "The mean reading speed for dyslexic individuals with reader view was 323.34 and without it was 342.27. The t-statistic is -0.39 and the p-value is 0.697. There is no statistically significant difference in reading speed for dyslexic individuals when using Reader View."}

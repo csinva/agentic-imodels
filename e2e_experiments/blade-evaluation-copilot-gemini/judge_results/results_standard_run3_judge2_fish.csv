@@ -1,0 +1,2 @@
+dataset,status,agent_response,correctness,completeness,clarity,judge_explanation
+fish,ok,100,5,4,3,"The AI agent provides a high Likert score without robust justification. The analysis relies solely on p-values and doesn't explore effect sizes or feature importance. There's no evidence of using multiple modeling approaches or consideration of potential confounders. The explanation is unclear, failing to describe the direction or magnitude of the effects and the robustness of conclusions across different models."

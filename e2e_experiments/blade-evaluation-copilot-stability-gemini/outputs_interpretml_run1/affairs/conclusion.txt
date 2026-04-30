@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "The t-test indicates a significant difference in affair rates between those with and without children (p-value: 0.001). The Explainable Boosting Classifier also shows that having children has a small but noticeable impact on the likelihood of having an affair."}

@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "There is no statistically significant relationship (p=0.305) between skin tone and the likelihood of receiving a red card. The logistic regression model does not provide enough evidence to support the claim that players with darker skin tones are more likely to receive red cards."}

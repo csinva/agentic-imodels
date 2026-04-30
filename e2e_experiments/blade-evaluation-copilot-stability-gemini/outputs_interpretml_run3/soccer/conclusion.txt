@@ -1,0 +1,1 @@
+{"response": 90, "explanation": "There is a statistically significant relationship (p-value: 0.0002) between skin tone and the number of red cards received. The model suggests that players with darker skin tones are more likely to receive red cards."}

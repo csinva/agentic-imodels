@@ -1,0 +1,1 @@
+{"response": 20, "explanation": "T-test result: statistic=2.841, p-value=0.005. Chi-square test result: chi2=10.055, p-value=0.002. The t-test does not show a statistically significant decrease in affairs for individuals with children."}
