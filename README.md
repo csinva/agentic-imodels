@@ -1,5 +1,5 @@
-<h1 align="center">imodels-evolve</h1>
-<p align="center">Autonomous agentic discovery of interpretable scikit-learn regressors</a>.</p>
+<h1 align="center">Agentic-imodels</h1>
+<p align="center">Evolving agentic interpretability tools via autoresearch</p>
 
 <p align="center">
 <a href="#quick-start">Quick start</a> •
@@ -16,14 +16,16 @@
 <img src="https://img.shields.io/badge/sklearn-compatible-yellow">
 </p>
 
-A coding agent (Claude Code or OpenAI Codex) is given a fixed evaluation harness and a single Python file. It then iteratively rewrites that file to jointly optimize:
+> Plugin skill:
+> To use the developed models in your own data-science projects, just add a pointer to the skill file at <https://github.com/csinva/agentic-imodels/tree/main/result_libs_processed/agentic-imodels> in your CLAUDE.md / AGENTS.md.
 
-- **Predictive performance** — mean RMSE rank across 65 tabular regression datasets (TabArena + PMLB).
-- **Interpretability** — fraction of LLM-graded tests passed, covering feature attribution, point simulation, sensitivity, counterfactuals, structural questions, and complex-function probes against the model's `__str__` output.
+We built a library of 10 `scikit-learn`-compatible regressors whose string representations are explicitly optimized to be read by another LLM — interpretable *by agents*, not just by humans.
+We did this by using coding agents with a fixed evaluation harness and a single Python file. that is optimized for:
 
-The result is a library of `scikit-learn`-compatible regressors whose string representations are explicitly optimized to be read by another LLM — interpretable *by agents*, not just by humans. From ~700 evolved candidates we curate **10 Pareto models** in [`agentic-imodels`](result_libs_processed/agentic-imodels/).
+- **Predictive performance** - root-mean squared error (RMSE) across many datasets
+- **Agent Interpretability** — fraction of LLM-graded tests passed
 
-## Quick start
+## Quickstart
 
 **Requirements:** Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 

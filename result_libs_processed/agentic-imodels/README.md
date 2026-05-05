@@ -87,23 +87,6 @@ Pick a decoupled model when you need the lowest predictive rank; pick an
 honest model when the interpretable formula must actually be what the model
 computes.
 
-## Provenance
-
-All classes were produced by the `evolve` loop over Apr 9–20, 2026, using
-Claude Opus 4.6/4.7 and OpenAI Codex GPT-5.3 as the coding agents. The
-exact source file (with commit hash, git lineage, and original `evolve`
-harness code) is referenced at the top of each module under
-`agentic_imodels/` — you can chase down the original `interpretable_regressor`
-script in the parent repo under `result_libs/`.
-
-## Citation
-
-If you use this library, please cite the evolve paper (see
-`../paper-imodels-agentic/main.pdf` in the source tree):
-
-> Interpretable Tabular Regressors Discovered by an Agentic Coding Loop.
-> 2026.
-
 ## License
 
 MIT.
