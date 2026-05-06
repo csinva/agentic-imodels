@@ -6,7 +6,7 @@
 <a href="#repo-layout">Repo layout</a> •
 <a href="#discovered-models">Discovered models</a> •
 <a href="#how-the-loop-works">How the loop works</a> •
-<a href="#paper">Paper</a>
+<a href="https://arxiv.org/abs/2605.03808">Paper</a>
 </p>
 
 <p align="center">
@@ -146,3 +146,19 @@ Each iteration is a single git commit. Both metrics matter — neither is a hard
 ## License
 
 MIT.
+
+## Reference
+
+Please cite the package if you use it in an academic work :)
+
+```r
+@misc{singh2026agenticimodels,
+      title={Agentic-imodels: Evolving agentic interpretability tools via autoresearch}, 
+      author={Chandan Singh and Yan Shuo Tan and Weijia Xu and Zelalem Gero and Weiwei Yang and Michel Galley and Jianfeng Gao},
+      year={2026},
+      eprint={2605.03808},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2605.03808}, 
+}
+```
