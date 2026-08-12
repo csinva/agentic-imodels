@@ -133,8 +133,8 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                  n_sweeps=40, tol=1e-4, max_segments=8, seg_penalty_frac=0.0008,
                  prune_rel_tol=0.005, prune_imp_frac=0.01, val_frac=0.15,
                  refit_sweeps=6, min_slope_samples=8, refit_shrink=12.0,
-                 small_n=300, max_interactions=6, inter_gain=0.04,
-                 inter_top_feats=8, n_bags=3, random_state=42):
+                 small_n=300, max_interactions=4, inter_gain=0.05,
+                 inter_top_feats=8, n_bags=1, random_state=42):
         self.max_bins = max_bins
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
@@ -187,6 +187,16 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         n, d = X.shape
         self.n_features_in_ = d
         rng = np.random.RandomState(self.random_state)
+
+        # winsorize extremely heavy-tailed targets before least-squares fitting
+        # (a handful of extreme outliers otherwise dominate every bin mean)
+        if n >= 80:
+            q_lo, q_hi = np.quantile(y, [0.002, 0.998])
+            med = float(np.median(y))
+            spread_hi = max(q_hi - med, 1e-12)
+            spread_lo = max(med - q_lo, 1e-12)
+            if (float(np.max(y)) - q_hi) > 2.0 * spread_hi or (q_lo - float(np.min(y))) > 2.0 * spread_lo:
+                y = np.clip(y, q_lo, q_hi)
 
         # --- quantile binning ---
         bin_edges, n_bins = [], np.zeros(d, dtype=int)
@@ -419,10 +429,12 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                             cands.append({"type": "grid", "i": a, "j": b,
                                           "ti": ta, "tj": tb, "vals": vals,
                                           "contrib": vals[cell]})
-                    # form 3: split-linear (both orientations): the slope of one
-                    # feature switches at the other feature's median
+                    # form 3: split-linear (both orientations, several split
+                    # candidates): the slope of one feature switches at a
+                    # threshold on the other
                     for (sa, sb) in ((a, b), (b, a)):
-                        t = _round_sig(float(np.median(X[tr_ids, sa])), 4)
+                      for q in (0.25, 0.5, 0.75):
+                        t = _round_sig(float(np.quantile(X[tr_ids, sa], q)), 4)
                         side = X[:, sa] >= t
                         coefs = []
                         ok = True
@@ -710,9 +722,10 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_ga2m_v7"
-model_description = ("v6 + bootstrap-bagged backfit (3 bags averaged before distillation; string size unchanged) "
-                     "and up to 6 interaction terms at 4% val gain; predict() evaluates exactly the printed model")
+model_shorthand_name = "SegGAM_ga2m_v8"
+model_description = ("v6 + split-linear interactions try 25/50/75% quantile thresholds (not just median) and "
+                     "extreme-tail targets are winsorized at 0.2/99.8% before fitting; printed model format unchanged; "
+                     "predict() evaluates exactly the printed model")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
