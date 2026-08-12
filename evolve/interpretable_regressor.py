@@ -52,8 +52,12 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
        segments ("if a <= x < b: f = m*x + c").
     4. REFIT: with breakpoints frozen, the segment slopes/constants are
        re-estimated by backfitting least squares against the actual training
-       residuals (removes distillation bias), then rounded. predict()
-       evaluates exactly these rounded segments, so the printed model is
+       residuals (removes distillation bias), then rounded.
+    5. INTERACT (GA2M-lite): up to `max_interactions` pairwise terms are added
+       on the residuals, each either a single product (coef * xa * xb) or a
+       3x3 threshold grid of constants — both directly readable — and only if
+       they improve held-out validation MSE by >= `inter_gain`. predict()
+       evaluates exactly the printed segments/terms, so the printed model is
        100% faithful to actual predictions.
     """
 
@@ -61,7 +65,8 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                  n_sweeps=40, tol=1e-4, max_segments=6, seg_penalty_frac=0.0008,
                  prune_rel_tol=0.005, prune_imp_frac=0.01, val_frac=0.15,
                  refit_sweeps=6, min_slope_samples=8, refit_shrink=12.0,
-                 small_n=300, random_state=42):
+                 small_n=300, max_interactions=3, inter_gain=0.05,
+                 inter_top_feats=8, random_state=42):
         self.max_bins = max_bins
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
@@ -75,6 +80,9 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         self.min_slope_samples = min_slope_samples
         self.refit_shrink = refit_shrink
         self.small_n = small_n
+        self.max_interactions = max_interactions
+        self.inter_gain = inter_gain
+        self.inter_top_feats = inter_top_feats
         self.random_state = random_state
 
     # ------------------------------------------------------------------
@@ -261,6 +269,80 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         # --- refit segment coefficients against actual residuals (breakpoints frozen) ---
         self._refit_segments(X, y, kept_list)
 
+        # --- GA2M-lite: a few readable pairwise interaction terms, val-gated ---
+        self.inter_terms_ = []
+        if len(val_ids) and self.max_interactions > 0 and len(active) >= 2:
+            from itertools import combinations
+            # tercile cell index per feature (train quantiles), for screening
+            cell_idx = {}
+            for j in active:
+                t = [float(np.quantile(X[tr_ids, j], q)) for q in (1/3, 2/3)]
+                if t[0] < t[1]:
+                    cell_idx[j] = np.searchsorted(np.array(t), X[:, j], side="right")
+            cand_feats = sorted(cell_idx)
+            used = set()
+            for _ in range(self.max_interactions):
+                resid = y - self._predict_raw(X)
+                r_tr, r_val = resid[tr_ids], resid[val_ids]
+                cur_mse = float(np.mean(r_val ** 2))
+                # FAST-style screen: train residual variance explained by 3x3 grid
+                screen = []
+                for a, b in combinations(cand_feats, 2):
+                    if (a, b) in used:
+                        continue
+                    cell = cell_idx[a][tr_ids] * 3 + cell_idx[b][tr_ids]
+                    cnt = np.bincount(cell, minlength=9).astype(float)
+                    sums = np.bincount(cell, weights=r_tr, minlength=9)
+                    mu = np.where(cnt > 0, sums / np.maximum(cnt, 1), 0.0)
+                    mu *= cnt / (cnt + 8.0)
+                    screen.append((float(np.sum(cnt * mu ** 2)), a, b))
+                screen.sort(reverse=True)
+                best = None
+                for _, a, b in screen[:12]:
+                    cands = []
+                    # form 1: single product coef * xa * xb
+                    p = X[:, a] * X[:, b]
+                    p_tr = p[tr_ids]
+                    pm = float(np.mean(p_tr))
+                    varp = float(np.mean((p_tr - pm) ** 2))
+                    if varp > 1e-12:
+                        coef = float(np.mean((p_tr - pm) * r_tr) / varp)
+                        coef = _round_sig(coef, 4)
+                        if coef != 0.0:
+                            cands.append({"type": "prod", "i": a, "j": b, "coef": coef,
+                                          "contrib": coef * p})
+                    # form 2: 3x3 grid of constants at tercile thresholds
+                    ta = [_round_sig(float(np.quantile(X[tr_ids, a], q)), 4) for q in (1/3, 2/3)]
+                    tb = [_round_sig(float(np.quantile(X[tr_ids, b], q)), 4) for q in (1/3, 2/3)]
+                    if ta[0] < ta[1] and tb[0] < tb[1]:
+                        ia = np.searchsorted(np.array(ta), X[:, a], side="right")
+                        ib = np.searchsorted(np.array(tb), X[:, b], side="right")
+                        cell = ia * 3 + ib
+                        vals = np.zeros(9)
+                        for cidx in range(9):
+                            sel = cell[tr_ids] == cidx
+                            ns = int(np.sum(sel))
+                            if ns >= 4:
+                                vals[cidx] = ns / (ns + 8.0) * float(np.mean(r_tr[sel]))
+                        vals = np.array([_round_sig(v, 4) for v in vals])
+                        if np.any(vals != 0.0):
+                            cands.append({"type": "grid", "i": a, "j": b,
+                                          "ti": ta, "tj": tb, "vals": vals,
+                                          "contrib": vals[cell]})
+                    for cand in cands:
+                        contrib = cand.pop("contrib")
+                        d = float(np.mean(contrib[tr_ids]))
+                        mse2 = float(np.mean((r_val - (contrib[val_ids] - d)) ** 2))
+                        gain = cur_mse - mse2
+                        if best is None or gain > best[0]:
+                            best = (gain, cand, contrib, d)
+                if best is None or best[0] < max(self.inter_gain * cur_mse, 0.002 * y_var):
+                    break
+                _, term, contrib, d = best
+                self.inter_terms_.append(term)
+                self.intercept_ -= d
+                used.add((term["i"], term["j"]))
+
         pred = self._predict_raw(X)
         self.intercept_ += float(np.mean(y) - np.mean(pred))
         self.intercept_ = _round_sig(self.intercept_, 5)
@@ -397,6 +479,13 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         out = np.full(X.shape[0], getattr(self, "intercept_", 0.0))
         for j in range(self.n_features_in_):
             out += self._feature_effect(j, X[:, j])
+        for t in getattr(self, "inter_terms_", []):
+            if t["type"] == "prod":
+                out += t["coef"] * X[:, t["i"]] * X[:, t["j"]]
+            else:
+                ia = np.searchsorted(np.array(t["ti"]), X[:, t["i"]], side="right")
+                ib = np.searchsorted(np.array(t["tj"]), X[:, t["j"]], side="right")
+                out += t["vals"][ia * 3 + ib]
         return out
 
     def predict(self, X):
@@ -409,9 +498,11 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         d = self.n_features_in_
         names = [f"x{i}" for i in range(d)]
         order = np.argsort(-self.importance_)
+        has_inter = bool(getattr(self, "inter_terms_", []))
         lines = [
             "Additive model (GAM). Prediction = baseline + f(x0) + f(x1) + ... "
-            "(each feature contributes INDEPENDENTLY; no interactions).",
+            + ("plus the listed interaction adjustments."
+               if has_inter else "(each feature contributes INDEPENDENTLY; no interactions)."),
             "Features are listed from most to least important.",
             f"baseline = {self.intercept_}",
             "",
@@ -439,12 +530,32 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                     else:
                         lines.append(f"    if {cond}:  f({nm}) = {m}*{nm} + {c}")
                     n_rules += 1
+        inter = getattr(self, "inter_terms_", [])
+        if inter:
+            lines.append("")
+            lines.append("Interaction adjustments (added to the prediction):")
+            for t in inter:
+                na, nb = names[t["i"]], names[t["j"]]
+                if t["type"] == "prod":
+                    lines.append(f"  add {t['coef']} * {na} * {nb}")
+                    n_rules += 1
+                else:
+                    ta, tb = t["ti"], t["tj"]
+                    conds_a = [f"{na} < {ta[0]}", f"{ta[0]} <= {na} < {ta[1]}", f"{na} >= {ta[1]}"]
+                    conds_b = [f"{nb} < {tb[0]}", f"{tb[0]} <= {nb} < {tb[1]}", f"{nb} >= {tb[1]}"]
+                    for ia in range(3):
+                        for ib in range(3):
+                            v = t["vals"][ia * 3 + ib]
+                            if v != 0.0:
+                                lines.append(f"  if {conds_a[ia]} and {conds_b[ib]}: add {v}")
+                                n_rules += 1
         pruned = [names[j] for j in range(d) if self.pruned_[j]]
         if pruned:
             lines.append("")
             lines.append(f"Features with NO effect (f = 0): {', '.join(pruned)}")
         lines.append("")
-        lines.append(f"Total pieces: {n_rules}. To predict: add baseline plus each feature's f value.")
+        lines.append(f"Total pieces: {n_rules}. To predict: add baseline plus each feature's f value"
+                     + (" plus any interaction adjustments that apply." if inter else "."))
         return "\n".join(lines)
 
 
@@ -456,10 +567,10 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_pspline_v3"
-model_description = ("v2 + segment-refit shrinkage toward the smoothed distilled line (pseudo-count blending), coarser DP "
-                     "segmentation penalty and stricter pruning floor on small datasets; predict() evaluates exactly the "
-                     "printed segments")
+model_shorthand_name = "SegGAM_ga2m_v4"
+model_description = ("v3 + GA2M-lite: up to 3 readable pairwise interaction terms (single product coef*xa*xb or 3x3 "
+                     "threshold grid of constants), added only when validation MSE improves >=2%; printed as explicit "
+                     "IF rules; predict() evaluates exactly the printed model")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
