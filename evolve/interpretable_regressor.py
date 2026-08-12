@@ -61,11 +61,11 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
        100% faithful to actual predictions.
     """
 
-    def __init__(self, max_bins=48, lambdas=(0.3, 3.0, 30.0, 300.0, 3000.0),
-                 n_sweeps=40, tol=1e-4, max_segments=6, seg_penalty_frac=0.0008,
+    def __init__(self, max_bins=48, lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
+                 n_sweeps=40, tol=1e-4, max_segments=8, seg_penalty_frac=0.0008,
                  prune_rel_tol=0.005, prune_imp_frac=0.01, val_frac=0.15,
                  refit_sweeps=6, min_slope_samples=8, refit_shrink=12.0,
-                 small_n=300, max_interactions=3, inter_gain=0.05,
+                 small_n=300, max_interactions=4, inter_gain=0.05,
                  inter_top_feats=8, random_state=42):
         self.max_bins = max_bins
         self.lambdas = lambdas
@@ -627,10 +627,9 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_ga2m_v5"
-model_description = ("v4 + split-linear interaction form (slope of xb switches at xa's median), additive segments "
-                     "re-tuned after interactions, and faithful printed clipping of predictions to padded training "
-                     "y-range; predict() evaluates exactly the printed model")
+model_shorthand_name = "SegGAM_ga2m_v6"
+model_description = ("v5 + capacity bump: <=8 segments per shape, wider/lower lambda grid (0.1-3000), "
+                     "up to 4 interaction terms; predict() evaluates exactly the printed model")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
