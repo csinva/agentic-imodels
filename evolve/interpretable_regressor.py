@@ -347,40 +347,20 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         floor = self.prune_imp_frac * (3.0 if shapes_sel is None else 1.0)
         kept_list = [j for j in kept_list if imp[j] >= floor * y_std]
 
-        # --- distill kept shapes into piecewise-linear segments, then refit.
-        # Depth is validation-adaptive: a finer distillation (more segments,
-        # lower penalty) is kept only if it clearly improves held-out error. ---
+        # --- distill kept shapes into piecewise-linear segments ---
+        self.segments_ = [[] for _ in range(d)]
         self.pruned_ = [True] * d
         self.importance_ = np.zeros(d)
         for j in kept_list:
+            _, xbar, _ = bands_full[j]
+            segs = self._dp_segments(xbar, shapes[j], w_full[j], bin_edges[j], y_std)
+            self.segments_[j] = segs
             self.pruned_[j] = False
             self.importance_[j] = imp[j]
+        self.intercept_ = intercept
 
-        configs = [(self.max_segments, self.seg_penalty_frac)]
-        if len(val_ids):
-            configs.append((2 * self.max_segments, self.seg_penalty_frac / 4.0))
-        trials = []
-        cap0, pen0 = self.max_segments, self.seg_penalty_frac
-        for cap, pen in configs:
-            self.max_segments, self.seg_penalty_frac = cap, pen
-            self.segments_ = [[] for _ in range(d)]
-            for j in kept_list:
-                _, xbar, _ = bands_full[j]
-                self.segments_[j] = self._dp_segments(xbar, shapes[j], w_full[j], bin_edges[j], y_std)
-            self.intercept_ = intercept
-            self._refit_segments(X, y, kept_list)
-            if len(val_ids):
-                pv = self._predict_raw(X[val_ids])
-                vrmse = float(np.sqrt(np.mean((y[val_ids] - pv) ** 2)))
-            else:
-                vrmse = 0.0
-            trials.append((vrmse, [list(s) for s in self.segments_], self.intercept_))
-        self.max_segments, self.seg_penalty_frac = cap0, pen0
-        best_segs, best_icpt = trials[0][1], trials[0][2]
-        if len(trials) > 1 and trials[1][0] < 0.98 * trials[0][0]:
-            best_segs, best_icpt = trials[1][1], trials[1][2]
-        self.segments_ = [[tuple(t) for t in s] for s in best_segs]
-        self.intercept_ = best_icpt
+        # --- refit segment coefficients against actual residuals (breakpoints frozen) ---
+        self._refit_segments(X, y, kept_list)
 
         # --- prediction clipping to (slightly padded) training target range ---
         y_rng = float(np.max(y) - np.min(y))
@@ -742,10 +722,10 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_ga2m_v9"
-model_description = ("v8 + validation-adaptive distillation depth: a finer distillation (<=16 segments, penalty/4) "
-                     "replaces the standard <=8 only when it improves held-out RMSE by >2%; interp-test datasets stay "
-                     "at the short representation; predict() evaluates exactly the printed model")
+model_shorthand_name = "SegGAM_ga2m_v8"
+model_description = ("v6 + split-linear interactions try 25/50/75% quantile thresholds (not just median) and "
+                     "extreme-tail targets are winsorized at 0.2/99.8% before fitting; printed model format unchanged; "
+                     "predict() evaluates exactly the printed model")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
