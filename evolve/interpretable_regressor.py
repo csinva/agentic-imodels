@@ -118,12 +118,12 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
     training target range. Heavy-tailed targets are winsorized before fitting.
     """
 
-    def __init__(self, max_bins=256, lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
+    def __init__(self, bins_options=(48, 256), lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
                  n_sweeps=30, tol=1e-4, prune_rel_tol=0.005, prune_imp_frac=0.005,
-                 val_frac=0.15, n_bags=8, max_pairs=8, pair_bins=12,
+                 val_frac=0.15, n_bags=4, max_pairs=8, pair_bins=12,
                  pair_shrink=8.0, pair_gain=0.005, pair_screen_bins=8,
                  pair_top_candidates=5, small_n=300, random_state=42):
-        self.max_bins = max_bins
+        self.bins_options = bins_options
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
         self.tol = tol
@@ -211,25 +211,26 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         y_var = float(np.var(y)) + 1e-12
         y_std = float(np.sqrt(y_var))
 
-        # --- quantile binning ---
-        bin_edges, n_bins = [], np.zeros(d, dtype=int)
-        bin_idx = np.zeros((n, d), dtype=np.int32)
-        for j in range(d):
-            col = X[:, j]
-            uniq = np.unique(col[np.isfinite(col)])
-            if len(uniq) <= 1:
-                bin_edges.append(np.array([])); n_bins[j] = 1; continue
-            if len(uniq) <= self.max_bins:
-                edges = (uniq[:-1] + uniq[1:]) / 2.0
-            else:
-                qs = np.quantile(col, np.linspace(0, 1, self.max_bins + 1)[1:-1])
-                edges = np.unique(qs)
-            bin_edges.append(edges)
-            n_bins[j] = len(edges) + 1
-            bin_idx[:, j] = np.searchsorted(edges, col, side="right")
-        active = [j for j in range(d) if n_bins[j] > 1]
+        # --- quantile binning at a given resolution ---
+        def make_bins(max_bins):
+            bin_edges, nb = [], np.zeros(d, dtype=int)
+            bidx = np.zeros((n, d), dtype=np.int32)
+            for j in range(d):
+                col = X[:, j]
+                uniq = np.unique(col[np.isfinite(col)])
+                if len(uniq) <= 1:
+                    bin_edges.append(np.array([])); nb[j] = 1; continue
+                if len(uniq) <= max_bins:
+                    edges = (uniq[:-1] + uniq[1:]) / 2.0
+                else:
+                    qs = np.quantile(col, np.linspace(0, 1, max_bins + 1)[1:-1])
+                    edges = np.unique(qs)
+                bin_edges.append(edges)
+                nb[j] = len(edges) + 1
+                bidx[:, j] = np.searchsorted(edges, col, side="right")
+            return bin_edges, nb, bidx
 
-        def build_bands(ids):
+        def build_bands(ids, bin_edges, n_bins, bin_idx, active):
             bands = [None] * d
             for j in active:
                 B = n_bins[j]
@@ -250,27 +251,36 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                 bands[j] = (w, xbar, self._penalty_banded(xs))
             return bands
 
-        # --- lambda selection ---
+        # --- joint (bin resolution, lambda) selection on validation ---
+        binned = {}
+        for mb in sorted(set(self.bins_options)):
+            edges, nb, bidx = make_bins(mb)
+            act = [j for j in range(d) if nb[j] > 1]
+            binned[mb] = (edges, nb, bidx, act)
+
         if n >= 80 and self.val_frac > 0:
             perm = rng.permutation(n)
             n_val = max(20, int(n * self.val_frac))
             val_ids, tr_ids = perm[:n_val], perm[n_val:]
-            bands_tr = build_bands(tr_ids)
             y_tr, y_val = y[tr_ids], y[val_ids]
-            b_tr, b_val = bin_idx[tr_ids], bin_idx[val_ids]
-            best = (np.inf, None, None, None)
-            for lam in self.lambdas:
-                icpt, shapes, _ = self._backfit(y_tr, b_tr, bands_tr, n_bins, active, lam, self.n_sweeps)
-                pv = np.full(len(val_ids), icpt)
-                for j in active:
-                    pv += shapes[j][b_val[:, j]]
-                mse = float(np.mean((y_val - pv) ** 2))
-                if mse < best[0]:
-                    best = (mse, lam, icpt, shapes)
-            _, lam, icpt_sel, shapes_sel = best
+            best = (np.inf, None, None, None, None)
+            for mb, (edges, nb, bidx, act) in binned.items():
+                bands_tr = build_bands(tr_ids, edges, nb, bidx, act)
+                b_tr, b_val = bidx[tr_ids], bidx[val_ids]
+                for lam in self.lambdas:
+                    icpt, shapes, _ = self._backfit(y_tr, b_tr, bands_tr, nb, act, lam, self.n_sweeps)
+                    pv = np.full(len(val_ids), icpt)
+                    for j in act:
+                        pv += shapes[j][b_val[:, j]]
+                    mse = float(np.mean((y_val - pv) ** 2))
+                    if mse < best[0]:
+                        best = (mse, mb, lam, icpt, shapes)
+            _, mb_best, lam, icpt_sel, shapes_sel = best
         else:
             val_ids = np.array([], dtype=int)
             tr_ids = np.arange(n)
+            mb_best = min(self.bins_options)
+            edges, nb, bidx, act = binned[mb_best]
             perm = rng.permutation(n)
             folds = np.array_split(perm, 3)
             cv_mse = {l: 0.0 for l in self.lambdas}
@@ -278,16 +288,19 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                 t_ids = np.setdiff1d(perm, f_ids)
                 if len(t_ids) < 5 or len(f_ids) < 2:
                     continue
-                bands_f = build_bands(t_ids)
+                bands_f = build_bands(t_ids, edges, nb, bidx, act)
                 for l in self.lambdas:
-                    icpt, shapes, _ = self._backfit(y[t_ids], bin_idx[t_ids], bands_f, n_bins, active, l, self.n_sweeps)
+                    icpt, shapes, _ = self._backfit(y[t_ids], bidx[t_ids], bands_f, nb, act, l, self.n_sweeps)
                     pv = np.full(len(f_ids), icpt)
-                    for j in active:
-                        pv += shapes[j][bin_idx[f_ids, j]]
+                    for j in act:
+                        pv += shapes[j][bidx[f_ids, j]]
                     cv_mse[l] += float(np.sum((y[f_ids] - pv) ** 2))
             lam = min(cv_mse, key=cv_mse.get)
             icpt_sel, shapes_sel = None, None
         self.lambda_ = lam
+        self.bins_ = mb_best
+        bin_edges, n_bins, bin_idx, active = binned[mb_best]
+        b_val = bin_idx[val_ids] if len(val_ids) else None
 
         # --- prune (val-based, on selection-phase shapes) ---
         w_full = [np.bincount(bin_idx[:, j], minlength=n_bins[j]).astype(float) for j in range(d)]
@@ -313,7 +326,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             kept_list = list(active)
 
         # --- bagged final backfit on all data ---
-        bands_full = build_bands(np.arange(n))
+        bands_full = build_bands(np.arange(n), bin_edges, n_bins, bin_idx, active)
         n_bags = self.n_bags if n >= 80 else 1
         acc = [np.zeros(n_bins[j]) for j in range(d)]
         icpt_acc = 0.0
@@ -323,7 +336,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                 bands_b = bands_full
             else:
                 ids = rng.randint(0, n, size=n)
-                bands_b = build_bands(ids)
+                bands_b = build_bands(ids, bin_edges, n_bins, bin_idx, active)
             icpt_b, shapes_b, _ = self._backfit(y[ids], bin_idx[ids], bands_b, n_bins, kept_list, lam, self.n_sweeps)
             for j in kept_list:
                 acc[j] += shapes_b[j] / n_bags
@@ -524,10 +537,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v10"
-model_description = ("performance-focused GA2M: 256-bin penalized backfitting (curvature penalty, val-selected lambda), "
-                     "val pruning, 8 bagged backfits averaged, then up to 8 val-gated pairwise terms (2D grid / product / "
-                     "split-linear) on residuals; interp shapes via interpolation tables")
+model_shorthand_name = "GA2MBoost_v11"
+model_description = ("v10 + joint validation selection of bin resolution {48,256} and lambda; 4 bagged backfits; "
+                     "up to 8 val-gated pairwise terms (grid/product/split-linear) on residuals")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
