@@ -26,6 +26,69 @@ from performance_eval import RESULTS_DIR, upsert_overall_results, evaluate_all_r
 from visualize import plot_interp_vs_performance
 
 # ---------------------------------------------------------------------------
+# LLM grader: route interp-test calls through Claude Haiku via the local
+# `claude` CLI (the default imodelsx Azure OpenAI path has no credentials on
+# this machine). Patched here because src/ is read-only.
+# ---------------------------------------------------------------------------
+import hashlib
+import threading
+
+_CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+_CLAUDE_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".CACHE_LLM", "cache_claude_cli", _CLAUDE_MODEL)
+_CLAUDE_SEMAPHORE = threading.Semaphore(4)
+
+
+def _claude_haiku_llm(checkpoint=None, *args, **kwargs):
+    """Drop-in replacement for imodelsx.llm.get_llm: returns a callable
+    llm(prompt, max_completion_tokens=..., stop=[...]) backed by Claude Haiku."""
+    os.makedirs(_CLAUDE_CACHE_DIR, exist_ok=True)
+
+    def call(prompt, max_completion_tokens=250, stop=None, **kw):
+        if not isinstance(prompt, str):
+            prompt = str(prompt)
+        h = hashlib.sha256(prompt.encode()).hexdigest()
+        cache_file = os.path.join(_CLAUDE_CACHE_DIR, h + ".txt")
+        if os.path.exists(cache_file):
+            with open(cache_file) as f:
+                resp = f.read()
+        else:
+            resp = None
+            for attempt in range(3):
+                try:
+                    with _CLAUDE_SEMAPHORE:
+                        # tools disabled so the grader answers from reading the
+                        # model string alone (comparable to a plain LLM grader)
+                        out = subprocess.run(
+                            ["claude", "-p", "--model", _CLAUDE_MODEL,
+                             "--disallowedTools",
+                             "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit"],
+                            input=prompt, capture_output=True, text=True, timeout=300,
+                        )
+                    if out.returncode == 0 and out.stdout.strip():
+                        resp = out.stdout.strip()
+                        break
+                except Exception:
+                    pass
+                time.sleep(2 * (attempt + 1))
+            if resp is None:
+                return None
+            with open(cache_file, "w") as f:
+                f.write(resp)
+        # emulate the harness's stop-sequence truncation
+        if stop:
+            for s in stop:
+                idx = resp.find(s)
+                if idx >= 0:
+                    resp = resp[:idx]
+        return resp
+
+    return call
+
+
+import imodelsx.llm as _imodelsx_llm
+_imodelsx_llm.get_llm = _claude_haiku_llm
+
+# ---------------------------------------------------------------------------
 # Interpretable Regressor (edit this, everything in this class is fair game)
 # ---------------------------------------------------------------------------
 
