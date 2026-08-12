@@ -49,15 +49,18 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
        importance floor. Dropped features are reported as having no effect.
     3. DISTILL: each remaining shape function is compressed by dynamic
        programming into at most `max_segments` weighted-least-squares linear
-       segments ("if a <= x < b: f = m*x + c") with rounded coefficients.
-       predict() evaluates exactly these rounded segments, so the printed
-       model is 100% faithful to actual predictions.
+       segments ("if a <= x < b: f = m*x + c").
+    4. REFIT: with breakpoints frozen, the segment slopes/constants are
+       re-estimated by backfitting least squares against the actual training
+       residuals (removes distillation bias), then rounded. predict()
+       evaluates exactly these rounded segments, so the printed model is
+       100% faithful to actual predictions.
     """
 
     def __init__(self, max_bins=48, lambdas=(0.3, 3.0, 30.0, 300.0, 3000.0),
-                 n_sweeps=25, tol=1e-4, max_segments=5, seg_penalty_frac=0.0015,
+                 n_sweeps=40, tol=1e-4, max_segments=6, seg_penalty_frac=0.0008,
                  prune_rel_tol=0.005, prune_imp_frac=0.01, val_frac=0.15,
-                 default_lambda=30.0, random_state=42):
+                 refit_sweeps=6, min_slope_samples=8, random_state=42):
         self.max_bins = max_bins
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
@@ -67,7 +70,8 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         self.prune_rel_tol = prune_rel_tol
         self.prune_imp_frac = prune_imp_frac
         self.val_frac = val_frac
-        self.default_lambda = default_lambda
+        self.refit_sweeps = refit_sweeps
+        self.min_slope_samples = min_slope_samples
         self.random_state = random_state
 
     # ------------------------------------------------------------------
@@ -122,109 +126,190 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
             bin_idx[:, j] = np.searchsorted(edges, col, side="right")
         active = [j for j in range(d) if n_bins[j] > 1]
 
-        # --- internal validation split (for lambda choice + pruning) ---
+        y_var = float(np.var(y)) + 1e-12
+        y_std = float(np.sqrt(y_var))
+
+        def build_bands(ids):
+            """Per-feature (bin weights, bin x-means, banded curvature penalty)."""
+            bands = [None] * d
+            for j in active:
+                B = n_bins[j]
+                w = np.bincount(bin_idx[ids, j], minlength=B).astype(float)
+                sx = np.bincount(bin_idx[ids, j], weights=X[ids, j], minlength=B)
+                xbar = np.where(w > 0, sx / np.maximum(w, 1), np.nan)
+                e = bin_edges[j]
+                for b in range(B):
+                    if not np.isfinite(xbar[b]):
+                        lo = e[b - 1] if b > 0 else e[0] - 1e-9
+                        hi = e[b] if b < len(e) else e[-1] + 1e-9
+                        xbar[b] = (lo + hi) / 2
+                xr = xbar[-1] - xbar[0]
+                xs = (xbar - xbar[0]) / (xr if xr > 0 else 1.0)
+                P = np.zeros((3, B))
+                if B >= 3:
+                    h = np.maximum(np.diff(xs), 1e-6)
+                    DtD = np.zeros((B, B))
+                    for i in range(1, B - 1):
+                        a0, a1 = 1.0 / h[i - 1], 1.0 / h[i]
+                        row = np.zeros(B)
+                        row[i - 1] = a0; row[i] = -(a0 + a1); row[i + 1] = a1
+                        DtD += np.outer(row, row)
+                    P[0, 2:] = np.diag(DtD, 2)
+                    P[1, 1:] = np.diag(DtD, 1)
+                    P[2, :] = np.diag(DtD)
+                    sc = np.trace(DtD) / B
+                    if sc > 0:
+                        P /= sc
+                bands[j] = (w, xbar, P)
+            return bands
+
+        # --- choose smoothing strength lambda ---
         if n >= 80 and self.val_frac > 0:
             perm = rng.permutation(n)
             n_val = max(20, int(n * self.val_frac))
             val_ids, tr_ids = perm[:n_val], perm[n_val:]
-        else:
-            tr_ids = np.arange(n); val_ids = np.array([], dtype=int)
-        y_tr, y_val = y[tr_ids], y[val_ids]
-        b_tr, b_val = bin_idx[tr_ids], bin_idx[val_ids]
-        y_var = float(np.var(y_tr)) + 1e-12
-        y_std = float(np.sqrt(y_var))
-
-        # --- per-feature banded curvature-penalty matrices ---
-        bands = [None] * d
-        for j in active:
-            B = n_bins[j]
-            w = np.bincount(b_tr[:, j], minlength=B).astype(float)
-            sx = np.bincount(b_tr[:, j], weights=X[tr_ids, j], minlength=B)
-            xbar = np.where(w > 0, sx / np.maximum(w, 1), np.nan)
-            e = bin_edges[j]
-            for b in range(B):
-                if not np.isfinite(xbar[b]):
-                    lo = e[b - 1] if b > 0 else e[0] - 1e-9
-                    hi = e[b] if b < len(e) else e[-1] + 1e-9
-                    xbar[b] = (lo + hi) / 2
-            xr = xbar[-1] - xbar[0]
-            xs = (xbar - xbar[0]) / (xr if xr > 0 else 1.0)
-            P = np.zeros((3, B))
-            if B >= 3:
-                h = np.maximum(np.diff(xs), 1e-6)
-                DtD = np.zeros((B, B))
-                for i in range(1, B - 1):
-                    a0, a1 = 1.0 / h[i - 1], 1.0 / h[i]
-                    row = np.zeros(B)
-                    row[i - 1] = a0; row[i] = -(a0 + a1); row[i + 1] = a1
-                    DtD += np.outer(row, row)
-                P[0, 2:] = np.diag(DtD, 2)
-                P[1, 1:] = np.diag(DtD, 1)
-                P[2, :] = np.diag(DtD)
-                sc = np.trace(DtD) / B
-                if sc > 0:
-                    P /= sc
-            bands[j] = (w, xbar, P)
-
-        # --- smoothing strength chosen on validation split ---
-        if len(val_ids):
+            bands_tr = build_bands(tr_ids)
+            y_tr, y_val = y[tr_ids], y[val_ids]
+            b_tr, b_val = bin_idx[tr_ids], bin_idx[val_ids]
             best = (np.inf, None, None, None)
             for lam in self.lambdas:
-                icpt, shapes, F = self._backfit(y_tr, b_tr, bands, n_bins, active, lam, self.n_sweeps)
+                icpt, shapes, _ = self._backfit(y_tr, b_tr, bands_tr, n_bins, active, lam, self.n_sweeps)
                 pv = np.full(len(val_ids), icpt)
                 for j in active:
                     pv += shapes[j][b_val[:, j]]
                 mse = float(np.mean((y_val - pv) ** 2))
                 if mse < best[0]:
                     best = (mse, lam, icpt, shapes)
-            _, lam, intercept, shapes = best
+            _, lam, icpt_sel, shapes_sel = best
         else:
-            lam = self.default_lambda
-            intercept, shapes, _ = self._backfit(y_tr, b_tr, bands, n_bins, active, lam, self.n_sweeps)
+            # small n: 3-fold CV over lambdas
+            val_ids = np.array([], dtype=int)
+            perm = rng.permutation(n)
+            folds = np.array_split(perm, 3)
+            cv_mse = {lam: 0.0 for lam in self.lambdas}
+            for f_ids in folds:
+                t_ids = np.setdiff1d(perm, f_ids)
+                if len(t_ids) < 5 or len(f_ids) < 2:
+                    continue
+                bands_f = build_bands(t_ids)
+                for lam in self.lambdas:
+                    icpt, shapes, _ = self._backfit(y[t_ids], bin_idx[t_ids], bands_f, n_bins, active, lam, self.n_sweeps)
+                    pv = np.full(len(f_ids), icpt)
+                    for j in active:
+                        pv += shapes[j][bin_idx[f_ids, j]]
+                    cv_mse[lam] += float(np.sum((y[f_ids] - pv) ** 2))
+            lam = min(cv_mse, key=cv_mse.get)
+            icpt_sel, shapes_sel = None, None
         self.lambda_ = lam
 
-        # --- center shapes into intercept; compute importances ---
+        # --- sparsify (decided on held-out val using selection-phase shapes) ---
         w_full = [np.bincount(bin_idx[:, j], minlength=n_bins[j]).astype(float) for j in range(d)]
-        for j in active:
-            w = w_full[j]
-            mu = float(np.sum(shapes[j] * w) / max(w.sum(), 1))
-            shapes[j] = shapes[j] - mu
-            intercept += mu
-        imp = {j: float(np.sqrt(np.sum(w_full[j] * shapes[j] ** 2) / max(w_full[j].sum(), 1)))
-               for j in active}
-
-        # --- sparsify: absolute floor + greedy validation pruning ---
-        kept = {j for j in active if imp[j] >= self.prune_imp_frac * y_std}
-        if len(val_ids):
-            pv = np.full(len(val_ids), intercept)
+        if shapes_sel is not None:
+            # center selection shapes for importance measurement
+            imp_sel = {}
+            for j in active:
+                w = w_full[j]
+                mu = float(np.sum(shapes_sel[j] * w) / max(w.sum(), 1))
+                imp_sel[j] = float(np.sqrt(np.sum(w * (shapes_sel[j] - mu) ** 2) / max(w.sum(), 1)))
+            kept = {j for j in active if imp_sel[j] >= self.prune_imp_frac * y_std}
+            pv = np.full(len(val_ids), icpt_sel)
             for j in kept:
-                pv += shapes[j][b_val[:, j]]
+                pv += shapes_sel[j][b_val[:, j]]
             cur_mse = float(np.mean((y_val - pv) ** 2))
             tol_abs = self.prune_rel_tol * max(cur_mse, 1e-3 * y_var)
-            for j in sorted(kept, key=lambda k: imp[k]):
-                pv2 = pv - shapes[j][b_val[:, j]]
+            for j in sorted(kept, key=lambda k: imp_sel[k]):
+                pv2 = pv - shapes_sel[j][b_val[:, j]]
                 mse2 = float(np.mean((y_val - pv2) ** 2))
                 if mse2 <= cur_mse + tol_abs:
                     kept.discard(j)
                     pv = pv2
                     cur_mse = min(cur_mse, mse2)
+        else:
+            kept = set(active)
 
-        # --- distill kept shapes into rounded piecewise-linear segments ---
+        # --- final backfit on ALL data with chosen lambda, kept features only ---
+        bands_full = build_bands(np.arange(n))
+        kept_list = sorted(kept)
+        intercept, shapes, _ = self._backfit(y, bin_idx, bands_full, n_bins, kept_list, lam, self.n_sweeps)
+        imp = {}
+        for j in kept_list:
+            w = w_full[j]
+            mu = float(np.sum(shapes[j] * w) / max(w.sum(), 1))
+            shapes[j] = shapes[j] - mu
+            intercept += mu
+            imp[j] = float(np.sqrt(np.sum(w * shapes[j] ** 2) / max(w.sum(), 1)))
+        # absolute-floor prune after final fit too (small n path relies on this)
+        kept_list = [j for j in kept_list if imp[j] >= self.prune_imp_frac * y_std]
+
+        # --- distill kept shapes into piecewise-linear segments ---
         self.segments_ = [[] for _ in range(d)]
         self.pruned_ = [True] * d
         self.importance_ = np.zeros(d)
-        for j in sorted(kept):
-            _, xbar, _ = bands[j]
+        for j in kept_list:
+            _, xbar, _ = bands_full[j]
             segs = self._dp_segments(xbar, shapes[j], w_full[j], bin_edges[j], y_std)
             self.segments_[j] = segs
             self.pruned_[j] = False
             self.importance_[j] = imp[j]
-
         self.intercept_ = intercept
+
+        # --- refit segment coefficients against actual residuals (breakpoints frozen) ---
+        self._refit_segments(X, y, kept_list)
+
         pred = self._predict_raw(X)
         self.intercept_ += float(np.mean(y) - np.mean(pred))
         self.intercept_ = _round_sig(self.intercept_, 5)
         return self
+
+    # ------------------------------------------------------------------
+    def _refit_segments(self, X, y, kept_list):
+        """Backfitting LS re-estimation of segment (slope, const) with fixed
+        breakpoints, evaluated on the real training data; then rounding."""
+        n = X.shape[0]
+        if not kept_list:
+            return
+        seg_ids = {}
+        fvals = {}
+        for j in kept_list:
+            segs = self.segments_[j]
+            breaks = np.array([s[1] for s in segs[:-1]])
+            seg_ids[j] = np.searchsorted(breaks, X[:, j], side="right")
+            fvals[j] = self._feature_effect(j, X[:, j])
+        pred = np.full(n, self.intercept_)
+        for j in kept_list:
+            pred += fvals[j]
+        for _ in range(self.refit_sweeps):
+            for j in kept_list:
+                partial = y - pred + fvals[j]
+                segs = self.segments_[j]
+                new_segs = []
+                xj = X[:, j]
+                for s_idx, (lo, hi, m, c) in enumerate(segs):
+                    sel = seg_ids[j] == s_idx
+                    ns = int(np.sum(sel))
+                    if ns == 0:
+                        new_segs.append((lo, hi, m, c))
+                        continue
+                    xs, ys = xj[sel], partial[sel]
+                    xm, ym = float(np.mean(xs)), float(np.mean(ys))
+                    varx = float(np.mean((xs - xm) ** 2))
+                    if ns >= self.min_slope_samples and varx > 1e-12:
+                        m_new = float(np.mean((xs - xm) * (ys - ym)) / varx)
+                        c_new = ym - m_new * xm
+                    else:
+                        m_new, c_new = 0.0, ym
+                    new_segs.append((lo, hi, m_new, c_new))
+                self.segments_[j] = new_segs
+                f_new = self._feature_effect(j, xj)
+                pred += f_new - fvals[j]
+                fvals[j] = f_new
+            resid_mean = float(np.mean(y - pred))
+            self.intercept_ += resid_mean
+            pred += resid_mean
+        # round coefficients (predict uses the rounded values)
+        for j in kept_list:
+            self.segments_[j] = [(lo, hi, _round_sig(m, 4), _round_sig(c, 4))
+                                 for (lo, hi, m, c) in self.segments_[j]]
 
     # ------------------------------------------------------------------
     def _dp_segments(self, xbar, vals, w, edges, y_std):
@@ -356,10 +441,10 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_pspline_v1"
-model_description = ("GAM fit by penalized backfitting on quantile bins (curvature penalty with linear null space, "
-                     "lambda picked on a validation split), validation-pruned for sparsity, then each shape distilled "
-                     "via DP into <=5 rounded piecewise-linear segments; predict() evaluates exactly the printed segments")
+model_shorthand_name = "SegGAM_pspline_v2"
+model_description = ("v1 + final full-data backfit with selected lambda, 3-fold-CV lambda on small n, DP distill to <=6 "
+                     "segments, then segment slopes/consts refit by backfitting LS on true residuals (breakpoints frozen) "
+                     "before rounding; predict() evaluates exactly the printed segments")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
