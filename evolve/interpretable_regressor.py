@@ -98,75 +98,87 @@ _imodelsx_llm.get_llm = _claude_haiku_llm
 # ---------------------------------------------------------------------------
 
 
-def _round_sig(v, sig=4):
-    if v == 0 or not np.isfinite(v):
-        return 0.0
-    return float(f"{v:.{sig}g}")
+class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
+    """GA2M (GAM with at most pairwise interactions), built from scratch and
+    tuned for predictive performance:
 
-
-class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
-    """Additive model (GAM) built from scratch in three stages:
-
-    1. FIT: cyclic penalized backfitting on quantile-binned features with a
-       second-divided-difference curvature penalty (P-spline style). The
-       penalty's null space is exactly the linear functions, so linear signals
-       are recovered unshrunk while wiggle is suppressed. The smoothing
-       strength lambda is selected on an internal validation split.
-    2. SPARSIFY: features are greedily dropped (weakest first) whenever
-       removing them does not hurt validation error, plus an absolute
-       importance floor. Dropped features are reported as having no effect.
-    3. DISTILL: each remaining shape function is compressed by dynamic
-       programming into at most `max_segments` weighted-least-squares linear
-       segments ("if a <= x < b: f = m*x + c").
-    4. REFIT: with breakpoints frozen, the segment slopes/constants are
-       re-estimated by backfitting least squares against the actual training
-       residuals (removes distillation bias), then rounded.
-    5. INTERACT (GA2M-lite): up to `max_interactions` pairwise terms are added
-       on the residuals, each either a single product (coef * xa * xb) or a
-       3x3 threshold grid of constants — both directly readable — and only if
-       they improve held-out validation MSE by >= `inter_gain`. predict()
-       evaluates exactly the printed segments/terms, so the printed model is
-       100% faithful to actual predictions.
+    1. ADDITIVE: cyclic penalized backfitting on finely quantile-binned
+       features (up to `max_bins` bins) with a second-divided-difference
+       curvature penalty whose null space is exactly the linear functions.
+       Smoothing strength lambda is selected on an internal validation split
+       (3-fold CV on small datasets).
+    2. SPARSIFY: greedy validation-based feature dropping + importance floor.
+    3. BAGGING: the final additive shapes are averaged over `n_bags` bootstrap
+       backfits (variance reduction, EBM-style outer bags).
+    4. PAIRS: FAST-screened pairwise terms fit on residuals, each the best of
+       {shrunken 2D grid of cell means, single product, split-linear}, accepted
+       only on validation improvement; up to `max_pairs` terms.
+    Shape functions are evaluated by linear interpolation between bin centers
+    with constant extrapolation; predictions are clipped to the padded
+    training target range. Heavy-tailed targets are winsorized before fitting.
     """
 
-    def __init__(self, max_bins=48, lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
-                 n_sweeps=40, tol=1e-4, max_segments=8, seg_penalty_frac=0.0008,
-                 prune_rel_tol=0.005, prune_imp_frac=0.01, val_frac=0.15,
-                 refit_sweeps=6, min_slope_samples=8, refit_shrink=12.0,
-                 small_n=300, max_interactions=4, inter_gain=0.05,
-                 inter_top_feats=8, n_bags=1, random_state=42):
+    def __init__(self, max_bins=256, lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
+                 n_sweeps=30, tol=1e-4, prune_rel_tol=0.005, prune_imp_frac=0.005,
+                 val_frac=0.15, n_bags=8, max_pairs=8, pair_bins=12,
+                 pair_shrink=8.0, pair_gain=0.005, pair_screen_bins=8,
+                 pair_top_candidates=5, small_n=300, random_state=42):
         self.max_bins = max_bins
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
         self.tol = tol
-        self.max_segments = max_segments
-        self.seg_penalty_frac = seg_penalty_frac
         self.prune_rel_tol = prune_rel_tol
         self.prune_imp_frac = prune_imp_frac
         self.val_frac = val_frac
-        self.refit_sweeps = refit_sweeps
-        self.min_slope_samples = min_slope_samples
-        self.refit_shrink = refit_shrink
-        self.small_n = small_n
-        self.max_interactions = max_interactions
-        self.inter_gain = inter_gain
-        self.inter_top_feats = inter_top_feats
         self.n_bags = n_bags
+        self.max_pairs = max_pairs
+        self.pair_bins = pair_bins
+        self.pair_shrink = pair_shrink
+        self.pair_gain = pair_gain
+        self.pair_screen_bins = pair_screen_bins
+        self.pair_top_candidates = pair_top_candidates
+        self.small_n = small_n
         self.random_state = random_state
 
     # ------------------------------------------------------------------
-    def _backfit(self, y_tr, b_tr, bands, n_bins, active, lam_scale, sweeps):
-        """Cyclic backfitting; returns intercept, per-feature bin values, fit."""
+    @staticmethod
+    def _penalty_banded(xs):
+        """Upper-banded (3-diag) D'D for second divided differences on knots xs."""
+        B = len(xs)
+        ab = np.zeros((3, B))
+        if B < 3:
+            return ab
+        h = np.maximum(np.diff(xs), 1e-9)
+        a0 = 1.0 / h[:-1]           # for interior i=1..B-2: 1/h[i-1]
+        a1 = 1.0 / h[1:]            # 1/h[i]
+        mid = -(a0 + a1)
+        main = np.zeros(B); d1 = np.zeros(B - 1); d2 = np.zeros(B - 2)
+        main[0:B - 2] += a0 * a0
+        main[1:B - 1] += mid * mid
+        main[2:B] += a1 * a1
+        d1[0:B - 2] += a0 * mid
+        d1[1:B - 1] += mid * a1
+        d2[0:B - 2] += a0 * a1
+        sc = main.sum() / B
+        if sc > 0:
+            main /= sc; d1 /= sc; d2 /= sc
+        ab[0, 2:] = d2
+        ab[1, 1:] = d1
+        ab[2, :] = main
+        return ab
+
+    def _backfit(self, y_tr, b_tr, bands, n_bins, active, lam, sweeps):
         shapes = [np.zeros(n_bins[j]) for j in range(len(n_bins))]
         icpt = float(np.mean(y_tr))
         F = np.full(len(y_tr), icpt)
+        y_sd = float(np.std(y_tr)) + 1e-12
         for _ in range(sweeps):
             delta = 0.0
             for j in active:
                 w, xbar, P = bands[j]
                 resid = y_tr - F + shapes[j][b_tr[:, j]]
                 sums = np.bincount(b_tr[:, j], weights=resid, minlength=n_bins[j])
-                ab = P * lam_scale
+                ab = P * lam
                 ab[-1] = ab[-1] + w
                 try:
                     f_new = solveh_banded(ab, sums, lower=False)
@@ -176,7 +188,7 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                 if len(f_new):
                     delta = max(delta, float(np.max(np.abs(f_new - shapes[j]))))
                 shapes[j] = f_new
-            if delta < self.tol * (np.std(y_tr) + 1e-12):
+            if delta < self.tol * y_sd:
                 break
         return icpt, shapes, F
 
@@ -188,15 +200,16 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         self.n_features_in_ = d
         rng = np.random.RandomState(self.random_state)
 
-        # winsorize extremely heavy-tailed targets before least-squares fitting
-        # (a handful of extreme outliers otherwise dominate every bin mean)
+        # winsorize extremely heavy-tailed targets (outliers dominate LS bins)
         if n >= 80:
             q_lo, q_hi = np.quantile(y, [0.002, 0.998])
             med = float(np.median(y))
-            spread_hi = max(q_hi - med, 1e-12)
-            spread_lo = max(med - q_lo, 1e-12)
-            if (float(np.max(y)) - q_hi) > 2.0 * spread_hi or (q_lo - float(np.min(y))) > 2.0 * spread_lo:
+            if (float(np.max(y)) - q_hi) > 2.0 * max(q_hi - med, 1e-12) or \
+               (q_lo - float(np.min(y))) > 2.0 * max(med - q_lo, 1e-12):
                 y = np.clip(y, q_lo, q_hi)
+
+        y_var = float(np.var(y)) + 1e-12
+        y_std = float(np.sqrt(y_var))
 
         # --- quantile binning ---
         bin_edges, n_bins = [], np.zeros(d, dtype=int)
@@ -216,11 +229,7 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
             bin_idx[:, j] = np.searchsorted(edges, col, side="right")
         active = [j for j in range(d) if n_bins[j] > 1]
 
-        y_var = float(np.var(y)) + 1e-12
-        y_std = float(np.sqrt(y_var))
-
         def build_bands(ids):
-            """Per-feature (bin weights, bin x-means, banded curvature penalty)."""
             bands = [None] * d
             for j in active:
                 B = n_bins[j]
@@ -228,32 +237,20 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                 sx = np.bincount(bin_idx[ids, j], weights=X[ids, j], minlength=B)
                 xbar = np.where(w > 0, sx / np.maximum(w, 1), np.nan)
                 e = bin_edges[j]
-                for b in range(B):
-                    if not np.isfinite(xbar[b]):
-                        lo = e[b - 1] if b > 0 else e[0] - 1e-9
-                        hi = e[b] if b < len(e) else e[-1] + 1e-9
-                        xbar[b] = (lo + hi) / 2
+                bad = ~np.isfinite(xbar)
+                if bad.any():
+                    centers = np.empty(B)
+                    centers[0] = e[0] - 1e-9
+                    centers[-1] = e[-1] + 1e-9
+                    if B > 2:
+                        centers[1:-1] = (e[:-1] + e[1:]) / 2.0
+                    xbar[bad] = centers[bad]
                 xr = xbar[-1] - xbar[0]
                 xs = (xbar - xbar[0]) / (xr if xr > 0 else 1.0)
-                P = np.zeros((3, B))
-                if B >= 3:
-                    h = np.maximum(np.diff(xs), 1e-6)
-                    DtD = np.zeros((B, B))
-                    for i in range(1, B - 1):
-                        a0, a1 = 1.0 / h[i - 1], 1.0 / h[i]
-                        row = np.zeros(B)
-                        row[i - 1] = a0; row[i] = -(a0 + a1); row[i + 1] = a1
-                        DtD += np.outer(row, row)
-                    P[0, 2:] = np.diag(DtD, 2)
-                    P[1, 1:] = np.diag(DtD, 1)
-                    P[2, :] = np.diag(DtD)
-                    sc = np.trace(DtD) / B
-                    if sc > 0:
-                        P /= sc
-                bands[j] = (w, xbar, P)
+                bands[j] = (w, xbar, self._penalty_banded(xs))
             return bands
 
-        # --- choose smoothing strength lambda ---
+        # --- lambda selection ---
         if n >= 80 and self.val_frac > 0:
             perm = rng.permutation(n)
             n_val = max(20, int(n * self.val_frac))
@@ -272,30 +269,29 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                     best = (mse, lam, icpt, shapes)
             _, lam, icpt_sel, shapes_sel = best
         else:
-            # small n: 3-fold CV over lambdas
             val_ids = np.array([], dtype=int)
+            tr_ids = np.arange(n)
             perm = rng.permutation(n)
             folds = np.array_split(perm, 3)
-            cv_mse = {lam: 0.0 for lam in self.lambdas}
+            cv_mse = {l: 0.0 for l in self.lambdas}
             for f_ids in folds:
                 t_ids = np.setdiff1d(perm, f_ids)
                 if len(t_ids) < 5 or len(f_ids) < 2:
                     continue
                 bands_f = build_bands(t_ids)
-                for lam in self.lambdas:
-                    icpt, shapes, _ = self._backfit(y[t_ids], bin_idx[t_ids], bands_f, n_bins, active, lam, self.n_sweeps)
+                for l in self.lambdas:
+                    icpt, shapes, _ = self._backfit(y[t_ids], bin_idx[t_ids], bands_f, n_bins, active, l, self.n_sweeps)
                     pv = np.full(len(f_ids), icpt)
                     for j in active:
                         pv += shapes[j][bin_idx[f_ids, j]]
-                    cv_mse[lam] += float(np.sum((y[f_ids] - pv) ** 2))
+                    cv_mse[l] += float(np.sum((y[f_ids] - pv) ** 2))
             lam = min(cv_mse, key=cv_mse.get)
             icpt_sel, shapes_sel = None, None
         self.lambda_ = lam
 
-        # --- sparsify (decided on held-out val using selection-phase shapes) ---
+        # --- prune (val-based, on selection-phase shapes) ---
         w_full = [np.bincount(bin_idx[:, j], minlength=n_bins[j]).astype(float) for j in range(d)]
         if shapes_sel is not None:
-            # center selection shapes for importance measurement
             imp_sel = {}
             for j in active:
                 w = w_full[j]
@@ -311,316 +307,158 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                 pv2 = pv - shapes_sel[j][b_val[:, j]]
                 mse2 = float(np.mean((y_val - pv2) ** 2))
                 if mse2 <= cur_mse + tol_abs:
-                    kept.discard(j)
-                    pv = pv2
-                    cur_mse = min(cur_mse, mse2)
+                    kept.discard(j); pv = pv2; cur_mse = min(cur_mse, mse2)
+            kept_list = sorted(kept)
         else:
-            kept = set(active)
+            kept_list = list(active)
 
-        # --- final backfit on ALL data with chosen lambda, kept features only.
-        # Bootstrap-bagged: average the shape functions over n_bags resamples
-        # (variance reduction, EBM-style); the printed model is unaffected. ---
+        # --- bagged final backfit on all data ---
         bands_full = build_bands(np.arange(n))
-        kept_list = sorted(kept)
-        intercept, shapes, _ = self._backfit(y, bin_idx, bands_full, n_bins, kept_list, lam, self.n_sweeps)
-        if self.n_bags > 1 and n >= 80:
-            for j in kept_list:
-                shapes[j] = shapes[j] / self.n_bags
-            icpt_acc = intercept / self.n_bags
-            for b in range(self.n_bags - 1):
+        n_bags = self.n_bags if n >= 80 else 1
+        acc = [np.zeros(n_bins[j]) for j in range(d)]
+        icpt_acc = 0.0
+        for b in range(n_bags):
+            if b == 0:
+                ids = np.arange(n)
+                bands_b = bands_full
+            else:
                 ids = rng.randint(0, n, size=n)
                 bands_b = build_bands(ids)
-                icpt_b, shapes_b, _ = self._backfit(y[ids], bin_idx[ids], bands_b, n_bins, kept_list, lam, self.n_sweeps)
-                for j in kept_list:
-                    shapes[j] += shapes_b[j] / self.n_bags
-                icpt_acc += icpt_b / self.n_bags
-            intercept = icpt_acc
-        imp = {}
-        for j in kept_list:
-            w = w_full[j]
-            mu = float(np.sum(shapes[j] * w) / max(w.sum(), 1))
-            shapes[j] = shapes[j] - mu
-            intercept += mu
-            imp[j] = float(np.sqrt(np.sum(w * shapes[j] ** 2) / max(w.sum(), 1)))
-        # absolute-floor prune after final fit too (small n path relies on this;
-        # use a stricter floor when there was no validation-based pruning)
-        floor = self.prune_imp_frac * (3.0 if shapes_sel is None else 1.0)
-        kept_list = [j for j in kept_list if imp[j] >= floor * y_std]
+            icpt_b, shapes_b, _ = self._backfit(y[ids], bin_idx[ids], bands_b, n_bins, kept_list, lam, self.n_sweeps)
+            for j in kept_list:
+                acc[j] += shapes_b[j] / n_bags
+            icpt_acc += icpt_b / n_bags
+        intercept = icpt_acc
 
-        # --- distill kept shapes into piecewise-linear segments ---
-        self.segments_ = [[] for _ in range(d)]
+        # center shapes, store as interpolation tables
+        self.shape_x_ = [None] * d
+        self.shape_y_ = [None] * d
         self.pruned_ = [True] * d
         self.importance_ = np.zeros(d)
         for j in kept_list:
+            w = w_full[j]
+            mu = float(np.sum(acc[j] * w) / max(w.sum(), 1))
+            sh = acc[j] - mu
+            intercept += mu
             _, xbar, _ = bands_full[j]
-            segs = self._dp_segments(xbar, shapes[j], w_full[j], bin_edges[j], y_std)
-            self.segments_[j] = segs
+            order = np.argsort(xbar)
+            self.shape_x_[j] = xbar[order]
+            self.shape_y_[j] = sh[order]
             self.pruned_[j] = False
-            self.importance_[j] = imp[j]
+            self.importance_[j] = float(np.sqrt(np.sum(w * sh ** 2) / max(w.sum(), 1)))
         self.intercept_ = intercept
 
-        # --- refit segment coefficients against actual residuals (breakpoints frozen) ---
-        self._refit_segments(X, y, kept_list)
-
-        # --- prediction clipping to (slightly padded) training target range ---
+        # prediction clipping range
         y_rng = float(np.max(y) - np.min(y))
-        self.clip_ = (_round_sig(float(np.min(y)) - 0.05 * y_rng, 4),
-                      _round_sig(float(np.max(y)) + 0.05 * y_rng, 4))
+        self.clip_ = (float(np.min(y)) - 0.05 * y_rng, float(np.max(y)) + 0.05 * y_rng)
 
-        # --- GA2M-lite: a few readable pairwise interaction terms, val-gated ---
-        self.inter_terms_ = []
-        if len(val_ids) and self.max_interactions > 0 and len(active) >= 2:
+        # --- pairwise stage (residual, val-gated) ---
+        self.pair_terms_ = []
+        if len(val_ids) and self.max_pairs > 0 and len(kept_list) >= 2:
             from itertools import combinations
-            # tercile cell index per feature (train quantiles), for screening
-            cell_idx = {}
+            # screening cell index per feature
+            scr_idx, pair_cand_feats = {}, []
             for j in active:
-                t = [float(np.quantile(X[tr_ids, j], q)) for q in (1/3, 2/3)]
-                if t[0] < t[1]:
-                    cell_idx[j] = np.searchsorted(np.array(t), X[:, j], side="right")
-            cand_feats = sorted(cell_idx)
-            used = set()
-            tr_mask = np.zeros(n, dtype=bool)
-            tr_mask[tr_ids] = True
-            for _ in range(self.max_interactions):
-                resid = y - self._predict_raw(X)
+                qs = np.quantile(X[tr_ids, j], np.linspace(0, 1, self.pair_screen_bins + 1)[1:-1])
+                e = np.unique(qs)
+                if len(e) >= 1:
+                    scr_idx[j] = (np.searchsorted(e, X[:, j], side="right"), len(e) + 1)
+                    pair_cand_feats.append(j)
+            tr_mask = np.zeros(n, dtype=bool); tr_mask[tr_ids] = True
+            for _ in range(self.max_pairs):
+                resid = y - self._predict_raw(X, clip=False)
                 r_tr, r_val = resid[tr_ids], resid[val_ids]
                 cur_mse = float(np.mean(r_val ** 2))
-                # FAST-style screen: train residual variance explained by 3x3 grid
                 screen = []
-                for a, b in combinations(cand_feats, 2):
-                    if (a, b) in used:
-                        continue
-                    cell = cell_idx[a][tr_ids] * 3 + cell_idx[b][tr_ids]
-                    cnt = np.bincount(cell, minlength=9).astype(float)
-                    sums = np.bincount(cell, weights=r_tr, minlength=9)
+                for a_, b_ in combinations(pair_cand_feats, 2):
+                    ia, na = scr_idx[a_]; ib, nb = scr_idx[b_]
+                    cell = ia[tr_ids] * nb + ib[tr_ids]
+                    cnt = np.bincount(cell, minlength=na * nb).astype(float)
+                    sums = np.bincount(cell, weights=r_tr, minlength=na * nb)
                     mu = np.where(cnt > 0, sums / np.maximum(cnt, 1), 0.0)
-                    mu *= cnt / (cnt + 8.0)
-                    screen.append((float(np.sum(cnt * mu ** 2)), a, b))
+                    mu *= cnt / (cnt + self.pair_shrink)
+                    screen.append((float(np.sum(cnt * mu ** 2)), a_, b_))
                 screen.sort(reverse=True)
                 best = None
-                for _, a, b in screen[:12]:
-                    cands = []
-                    # form 1: single product coef * xa * xb
-                    p = X[:, a] * X[:, b]
-                    p_tr = p[tr_ids]
-                    pm = float(np.mean(p_tr))
-                    varp = float(np.mean((p_tr - pm) ** 2))
-                    if varp > 1e-12:
-                        coef = float(np.mean((p_tr - pm) * r_tr) / varp)
-                        coef = _round_sig(coef, 4)
-                        if coef != 0.0:
-                            cands.append({"type": "prod", "i": a, "j": b, "coef": coef,
-                                          "contrib": coef * p})
-                    # form 2: 3x3 grid of constants at tercile thresholds
-                    ta = [_round_sig(float(np.quantile(X[tr_ids, a], q)), 4) for q in (1/3, 2/3)]
-                    tb = [_round_sig(float(np.quantile(X[tr_ids, b], q)), 4) for q in (1/3, 2/3)]
-                    if ta[0] < ta[1] and tb[0] < tb[1]:
-                        ia = np.searchsorted(np.array(ta), X[:, a], side="right")
-                        ib = np.searchsorted(np.array(tb), X[:, b], side="right")
-                        cell = ia * 3 + ib
-                        vals = np.zeros(9)
-                        for cidx in range(9):
-                            sel = cell[tr_ids] == cidx
-                            ns = int(np.sum(sel))
-                            if ns >= 4:
-                                vals[cidx] = ns / (ns + 8.0) * float(np.mean(r_tr[sel]))
-                        vals = np.array([_round_sig(v, 4) for v in vals])
-                        if np.any(vals != 0.0):
-                            cands.append({"type": "grid", "i": a, "j": b,
-                                          "ti": ta, "tj": tb, "vals": vals,
-                                          "contrib": vals[cell]})
-                    # form 3: split-linear (both orientations, several split
-                    # candidates): the slope of one feature switches at a
-                    # threshold on the other
-                    for (sa, sb) in ((a, b), (b, a)):
-                      for q in (0.25, 0.5, 0.75):
-                        t = _round_sig(float(np.quantile(X[tr_ids, sa], q)), 4)
-                        side = X[:, sa] >= t
-                        coefs = []
-                        ok = True
-                        for sel_side in (~side, side):
-                            sel = sel_side & tr_mask
-                            ns = int(np.sum(sel))
-                            if ns < self.min_slope_samples:
-                                ok = False; break
-                            xs, ys2 = X[sel, sb], resid[sel]
-                            xm, ym = float(np.mean(xs)), float(np.mean(ys2))
-                            varx = float(np.mean((xs - xm) ** 2))
-                            if varx < 1e-12:
-                                ok = False; break
-                            mm = float(np.mean((xs - xm) * (ys2 - ym)) / varx)
-                            sh = ns / (ns + self.refit_shrink)
-                            mm *= sh
-                            coefs.append((_round_sig(mm, 4), _round_sig(ym - mm * xm, 4)))
-                        if ok:
-                            (m1, c1), (m2, c2) = coefs
-                            contrib = np.where(side, m2 * X[:, sb] + c2, m1 * X[:, sb] + c1)
-                            cands.append({"type": "split", "i": sa, "j": sb, "t": t,
-                                          "lo": (m1, c1), "hi": (m2, c2),
-                                          "contrib": contrib})
-                    for cand in cands:
+                for _, a_, b_ in screen[:self.pair_top_candidates]:
+                    for cand in self._pair_candidates(X, resid, tr_ids, tr_mask, a_, b_):
                         contrib = cand.pop("contrib")
-                        d = float(np.mean(contrib[tr_ids]))
-                        mse2 = float(np.mean((r_val - (contrib[val_ids] - d)) ** 2))
+                        dshift = float(np.mean(contrib[tr_ids]))
+                        mse2 = float(np.mean((r_val - (contrib[val_ids] - dshift)) ** 2))
                         gain = cur_mse - mse2
                         if best is None or gain > best[0]:
-                            best = (gain, cand, contrib, d)
-                if best is None or best[0] < max(self.inter_gain * cur_mse, 0.002 * y_var):
+                            best = (gain, cand, contrib, dshift)
+                if best is None or best[0] < max(self.pair_gain * cur_mse, 5e-4 * y_var):
                     break
-                _, term, contrib, d = best
-                self.inter_terms_.append(term)
-                self.intercept_ -= d
-                used.add((term["i"], term["j"]))
-            if self.inter_terms_:
-                # re-tune additive segments against y minus interaction part
-                self._refit_segments(X, y - self._inter_contrib(X), kept_list)
+                _, term, contrib, dshift = best
+                self.pair_terms_.append(term)
+                self.intercept_ -= dshift
 
-        pred = self._predict_raw(X)
+        pred = self._predict_raw(X, clip=False)
         self.intercept_ += float(np.mean(y) - np.mean(pred))
-        self.intercept_ = _round_sig(self.intercept_, 5)
         return self
 
     # ------------------------------------------------------------------
-    def _refit_segments(self, X, y, kept_list):
-        """Backfitting LS re-estimation of segment (slope, const) with fixed
-        breakpoints, evaluated on the real training data; then rounding."""
-        n = X.shape[0]
-        if not kept_list:
-            return
-        seg_ids = {}
-        fvals = {}
-        orig_segs = {}
-        for j in kept_list:
-            segs = self.segments_[j]
-            breaks = np.array([s[1] for s in segs[:-1]])
-            seg_ids[j] = np.searchsorted(breaks, X[:, j], side="right")
-            fvals[j] = self._feature_effect(j, X[:, j])
-            orig_segs[j] = list(segs)
-        pred = np.full(n, self.intercept_)
-        for j in kept_list:
-            pred += fvals[j]
-        for _ in range(self.refit_sweeps):
-            for j in kept_list:
-                partial = y - pred + fvals[j]
-                segs = self.segments_[j]
-                new_segs = []
-                xj = X[:, j]
-                for s_idx, (lo, hi, m, c) in enumerate(segs):
-                    sel = seg_ids[j] == s_idx
+    def _pair_candidates(self, X, resid, tr_ids, tr_mask, a, b):
+        """Candidate pairwise terms fit on training residuals."""
+        cands = []
+        r_tr = resid[tr_ids]
+        # 2D grid of shrunken cell means on quantile edges
+        ea = np.unique(np.quantile(X[tr_ids, a], np.linspace(0, 1, self.pair_bins + 1)[1:-1]))
+        eb = np.unique(np.quantile(X[tr_ids, b], np.linspace(0, 1, self.pair_bins + 1)[1:-1]))
+        if len(ea) >= 1 and len(eb) >= 1:
+            na, nb = len(ea) + 1, len(eb) + 1
+            ia = np.searchsorted(ea, X[:, a], side="right")
+            ib = np.searchsorted(eb, X[:, b], side="right")
+            cell = ia * nb + ib
+            cnt = np.bincount(cell[tr_ids], minlength=na * nb).astype(float)
+            sums = np.bincount(cell[tr_ids], weights=r_tr, minlength=na * nb)
+            vals = np.where(cnt > 0, sums / np.maximum(cnt, 1), 0.0)
+            vals *= cnt / (cnt + self.pair_shrink)
+            cands.append({"type": "grid", "i": a, "j": b, "ei": ea, "ej": eb,
+                          "nb": nb, "vals": vals, "contrib": vals[cell]})
+        # single product
+        p = X[:, a] * X[:, b]
+        p_tr = p[tr_ids]
+        pm = float(np.mean(p_tr))
+        varp = float(np.mean((p_tr - pm) ** 2))
+        if varp > 1e-12:
+            coef = float(np.mean((p_tr - pm) * r_tr) / varp)
+            cands.append({"type": "prod", "i": a, "j": b, "coef": coef, "contrib": coef * p})
+        # split-linear, both orientations, quartile split candidates
+        for (sa, sb) in ((a, b), (b, a)):
+            for q in (0.25, 0.5, 0.75):
+                t = float(np.quantile(X[tr_ids, sa], q))
+                side = X[:, sa] >= t
+                coefs, ok = [], True
+                for sel_side in (~side, side):
+                    sel = sel_side & tr_mask
                     ns = int(np.sum(sel))
-                    if ns == 0:
-                        new_segs.append((lo, hi, m, c))
-                        continue
-                    xs, ys = xj[sel], partial[sel]
+                    if ns < 8:
+                        ok = False; break
+                    xs, ys = X[sel, sb], resid[sel]
                     xm, ym = float(np.mean(xs)), float(np.mean(ys))
                     varx = float(np.mean((xs - xm) ** 2))
-                    if ns >= self.min_slope_samples and varx > 1e-12:
-                        m_new = float(np.mean((xs - xm) * (ys - ym)) / varx)
-                        c_new = ym - m_new * xm
-                    else:
-                        m_new, c_new = 0.0, ym
-                    # shrink toward the distilled (smoothed) line: guards
-                    # against overfitting thin segments and small datasets
-                    m0, c0 = orig_segs[j][s_idx][2], orig_segs[j][s_idx][3]
-                    blend = ns / (ns + self.refit_shrink)
-                    m_new = blend * m_new + (1 - blend) * m0
-                    c_new = blend * c_new + (1 - blend) * c0
-                    new_segs.append((lo, hi, m_new, c_new))
-                self.segments_[j] = new_segs
-                f_new = self._feature_effect(j, xj)
-                pred += f_new - fvals[j]
-                fvals[j] = f_new
-            resid_mean = float(np.mean(y - pred))
-            self.intercept_ += resid_mean
-            pred += resid_mean
-        # round coefficients (predict uses the rounded values)
-        for j in kept_list:
-            self.segments_[j] = [(lo, hi, _round_sig(m, 4), _round_sig(c, 4))
-                                 for (lo, hi, m, c) in self.segments_[j]]
+                    if varx < 1e-12:
+                        ok = False; break
+                    mnew = float(np.mean((xs - xm) * (ys - ym)) / varx)
+                    mnew *= ns / (ns + 12.0)
+                    coefs.append((mnew, ym - mnew * xm))
+                if ok:
+                    (m1, c1), (m2, c2) = coefs
+                    contrib = np.where(side, m2 * X[:, sb] + c2, m1 * X[:, sb] + c1)
+                    cands.append({"type": "split", "i": sa, "j": sb, "t": t,
+                                  "lo": (m1, c1), "hi": (m2, c2), "contrib": contrib})
+        return cands
 
     # ------------------------------------------------------------------
-    def _dp_segments(self, xbar, vals, w, edges, y_std):
-        """Optimal partition of bins into few weighted-LS linear pieces."""
-        B = len(vals)
-        W = np.concatenate([[0], np.cumsum(w)])
-        Sx = np.concatenate([[0], np.cumsum(w * xbar)])
-        Sy = np.concatenate([[0], np.cumsum(w * vals)])
-        Sxx = np.concatenate([[0], np.cumsum(w * xbar * xbar)])
-        Sxy = np.concatenate([[0], np.cumsum(w * xbar * vals)])
-        Syy = np.concatenate([[0], np.cumsum(w * vals * vals)])
-
-        def seg_fit(i, k):
-            ww = W[k + 1] - W[i]
-            if ww <= 0:
-                return 0.0, 0.0, 0.0
-            sx = Sx[k + 1] - Sx[i]; sy = Sy[k + 1] - Sy[i]
-            sxx = Sxx[k + 1] - Sxx[i]; sxy = Sxy[k + 1] - Sxy[i]
-            syy = Syy[k + 1] - Syy[i]
-            varx = sxx - sx * sx / ww
-            m = 0.0 if varx < 1e-12 else (sxy - sx * sy / ww) / varx
-            c = (sy - m * sx) / ww
-            sse = syy - 2 * m * sxy - 2 * c * sy + m * m * sxx + 2 * m * c * sx + c * c * ww
-            return max(sse, 0.0), m, c
-
-        n_tot = float(W[-1])
-        pen_frac = self.seg_penalty_frac * (3.0 if n_tot < self.small_n else 1.0)
-        penalty = pen_frac * n_tot * y_std ** 2
-        K = self.max_segments
-        INF = np.inf
-        dp = np.full((K + 1, B + 1), INF)
-        back = np.zeros((K + 1, B + 1), dtype=int)
-        dp[0][0] = 0.0
-        for s in range(1, K + 1):
-            for b in range(1, B + 1):
-                bestc, besti = INF, 0
-                for i in range(b):
-                    if dp[s - 1][i] == INF:
-                        continue
-                    sse, _, _ = seg_fit(i, b - 1)
-                    cost = dp[s - 1][i] + sse + penalty
-                    if cost < bestc:
-                        bestc, besti = cost, i
-                dp[s][b] = bestc; back[s][b] = besti
-        s_best = int(np.argmin(dp[:, B]))
-        bounds = []
-        b, s = B, s_best
-        while s > 0:
-            i = back[s][b]; bounds.append((i, b - 1)); b = i; s -= 1
-        bounds.reverse()
-        segs = []
-        for (i, k) in bounds:
-            _, m, c = seg_fit(i, k)
-            lo = -np.inf if i == 0 else _round_sig(float(edges[i - 1]), 4)
-            hi = np.inf if k == B - 1 else _round_sig(float(edges[k]), 4)
-            segs.append((lo, hi, _round_sig(m, 4), _round_sig(c, 4)))
-        return segs
-
-    # ------------------------------------------------------------------
-    def _feature_effect(self, j, x):
-        segs = self.segments_[j]
-        if not segs:
-            return np.zeros_like(x)
-        out = np.zeros_like(x, dtype=float)
-        for (lo, hi, m, c) in segs:
-            sel = (x >= lo) & (x < hi) if np.isfinite(hi) else (x >= lo)
-            out[sel] = m * x[sel] + c
-        return out
-
-    def _predict_raw(self, X):
+    def _predict_raw(self, X, clip=True):
         X = np.asarray(X, dtype=np.float64)
         out = np.full(X.shape[0], getattr(self, "intercept_", 0.0))
         for j in range(self.n_features_in_):
-            out += self._feature_effect(j, X[:, j])
-        out += self._inter_contrib(X)
-        clip = getattr(self, "clip_", None)
-        if clip is not None:
-            out = np.clip(out, clip[0], clip[1])
-        return out
-
-    def _inter_contrib(self, X):
-        X = np.asarray(X, dtype=np.float64)
-        out = np.zeros(X.shape[0])
-        for t in getattr(self, "inter_terms_", []):
+            if self.shape_x_[j] is not None:
+                out += np.interp(X[:, j], self.shape_x_[j], self.shape_y_[j])
+        for t in getattr(self, "pair_terms_", []):
             if t["type"] == "prod":
                 out += t["coef"] * X[:, t["i"]] * X[:, t["j"]]
             elif t["type"] == "split":
@@ -629,104 +467,68 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                 xb = X[:, t["j"]]
                 out += np.where(side, m2 * xb + c2, m1 * xb + c1)
             else:
-                ia = np.searchsorted(np.array(t["ti"]), X[:, t["i"]], side="right")
-                ib = np.searchsorted(np.array(t["tj"]), X[:, t["j"]], side="right")
-                out += t["vals"][ia * 3 + ib]
+                ia = np.searchsorted(t["ei"], X[:, t["i"]], side="right")
+                ib = np.searchsorted(t["ej"], X[:, t["j"]], side="right")
+                out += t["vals"][ia * t["nb"] + ib]
+        if clip and getattr(self, "clip_", None) is not None:
+            out = np.clip(out, self.clip_[0], self.clip_[1])
         return out
 
     def predict(self, X):
-        check_is_fitted(self, "segments_")
+        check_is_fitted(self, "shape_x_")
         return self._predict_raw(X)
 
     # ------------------------------------------------------------------
     def __str__(self):
-        check_is_fitted(self, "segments_")
+        check_is_fitted(self, "shape_x_")
         d = self.n_features_in_
         names = [f"x{i}" for i in range(d)]
         order = np.argsort(-self.importance_)
-        has_inter = bool(getattr(self, "inter_terms_", []))
         lines = [
-            "Additive model (GAM). Prediction = baseline + f(x0) + f(x1) + ... "
-            + ("plus the listed interaction adjustments."
-               if has_inter else "(each feature contributes INDEPENDENTLY; no interactions)."),
+            "Additive model (GA2M). Prediction = baseline + f(x0) + f(x1) + ... "
+            "plus the listed pairwise adjustments (no higher-order interactions).",
             "Features are listed from most to least important.",
-            f"baseline = {self.intercept_}",
+            f"baseline = {self.intercept_:.4f}",
             "",
         ]
-        n_rules = 0
         for j in order:
             if self.pruned_[j]:
                 continue
-            segs = self.segments_[j]; nm = names[j]
-            if len(segs) == 1 and segs[0][2] == 0.0:
-                lines.append(f"f({nm}) = {segs[0][3]}   (constant)"); n_rules += 1
-            elif len(segs) == 1:
-                lines.append(f"f({nm}) = {segs[0][2]}*{nm} + {segs[0][3]}   (linear)"); n_rules += 1
-            else:
-                lines.append(f"f({nm}) is piecewise linear:")
-                for (lo, hi, m, c) in segs:
-                    if np.isinf(lo):
-                        cond = f"{nm} < {hi}"
-                    elif np.isinf(hi):
-                        cond = f"{nm} >= {lo}"
-                    else:
-                        cond = f"{lo} <= {nm} < {hi}"
-                    if m == 0.0:
-                        lines.append(f"    if {cond}:  f({nm}) = {c}")
-                    else:
-                        lines.append(f"    if {cond}:  f({nm}) = {m}*{nm} + {c}")
-                    n_rules += 1
-        inter = getattr(self, "inter_terms_", [])
-        if inter:
-            lines.append("")
-            lines.append("Interaction adjustments (added to the prediction):")
-            for t in inter:
-                na, nb = names[t["i"]], names[t["j"]]
-                if t["type"] == "prod":
-                    lines.append(f"  add {t['coef']} * {na} * {nb}")
-                    n_rules += 1
-                elif t["type"] == "split":
-                    (m1, c1), (m2, c2) = t["lo"], t["hi"]
-                    lines.append(f"  if {na} < {t['t']}:  add {m1}*{nb} + {c1}")
-                    lines.append(f"  if {na} >= {t['t']}:  add {m2}*{nb} + {c2}")
-                    n_rules += 2
-                else:
-                    ta, tb = t["ti"], t["tj"]
-                    conds_a = [f"{na} < {ta[0]}", f"{ta[0]} <= {na} < {ta[1]}", f"{na} >= {ta[1]}"]
-                    conds_b = [f"{nb} < {tb[0]}", f"{tb[0]} <= {nb} < {tb[1]}", f"{nb} >= {tb[1]}"]
-                    for ia in range(3):
-                        for ib in range(3):
-                            v = t["vals"][ia * 3 + ib]
-                            if v != 0.0:
-                                lines.append(f"  if {conds_a[ia]} and {conds_b[ib]}: add {v}")
-                                n_rules += 1
+            xs, ys = self.shape_x_[j], self.shape_y_[j]
+            k = min(9, len(xs))
+            idx = np.linspace(0, len(xs) - 1, k).round().astype(int)
+            pts = "  ".join(f"{xs[i]:+.3g}->{ys[i]:+.3g}" for i in idx)
+            lines.append(f"f({names[j]}) sampled (x->effect): {pts}")
         pruned = [names[j] for j in range(d) if self.pruned_[j]]
         if pruned:
-            lines.append("")
             lines.append(f"Features with NO effect (f = 0): {', '.join(pruned)}")
-        lines.append("")
-        clip = getattr(self, "clip_", None)
-        if clip is not None:
-            lines.append(f"Finally, the prediction is clipped to the range [{clip[0]}, {clip[1]}] "
-                         "(values outside are set to the nearer bound; this rarely matters).")
-        lines.append(f"Total pieces: {n_rules}. To predict: add baseline plus each feature's f value"
-                     + (" plus any interaction adjustments that apply." if inter else "."))
+        for t in getattr(self, "pair_terms_", []):
+            na, nb_ = names[t["i"]], names[t["j"]]
+            if t["type"] == "prod":
+                lines.append(f"pairwise: add {t['coef']:.4g} * {na} * {nb_}")
+            elif t["type"] == "split":
+                (m1, c1), (m2, c2) = t["lo"], t["hi"]
+                lines.append(f"pairwise: if {na} < {t['t']:.4g}: add {m1:.4g}*{nb_}{c1:+.4g}; "
+                             f"else add {m2:.4g}*{nb_}{c2:+.4g}")
+            else:
+                lines.append(f"pairwise: 2D grid adjustment on ({na}, {nb_})")
+        lines.append(f"Predictions are clipped to [{self.clip_[0]:.4g}, {self.clip_[1]:.4g}].")
         return "\n".join(lines)
 
 
 # Make class picklable when script is run as __main__ (required for joblib caching/parallel)
 import sys as _sys
 _sys.modules.setdefault("interpretable_regressor", _sys.modules[__name__])
-SegmentedGAMRegressor.__module__ = "interpretable_regressor"
+GA2MBoostRegressor.__module__ = "interpretable_regressor"
 
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_ga2m_v8"
-model_description = ("v6 + split-linear interactions try 25/50/75% quantile thresholds (not just median) and "
-                     "extreme-tail targets are winsorized at 0.2/99.8% before fitting; printed model format unchanged; "
-                     "predict() evaluates exactly the printed model")
-model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
+model_shorthand_name = "GA2MBoost_v10"
+model_description = ("performance-focused GA2M: 256-bin penalized backfitting (curvature penalty, val-selected lambda), "
+                     "val pruning, 8 bagged backfits averaged, then up to 8 val-gated pairwise terms (2D grid / product / "
+                     "split-linear) on residuals; interp shapes via interpolation tables")
+model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
 # ---------------------------------------------------------------------------
