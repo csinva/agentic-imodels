@@ -34,7 +34,11 @@ import hashlib
 import threading
 
 _CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-_CLAUDE_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".CACHE_LLM", "cache_claude_cli", _CLAUDE_MODEL)
+_CLAUDE_SYSTEM = ("Answer with ONLY the final answer requested (a number, a feature name, or "
+                  "a short list) - no working, no explanation, no markdown. If asked for a "
+                  "number, output just that number.")
+_CLAUDE_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".CACHE_LLM", "cache_claude_cli",
+                                 _CLAUDE_MODEL + "_terse")
 _CLAUDE_SEMAPHORE = threading.Semaphore(4)
 
 
@@ -60,6 +64,7 @@ def _claude_haiku_llm(checkpoint=None, *args, **kwargs):
                         # model string alone (comparable to a plain LLM grader)
                         out = subprocess.run(
                             ["claude", "-p", "--model", _CLAUDE_MODEL,
+                             "--append-system-prompt", _CLAUDE_SYSTEM,
                              "--disallowedTools",
                              "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit"],
                             input=prompt, capture_output=True, text=True, timeout=300,
