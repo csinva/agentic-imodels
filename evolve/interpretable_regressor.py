@@ -60,7 +60,8 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
     def __init__(self, max_bins=48, lambdas=(0.3, 3.0, 30.0, 300.0, 3000.0),
                  n_sweeps=40, tol=1e-4, max_segments=6, seg_penalty_frac=0.0008,
                  prune_rel_tol=0.005, prune_imp_frac=0.01, val_frac=0.15,
-                 refit_sweeps=6, min_slope_samples=8, random_state=42):
+                 refit_sweeps=6, min_slope_samples=8, refit_shrink=12.0,
+                 small_n=300, random_state=42):
         self.max_bins = max_bins
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
@@ -72,6 +73,8 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         self.val_frac = val_frac
         self.refit_sweeps = refit_sweeps
         self.min_slope_samples = min_slope_samples
+        self.refit_shrink = refit_shrink
+        self.small_n = small_n
         self.random_state = random_state
 
     # ------------------------------------------------------------------
@@ -238,8 +241,10 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
             shapes[j] = shapes[j] - mu
             intercept += mu
             imp[j] = float(np.sqrt(np.sum(w * shapes[j] ** 2) / max(w.sum(), 1)))
-        # absolute-floor prune after final fit too (small n path relies on this)
-        kept_list = [j for j in kept_list if imp[j] >= self.prune_imp_frac * y_std]
+        # absolute-floor prune after final fit too (small n path relies on this;
+        # use a stricter floor when there was no validation-based pruning)
+        floor = self.prune_imp_frac * (3.0 if shapes_sel is None else 1.0)
+        kept_list = [j for j in kept_list if imp[j] >= floor * y_std]
 
         # --- distill kept shapes into piecewise-linear segments ---
         self.segments_ = [[] for _ in range(d)]
@@ -270,11 +275,13 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
             return
         seg_ids = {}
         fvals = {}
+        orig_segs = {}
         for j in kept_list:
             segs = self.segments_[j]
             breaks = np.array([s[1] for s in segs[:-1]])
             seg_ids[j] = np.searchsorted(breaks, X[:, j], side="right")
             fvals[j] = self._feature_effect(j, X[:, j])
+            orig_segs[j] = list(segs)
         pred = np.full(n, self.intercept_)
         for j in kept_list:
             pred += fvals[j]
@@ -298,6 +305,12 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                         c_new = ym - m_new * xm
                     else:
                         m_new, c_new = 0.0, ym
+                    # shrink toward the distilled (smoothed) line: guards
+                    # against overfitting thin segments and small datasets
+                    m0, c0 = orig_segs[j][s_idx][2], orig_segs[j][s_idx][3]
+                    blend = ns / (ns + self.refit_shrink)
+                    m_new = blend * m_new + (1 - blend) * m0
+                    c_new = blend * c_new + (1 - blend) * c0
                     new_segs.append((lo, hi, m_new, c_new))
                 self.segments_[j] = new_segs
                 f_new = self._feature_effect(j, xj)
@@ -335,7 +348,9 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
             sse = syy - 2 * m * sxy - 2 * c * sy + m * m * sxx + 2 * m * c * sx + c * c * ww
             return max(sse, 0.0), m, c
 
-        penalty = self.seg_penalty_frac * float(W[-1]) * y_std ** 2
+        n_tot = float(W[-1])
+        pen_frac = self.seg_penalty_frac * (3.0 if n_tot < self.small_n else 1.0)
+        penalty = pen_frac * n_tot * y_std ** 2
         K = self.max_segments
         INF = np.inf
         dp = np.full((K + 1, B + 1), INF)
@@ -441,10 +456,10 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_pspline_v2"
-model_description = ("v1 + final full-data backfit with selected lambda, 3-fold-CV lambda on small n, DP distill to <=6 "
-                     "segments, then segment slopes/consts refit by backfitting LS on true residuals (breakpoints frozen) "
-                     "before rounding; predict() evaluates exactly the printed segments")
+model_shorthand_name = "SegGAM_pspline_v3"
+model_description = ("v2 + segment-refit shrinkage toward the smoothed distilled line (pseudo-count blending), coarser DP "
+                     "segmentation penalty and stricter pruning floor on small datasets; predict() evaluates exactly the "
+                     "printed segments")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
