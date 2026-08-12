@@ -133,8 +133,8 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                  n_sweeps=40, tol=1e-4, max_segments=8, seg_penalty_frac=0.0008,
                  prune_rel_tol=0.005, prune_imp_frac=0.01, val_frac=0.15,
                  refit_sweeps=6, min_slope_samples=8, refit_shrink=12.0,
-                 small_n=300, max_interactions=4, inter_gain=0.05,
-                 inter_top_feats=8, random_state=42):
+                 small_n=300, max_interactions=6, inter_gain=0.04,
+                 inter_top_feats=8, n_bags=3, random_state=42):
         self.max_bins = max_bins
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
@@ -151,6 +151,7 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         self.max_interactions = max_interactions
         self.inter_gain = inter_gain
         self.inter_top_feats = inter_top_feats
+        self.n_bags = n_bags
         self.random_state = random_state
 
     # ------------------------------------------------------------------
@@ -306,10 +307,24 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         else:
             kept = set(active)
 
-        # --- final backfit on ALL data with chosen lambda, kept features only ---
+        # --- final backfit on ALL data with chosen lambda, kept features only.
+        # Bootstrap-bagged: average the shape functions over n_bags resamples
+        # (variance reduction, EBM-style); the printed model is unaffected. ---
         bands_full = build_bands(np.arange(n))
         kept_list = sorted(kept)
         intercept, shapes, _ = self._backfit(y, bin_idx, bands_full, n_bins, kept_list, lam, self.n_sweeps)
+        if self.n_bags > 1 and n >= 80:
+            for j in kept_list:
+                shapes[j] = shapes[j] / self.n_bags
+            icpt_acc = intercept / self.n_bags
+            for b in range(self.n_bags - 1):
+                ids = rng.randint(0, n, size=n)
+                bands_b = build_bands(ids)
+                icpt_b, shapes_b, _ = self._backfit(y[ids], bin_idx[ids], bands_b, n_bins, kept_list, lam, self.n_sweeps)
+                for j in kept_list:
+                    shapes[j] += shapes_b[j] / self.n_bags
+                icpt_acc += icpt_b / self.n_bags
+            intercept = icpt_acc
         imp = {}
         for j in kept_list:
             w = w_full[j]
@@ -695,9 +710,9 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_ga2m_v6"
-model_description = ("v5 + capacity bump: <=8 segments per shape, wider/lower lambda grid (0.1-3000), "
-                     "up to 4 interaction terms; predict() evaluates exactly the printed model")
+model_shorthand_name = "SegGAM_ga2m_v7"
+model_description = ("v6 + bootstrap-bagged backfit (3 bags averaged before distillation; string size unchanged) "
+                     "and up to 6 interaction terms at 4% val gain; predict() evaluates exactly the printed model")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
