@@ -269,6 +269,11 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         # --- refit segment coefficients against actual residuals (breakpoints frozen) ---
         self._refit_segments(X, y, kept_list)
 
+        # --- prediction clipping to (slightly padded) training target range ---
+        y_rng = float(np.max(y) - np.min(y))
+        self.clip_ = (_round_sig(float(np.min(y)) - 0.05 * y_rng, 4),
+                      _round_sig(float(np.max(y)) + 0.05 * y_rng, 4))
+
         # --- GA2M-lite: a few readable pairwise interaction terms, val-gated ---
         self.inter_terms_ = []
         if len(val_ids) and self.max_interactions > 0 and len(active) >= 2:
@@ -281,6 +286,8 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                     cell_idx[j] = np.searchsorted(np.array(t), X[:, j], side="right")
             cand_feats = sorted(cell_idx)
             used = set()
+            tr_mask = np.zeros(n, dtype=bool)
+            tr_mask[tr_ids] = True
             for _ in range(self.max_interactions):
                 resid = y - self._predict_raw(X)
                 r_tr, r_val = resid[tr_ids], resid[val_ids]
@@ -329,6 +336,33 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                             cands.append({"type": "grid", "i": a, "j": b,
                                           "ti": ta, "tj": tb, "vals": vals,
                                           "contrib": vals[cell]})
+                    # form 3: split-linear (both orientations): the slope of one
+                    # feature switches at the other feature's median
+                    for (sa, sb) in ((a, b), (b, a)):
+                        t = _round_sig(float(np.median(X[tr_ids, sa])), 4)
+                        side = X[:, sa] >= t
+                        coefs = []
+                        ok = True
+                        for sel_side in (~side, side):
+                            sel = sel_side & tr_mask
+                            ns = int(np.sum(sel))
+                            if ns < self.min_slope_samples:
+                                ok = False; break
+                            xs, ys2 = X[sel, sb], resid[sel]
+                            xm, ym = float(np.mean(xs)), float(np.mean(ys2))
+                            varx = float(np.mean((xs - xm) ** 2))
+                            if varx < 1e-12:
+                                ok = False; break
+                            mm = float(np.mean((xs - xm) * (ys2 - ym)) / varx)
+                            sh = ns / (ns + self.refit_shrink)
+                            mm *= sh
+                            coefs.append((_round_sig(mm, 4), _round_sig(ym - mm * xm, 4)))
+                        if ok:
+                            (m1, c1), (m2, c2) = coefs
+                            contrib = np.where(side, m2 * X[:, sb] + c2, m1 * X[:, sb] + c1)
+                            cands.append({"type": "split", "i": sa, "j": sb, "t": t,
+                                          "lo": (m1, c1), "hi": (m2, c2),
+                                          "contrib": contrib})
                     for cand in cands:
                         contrib = cand.pop("contrib")
                         d = float(np.mean(contrib[tr_ids]))
@@ -342,6 +376,9 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                 self.inter_terms_.append(term)
                 self.intercept_ -= d
                 used.add((term["i"], term["j"]))
+            if self.inter_terms_:
+                # re-tune additive segments against y minus interaction part
+                self._refit_segments(X, y - self._inter_contrib(X), kept_list)
 
         pred = self._predict_raw(X)
         self.intercept_ += float(np.mean(y) - np.mean(pred))
@@ -479,9 +516,23 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
         out = np.full(X.shape[0], getattr(self, "intercept_", 0.0))
         for j in range(self.n_features_in_):
             out += self._feature_effect(j, X[:, j])
+        out += self._inter_contrib(X)
+        clip = getattr(self, "clip_", None)
+        if clip is not None:
+            out = np.clip(out, clip[0], clip[1])
+        return out
+
+    def _inter_contrib(self, X):
+        X = np.asarray(X, dtype=np.float64)
+        out = np.zeros(X.shape[0])
         for t in getattr(self, "inter_terms_", []):
             if t["type"] == "prod":
                 out += t["coef"] * X[:, t["i"]] * X[:, t["j"]]
+            elif t["type"] == "split":
+                side = X[:, t["i"]] >= t["t"]
+                (m1, c1), (m2, c2) = t["lo"], t["hi"]
+                xb = X[:, t["j"]]
+                out += np.where(side, m2 * xb + c2, m1 * xb + c1)
             else:
                 ia = np.searchsorted(np.array(t["ti"]), X[:, t["i"]], side="right")
                 ib = np.searchsorted(np.array(t["tj"]), X[:, t["j"]], side="right")
@@ -539,6 +590,11 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
                 if t["type"] == "prod":
                     lines.append(f"  add {t['coef']} * {na} * {nb}")
                     n_rules += 1
+                elif t["type"] == "split":
+                    (m1, c1), (m2, c2) = t["lo"], t["hi"]
+                    lines.append(f"  if {na} < {t['t']}:  add {m1}*{nb} + {c1}")
+                    lines.append(f"  if {na} >= {t['t']}:  add {m2}*{nb} + {c2}")
+                    n_rules += 2
                 else:
                     ta, tb = t["ti"], t["tj"]
                     conds_a = [f"{na} < {ta[0]}", f"{ta[0]} <= {na} < {ta[1]}", f"{na} >= {ta[1]}"]
@@ -554,6 +610,10 @@ class SegmentedGAMRegressor(BaseEstimator, RegressorMixin):
             lines.append("")
             lines.append(f"Features with NO effect (f = 0): {', '.join(pruned)}")
         lines.append("")
+        clip = getattr(self, "clip_", None)
+        if clip is not None:
+            lines.append(f"Finally, the prediction is clipped to the range [{clip[0]}, {clip[1]}] "
+                         "(values outside are set to the nearer bound; this rarely matters).")
         lines.append(f"Total pieces: {n_rules}. To predict: add baseline plus each feature's f value"
                      + (" plus any interaction adjustments that apply." if inter else "."))
         return "\n".join(lines)
@@ -567,10 +627,10 @@ SegmentedGAMRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "SegGAM_ga2m_v4"
-model_description = ("v3 + GA2M-lite: up to 3 readable pairwise interaction terms (single product coef*xa*xb or 3x3 "
-                     "threshold grid of constants), added only when validation MSE improves >=2%; printed as explicit "
-                     "IF rules; predict() evaluates exactly the printed model")
+model_shorthand_name = "SegGAM_ga2m_v5"
+model_description = ("v4 + split-linear interaction form (slope of xb switches at xa's median), additive segments "
+                     "re-tuned after interactions, and faithful printed clipping of predictions to padded training "
+                     "y-range; predict() evaluates exactly the printed model")
 model_defs = [(model_shorthand_name, SegmentedGAMRegressor())]
 
 
