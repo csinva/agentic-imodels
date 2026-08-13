@@ -315,48 +315,49 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                             sse += float(np.sum((y[f_ids] - pv) ** 2))
                         scored.append((sse, mb, lam_c, cmask))
             scored.sort(key=lambda t: t[0])
-            # pipeline-aware resolution choice: compare each bin-resolution's
-            # best config by CV of backfit + short boosting fine-tune
-            finalists = {}
-            for ss, mb, l, cm in scored:
-                if mb not in finalists:
-                    finalists[mb] = (ss, mb, l, cm)
-            if len(finalists) > 1:
-                rescored = []
-                for ss, mb, l, cm in finalists.values():
-                    edges, nb, bidx, act = binned[mb]
-                    sse_p = 0.0
-                    for (t_ids, f_ids) in cv_sets:
-                        bands_f = build_bands(t_ids, edges, nb, bidx, act, cm)
-                        icpt, shapes, _ = self._backfit(y[t_ids], bidx[t_ids], bands_f, nb, act, l, self.n_sweeps)
-                        r_tr = y[t_ids] - np.full(len(t_ids), icpt)
-                        r_val = y[f_ids] - np.full(len(f_ids), icpt)
-                        bt, bv_ = bidx[t_ids], bidx[f_ids]
+            best_sse = scored[0][0]
+            ens_configs = [(mb, l, cm) for ss, mb, l, cm in scored[:self.ens_top] if ss <= 1.05 * best_sse]
+            _, mb_best, lam, cat_best = scored[0]
+            # CV-compare two additive paradigms: smooth backfit+boost vs pure boost
+            def _cv_boost(shapes_from, mb_c, lam_c, cm_c, rounds, patience):
+                edges, nb, bidx, act = binned[mb_c]
+                sse_tot = 0.0
+                for (t_ids, f_ids) in cv_sets:
+                    if shapes_from == 'backfit':
+                        bands_f = build_bands(t_ids, edges, nb, bidx, act, cm_c)
+                        icpt, shapes, _ = self._backfit(y[t_ids], bidx[t_ids], bands_f, nb, act, lam_c, self.n_sweeps)
+                    else:
+                        icpt = float(np.mean(y[t_ids]))
+                        shapes = [np.zeros(nb[j]) for j in range(d)]
+                    r_tr = y[t_ids] - np.full(len(t_ids), icpt)
+                    r_val = y[f_ids] - np.full(len(f_ids), icpt)
+                    bt, bv_ = bidx[t_ids], bidx[f_ids]
+                    for j in act:
+                        r_tr -= shapes[j][bt[:, j]]
+                        r_val -= shapes[j][bv_[:, j]]
+                    cnt = {j: np.bincount(bt[:, j], minlength=nb[j]).astype(float) for j in act}
+                    bvv, stall = float(np.mean(r_val ** 2)), 0
+                    for it in range(rounds):
                         for j in act:
-                            r_tr -= shapes[j][bt[:, j]]
-                            r_val -= shapes[j][bv_[:, j]]
-                        cnt = {j: np.bincount(bt[:, j], minlength=nb[j]).astype(float) for j in act}
-                        bvv, stall = float(np.mean(r_val ** 2)), 0
-                        for it in range(150):
-                            for j in act:
-                                sums = np.bincount(bt[:, j], weights=r_tr, minlength=nb[j])
-                                u = self.boost_lr * sums / (cnt[j] + 2.0)
-                                r_tr -= u[bt[:, j]]
-                                r_val -= u[bv_[:, j]]
-                            v = float(np.mean(r_val ** 2))
-                            if v < bvv - 1e-12:
-                                bvv, stall = v, 0
-                            else:
-                                stall += 1
-                                if stall >= 12:
-                                    break
-                        sse_p += bvv * len(f_ids)
-                    rescored.append((sse_p, mb, l, cm))
-                rescored.sort(key=lambda t: t[0])
-                _, mb_best, lam, cat_best = rescored[0]
-            else:
-                _, mb_best, lam, cat_best = scored[0]
-            ens_configs = [(mb_best, lam, cat_best)]
+                            sums = np.bincount(bt[:, j], weights=r_tr, minlength=nb[j])
+                            u = self.boost_lr * sums / (cnt[j] + 2.0)
+                            r_tr -= u[bt[:, j]]
+                            r_val -= u[bv_[:, j]]
+                        v = float(np.mean(r_val ** 2))
+                        if v < bvv - 1e-12:
+                            bvv, stall = v, 0
+                        else:
+                            stall += 1
+                            if stall >= patience:
+                                break
+                    sse_tot += bvv * len(f_ids)
+                return sse_tot
+            cv_smooth = _cv_boost('backfit', mb_best, lam, cat_best, 200, 15)
+            cv_pure = _cv_boost('zero', max(binned), lam, cat_best, 500, 25)
+            self.pure_ = bool(cv_pure < cv_smooth)
+            if self.pure_:
+                mb_best = max(binned)
+                ens_configs = [(mb_best, lam, cat_best)]
             # fit on tr split with selected config (basis for pruning decisions)
             edges, nb, bidx, act = binned[mb_best]
             bands_tr_sel = build_bands(tr_ids, edges, nb, bidx, act, cat_best)
@@ -420,6 +421,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             icpt_sel, shapes_sel = None, None
             lam_by_feat = {}
             ens_configs = [(mb_best, lam, cat_best)]
+            self.pure_ = False
         self.lambda_ = lam
         self.bins_ = mb_best
         bin_edges, n_bins, bin_idx, active = binned[mb_best]
@@ -448,6 +450,8 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         else:
             kept_list = list(active)
 
+        if self.pure_:
+            kept_list = list(active)
         # --- bagged final backfit, averaged over the ensemble of top configs ---
         n_bags = self.n_bags if n >= 80 else 1
         cw = 1.0 / len(ens_configs)
@@ -471,7 +475,11 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                 else:
                     ids = rng.randint(0, n, size=n)
                     bands_b = build_bands(ids, edges_c, nb_c, bidx_c, act_c, cm_c)
-                icpt_b, shapes_b, _ = self._backfit(y[ids], bidx_c[ids], bands_b, nb_c, kept_c, lam_c, self.n_sweeps, lam_by_feat=lam_by_feat)
+                if self.pure_:
+                    icpt_b = float(np.mean(y[ids]))
+                    shapes_b = [np.zeros(nb_c[j]) for j in range(d)]
+                else:
+                    icpt_b, shapes_b = self._backfit(y[ids], bidx_c[ids], bands_b, nb_c, kept_c, lam_c, self.n_sweeps, lam_by_feat=lam_by_feat)[:2]
                 for j in kept_c:
                     acc[j] += shapes_b[j] / n_bags
                 icpt_acc += icpt_b / n_bags
@@ -585,7 +593,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                   self.pair_terms_.append(term)
                   self.intercept_ -= dshift
 
-          if self.pair_terms_ and self.alternate and len(val_ids):
+          if self.pair_terms_ and self.alternate and len(val_ids) and not self.pure_:
               # one alternation: re-fit additive shapes against y minus pair terms,
               # kept only if validation error does not worsen
               old_state = ([None if v is None else v.copy() for v in self.shape_x_],
@@ -615,9 +623,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
 
           # --- boost pass over mains AND pair grid cells (bag-averaged, val early stop) ---
           if len(val_ids) and self.boost_rounds > 0 and kept_list:
-              # boost on the finest binning: sharp corrections regardless of the
-              # (smoothness-oriented) resolution the backfit selection chose
-              edges_b, nb_b, bidx_b, _ = binned[max(binned)]
+              edges_b, nb_b, bidx_b, _ = binned[mb_best]
               resid = y - self._predict_raw(X, clip=False)
               grid_terms = [t for t in self.pair_terms_ if t["type"] == "grid"]
               gcell_all = []
@@ -811,9 +817,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v24"
-model_description = ("v23 + bin resolution chosen by pipeline-aware CV (backfit + short boost per finalist "
-                     "config) instead of backfit-only CV")
+model_shorthand_name = "GA2MBoost_v26"
+model_description = ("v22 + per-dataset paradigm selection by CV: smooth backfit+boost vs pure boosting from "
+                     "zero on finest bins (EBM-style mains); winner runs the same gated-pairs/boost cycles")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
