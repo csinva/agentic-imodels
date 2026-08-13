@@ -407,7 +407,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             kept_list = list(active)
 
         # --- bagged final backfit, averaged over the ensemble of top configs ---
-        n_bags = self.n_bags
+        n_bags = self.n_bags if n >= 80 else 1
         cw = 1.0 / len(ens_configs)
         self.shape_tables_ = [[] for _ in range(d)]   # per feature: list of (weight, x, y)
         self.pruned_ = [True] * d
@@ -458,54 +458,6 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             self.shape_x_[j] = grid
             self.shape_y_[j] = vals
         self.intercept_ = intercept
-
-        # --- small-n: boosting fine-tune with CV-selected rounds ---
-        if not len(val_ids) and self.boost_rounds > 0 and kept_list and n >= 25:
-            edges_b, nb_b, bidx_b, _ = binned[mb_best]
-            resid_all = y - self._predict_raw(X, clip=False)
-            folds = np.array_split(rng.permutation(n), 3)
-            best_rounds = []
-            for f_ids in folds:
-                t_ids = np.setdiff1d(np.arange(n), f_ids)
-                if len(t_ids) < 10 or len(f_ids) < 3:
-                    continue
-                r_tr, r_val = resid_all[t_ids].copy(), resid_all[f_ids].copy()
-                b_tr_, b_val_ = bidx_b[t_ids], bidx_b[f_ids]
-                cnt = {j: np.bincount(b_tr_[:, j], minlength=nb_b[j]).astype(float) for j in kept_list}
-                bv, br, stall = float(np.mean(r_val ** 2)), 0, 0
-                for it in range(self.boost_rounds):
-                    for j in kept_list:
-                        sums = np.bincount(b_tr_[:, j], weights=r_tr, minlength=nb_b[j])
-                        u = self.boost_lr * sums / (cnt[j] + 2.0)
-                        r_tr -= u[b_tr_[:, j]]
-                        r_val -= u[b_val_[:, j]]
-                    v = float(np.mean(r_val ** 2))
-                    if v < bv - 1e-12:
-                        bv, br, stall = v, it + 1, 0
-                    else:
-                        stall += 1
-                        if stall >= self.boost_patience:
-                            break
-                best_rounds.append(br)
-            n_rounds = int(np.mean(best_rounds)) if best_rounds else 0
-            if n_rounds > 0:
-                r_all = resid_all.copy()
-                cnt = {j: np.bincount(bidx_b[:, j], minlength=nb_b[j]).astype(float) for j in kept_list}
-                u_tot = {j: np.zeros(nb_b[j]) for j in kept_list}
-                for it in range(n_rounds):
-                    for j in kept_list:
-                        sums = np.bincount(bidx_b[:, j], weights=r_all, minlength=nb_b[j])
-                        u = self.boost_lr * sums / (cnt[j] + 2.0)
-                        u_tot[j] += u
-                        r_all -= u[bidx_b[:, j]]
-                for j in kept_list:
-                    if self.shape_x_[j] is None or not np.any(u_tot[j]):
-                        continue
-                    gb = np.searchsorted(edges_b[j], self.shape_x_[j], side="right")
-                    corr = u_tot[j][gb]
-                    mu = float(np.mean(u_tot[j][bidx_b[:, j]]))
-                    self.shape_y_[j] = self.shape_y_[j] + corr - mu
-                    self.intercept_ += mu
 
         # --- EBM-style boosting fine-tune of main effects (val early stopping) ---
         if len(val_ids) and self.boost_rounds > 0 and kept_list:
@@ -748,9 +700,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v19"
-model_description = ("v18 + small datasets get bagging and boosting too (CV-selected boosting rounds when no "
-                     "validation split exists)")
+model_shorthand_name = "GA2MBoost_v18"
+model_description = ("v16 + EBM-style cyclic gradient-boosting fine-tune of main effects on residuals "
+                     "(lr 0.1, val early stopping) after the bagged backfit; config-ensemble off (tested worse)")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
