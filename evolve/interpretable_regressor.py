@@ -286,20 +286,31 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             n_val = max(20, int(n * self.val_frac))
             val_ids, tr_ids = perm[:n_val], perm[n_val:]
             y_tr, y_val = y[tr_ids], y[val_ids]
-            best = (np.inf, None, None, None, None, None)
+            # 3-fold CV selection of (bins, categorical, lambda) on all data
+            cv_folds = np.array_split(rng.permutation(n), 3)
+            cv_sets = []
+            for f_ids in cv_folds:
+                t_ids = np.setdiff1d(np.arange(n), f_ids)
+                cv_sets.append((t_ids, f_ids))
+            best = (np.inf, None, None, None)
             for mb, (edges, nb, bidx, act) in binned.items():
-                b_tr, b_val_ = bidx[tr_ids], bidx[val_ids]
                 for cmask in cat_options:
-                    bands_tr = build_bands(tr_ids, edges, nb, bidx, act, cmask)
+                    fold_bands = [build_bands(t_ids, edges, nb, bidx, act, cmask) for t_ids, _ in cv_sets]
                     for lam in self.lambdas:
-                        icpt, shapes, _ = self._backfit(y_tr, b_tr, bands_tr, nb, act, lam, self.n_sweeps)
-                        pv = np.full(len(val_ids), icpt)
-                        for j in act:
-                            pv += shapes[j][b_val_[:, j]]
-                        mse = float(np.mean((y_val - pv) ** 2))
-                        if mse < best[0]:
-                            best = (mse, mb, lam, icpt, shapes, cmask)
-            _, mb_best, lam, icpt_sel, shapes_sel, cat_best = best
+                        sse = 0.0
+                        for (t_ids, f_ids), bands_f in zip(cv_sets, fold_bands):
+                            icpt, shapes, _ = self._backfit(y[t_ids], bidx[t_ids], bands_f, nb, act, lam, self.n_sweeps)
+                            pv = np.full(len(f_ids), icpt)
+                            for j in act:
+                                pv += shapes[j][bidx[f_ids, j]]
+                            sse += float(np.sum((y[f_ids] - pv) ** 2))
+                        if sse < best[0]:
+                            best = (sse, mb, lam, cmask)
+            _, mb_best, lam, cat_best = best
+            # fit on tr split with selected config (basis for pruning decisions)
+            edges, nb, bidx, act = binned[mb_best]
+            bands_tr_sel = build_bands(tr_ids, edges, nb, bidx, act, cat_best)
+            icpt_sel, shapes_sel, _ = self._backfit(y_tr, bidx[tr_ids], bands_tr_sel, nb, act, lam, self.n_sweeps)
             # per-feature lambda refinement: coordinate pass on validation
             lam_by_feat = {}
             edges, nb, bidx, act = binned[mb_best]
@@ -626,9 +637,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v14"
-model_description = ("v13 + one val-gated pairs->additive alternation (shapes re-backfit against y minus pair terms, "
-                     "kept only if validation improves); per-feature lambda refinement available but off (net-negative)")
+model_shorthand_name = "GA2MBoost_v15"
+model_description = ("v14 + model selection (bins, categorical, lambda) by 3-fold CV over all data instead of a "
+                     "single 15% validation split")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
