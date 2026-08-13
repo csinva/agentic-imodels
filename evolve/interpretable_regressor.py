@@ -120,7 +120,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
 
     def __init__(self, bins_options=(48, 256), lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
                  n_sweeps=30, tol=1e-4, prune_rel_tol=0.002, prune_imp_frac=0.005,
-                 val_frac=0.15, n_bags=4, max_pairs=8, pair_bins=12,
+                 val_frac=0.15, n_bags=8, max_pairs=8, pair_bins=12,
                  pair_shrink=8.0, pair_gain=0.005, pair_screen_bins=8,
                  pair_top_candidates=5, cat_max_levels=32, cat_shrink=5.0,
                  feat_lambda_refine=False, alternate=True, small_n=300, random_state=42):
@@ -637,9 +637,8 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v15"
-model_description = ("v14 + model selection (bins, categorical, lambda) by 3-fold CV over all data instead of a "
-                     "single 15% validation split")
+model_shorthand_name = "GA2MBoost_v16"
+model_description = ("v15 + 8 outer bags (was 4); max_pairs kept at 8 after 12 tested worse")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
