@@ -123,9 +123,8 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                  val_frac=0.15, n_bags=8, max_pairs=8, pair_bins=12,
                  pair_shrink=8.0, pair_gain=0.005, pair_screen_bins=8,
                  pair_top_candidates=5, cat_max_levels=32, cat_shrink=5.0,
-                 feat_lambda_refine=False, alternate=True, ens_top=1,
                  boost_lr=0.1, boost_rounds=300, boost_patience=25,
-                 boost_bags=8, n_cycles=3, n_seeds=8,
+                 boost_bags=8, n_cycles=2, n_seeds=8,
                  small_n=300, random_state=42):
         self.bins_options = bins_options
         self.lambdas = lambdas
@@ -143,9 +142,6 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         self.pair_top_candidates = pair_top_candidates
         self.cat_max_levels = cat_max_levels
         self.cat_shrink = cat_shrink
-        self.feat_lambda_refine = feat_lambda_refine
-        self.alternate = alternate
-        self.ens_top = ens_top
         self.boost_lr = boost_lr
         self.boost_rounds = boost_rounds
         self.boost_patience = boost_patience
@@ -219,14 +215,6 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         n, d = X.shape
         self.n_features_in_ = d
         rng = np.random.RandomState(self.random_state)
-
-        # winsorize extremely heavy-tailed targets (outliers dominate LS bins)
-        if n >= 80:
-            q_lo, q_hi = np.quantile(y, [0.002, 0.998])
-            med = float(np.median(y))
-            if (float(np.max(y)) - q_hi) > 2.0 * max(q_hi - med, 1e-12) or \
-               (q_lo - float(np.min(y))) > 2.0 * max(med - q_lo, 1e-12):
-                y = np.clip(y, q_lo, q_hi)
 
         y_var = float(np.var(y)) + 1e-12
         y_std = float(np.sqrt(y_var))
@@ -316,48 +304,13 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                             sse += float(np.sum((y[f_ids] - pv) ** 2))
                         scored.append((sse, mb, lam_c, cmask))
             scored.sort(key=lambda t: t[0])
-            best_sse = scored[0][0]
-            ens_configs = [(mb, l, cm) for ss, mb, l, cm in scored[:self.ens_top] if ss <= 1.05 * best_sse]
             _, mb_best, lam, cat_best = scored[0]
+            ens_configs = [(mb_best, lam, cat_best)]
             # fit on tr split with selected config (basis for pruning decisions)
             edges, nb, bidx, act = binned[mb_best]
             bands_tr_sel = build_bands(tr_ids, edges, nb, bidx, act, cat_best)
             icpt_sel, shapes_sel, _ = self._backfit(y_tr, bidx[tr_ids], bands_tr_sel, nb, act, lam, self.n_sweeps)
-            # per-feature lambda refinement: coordinate pass on validation
             lam_by_feat = {}
-            edges, nb, bidx, act = binned[mb_best]
-            bands_tr = build_bands(tr_ids, edges, nb, bidx, act, cat_best)
-            b_tr, b_val_ = bidx[tr_ids], bidx[val_ids]
-            pv = np.full(len(val_ids), icpt_sel)
-            for j in act:
-                pv += shapes_sel[j][b_val_[:, j]]
-            cur_mse = float(np.mean((y_val - pv) ** 2))
-            F_tr = np.full(len(tr_ids), icpt_sel)
-            for j in act:
-                F_tr += shapes_sel[j][b_tr[:, j]]
-            for j in (act if self.feat_lambda_refine else []):
-                w_, xbar_, P_, is_cat_ = bands_tr[j]
-                if is_cat_:
-                    continue
-                resid = y_tr - F_tr + shapes_sel[j][b_tr[:, j]]
-                sums = np.bincount(b_tr[:, j], weights=resid, minlength=nb[j])
-                for lam_c in (lam / 30.0, lam * 30.0):
-                    if not (self.lambdas[0] / 30.0 <= lam_c <= self.lambdas[-1] * 30.0):
-                        continue
-                    ab = P_ * lam_c
-                    ab[-1] = ab[-1] + w_
-                    try:
-                        f_c = solveh_banded(ab, sums, lower=False)
-                    except Exception:
-                        continue
-                    pv_c = pv - shapes_sel[j][b_val_[:, j]] + f_c[b_val_[:, j]]
-                    mse_c = float(np.mean((y_val - pv_c) ** 2))
-                    if mse_c < cur_mse * 0.99:
-                        cur_mse = mse_c
-                        lam_by_feat[j] = lam_c
-                        F_tr += f_c[b_tr[:, j]] - shapes_sel[j][b_tr[:, j]]
-                        pv = pv_c
-                        shapes_sel[j] = f_c
         else:
             val_ids = np.array([], dtype=int)
             tr_ids = np.arange(n)
@@ -380,7 +333,6 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                     cv_mse[l] += float(np.sum((y[f_ids] - pv) ** 2))
             lam = min(cv_mse, key=cv_mse.get)
             icpt_sel, shapes_sel = None, None
-            lam_by_feat = {}
             ens_configs = [(mb_best, lam, cat_best)]
         self.lambda_ = lam
         self.bins_ = mb_best
@@ -433,7 +385,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                 else:
                     ids = rng.randint(0, n, size=n)
                     bands_b = build_bands(ids, edges_c, nb_c, bidx_c, act_c, cm_c)
-                icpt_b, shapes_b, _ = self._backfit(y[ids], bidx_c[ids], bands_b, nb_c, kept_c, lam_c, self.n_sweeps, lam_by_feat=lam_by_feat)
+                icpt_b, shapes_b, _ = self._backfit(y[ids], bidx_c[ids], bands_b, nb_c, kept_c, lam_c, self.n_sweeps)
                 for j in kept_c:
                     acc[j] += shapes_b[j] / n_bags
                 icpt_acc += icpt_b / n_bags
@@ -546,34 +498,6 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                   _, term, contrib, dshift = best
                   self.pair_terms_.append(term)
                   self.intercept_ -= dshift
-
-          if self.pair_terms_ and self.alternate and len(val_ids):
-              # one alternation: re-fit additive shapes against y minus pair terms,
-              # kept only if validation error does not worsen
-              old_state = ([None if v is None else v.copy() for v in self.shape_x_],
-                           [None if v is None else v.copy() for v in self.shape_y_],
-                           self.intercept_)
-              val_before = float(np.mean((y[val_ids] - self._predict_raw(X[val_ids], clip=False)) ** 2))
-              y_eff = y - (self._predict_raw(X, clip=False)
-                           - np.full(n, self.intercept_)
-                           - sum(np.interp(X[:, j], self.shape_x_[j], self.shape_y_[j])
-                                 for j in range(d) if self.shape_x_[j] is not None))
-              icpt2, shapes2, _ = self._backfit(y_eff, bin_idx, bands_full, n_bins, kept_list, lam,
-                                                self.n_sweeps, lam_by_feat=lam_by_feat)
-              intercept2 = icpt2
-              for j in kept_list:
-                  w = w_full[j]
-                  mu = float(np.sum(shapes2[j] * w) / max(w.sum(), 1))
-                  sh = shapes2[j] - mu
-                  intercept2 += mu
-                  _, xbar, _, _ = bands_full[j]
-                  order = np.argsort(xbar)
-                  self.shape_x_[j] = xbar[order]
-                  self.shape_y_[j] = sh[order]
-              self.intercept_ = intercept2
-              val_after = float(np.mean((y[val_ids] - self._predict_raw(X[val_ids], clip=False)) ** 2))
-              if val_after > val_before:
-                  self.shape_x_, self.shape_y_, self.intercept_ = old_state
 
           # --- boost pass over mains AND pair grid cells (bag-averaged, val early stop) ---
           if len(val_ids) and self.boost_rounds > 0 and kept_list:
@@ -818,10 +742,11 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v31"
-model_description = ("final performance GA2M: penalized-backfit + CV model selection + categorical handling + "
-                     "gated pairs + bag-averaged boosting cycles, whole pipeline fit 8x with different seeds and "
-                     "prediction-averaged; sibling-free mean_rank 4.03 vs EBM 5.05 (beats EBM; only TabPFN ahead)")
+model_shorthand_name = "GA2MBoost_v33"
+model_description = ("simplified final GA2M: quantile bins; 3-fold CV picks (bin resolution, categorical treatment, "
+                     "smoothing lambda); penalized backfit with linear null space; greedy validation pruning; 8 bagged "
+                     "backfits averaged; 2 cycles of FAST-screened val-gated pair terms + bag-averaged val-stopped "
+                     "boosting of mains and pair cells; pipeline averaged over 8 seeds; mean_rank ~4.1 vs EBM ~5.05")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
