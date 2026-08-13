@@ -119,10 +119,11 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
     """
 
     def __init__(self, bins_options=(48, 256), lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
-                 n_sweeps=30, tol=1e-4, prune_rel_tol=0.005, prune_imp_frac=0.005,
+                 n_sweeps=30, tol=1e-4, prune_rel_tol=0.002, prune_imp_frac=0.005,
                  val_frac=0.15, n_bags=4, max_pairs=8, pair_bins=12,
                  pair_shrink=8.0, pair_gain=0.005, pair_screen_bins=8,
-                 pair_top_candidates=5, small_n=300, random_state=42):
+                 pair_top_candidates=5, cat_max_levels=32, cat_shrink=5.0,
+                 small_n=300, random_state=42):
         self.bins_options = bins_options
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
@@ -137,6 +138,8 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         self.pair_gain = pair_gain
         self.pair_screen_bins = pair_screen_bins
         self.pair_top_candidates = pair_top_candidates
+        self.cat_max_levels = cat_max_levels
+        self.cat_shrink = cat_shrink
         self.small_n = small_n
         self.random_state = random_state
 
@@ -175,15 +178,19 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         for _ in range(sweeps):
             delta = 0.0
             for j in active:
-                w, xbar, P = bands[j]
+                w, xbar, P, is_cat = bands[j]
                 resid = y_tr - F + shapes[j][b_tr[:, j]]
                 sums = np.bincount(b_tr[:, j], weights=resid, minlength=n_bins[j])
-                ab = P * lam
-                ab[-1] = ab[-1] + w
-                try:
-                    f_new = solveh_banded(ab, sums, lower=False)
-                except Exception:
-                    f_new = np.where(w > 0, sums / np.maximum(w, 1e-9), 0.0)
+                if is_cat:
+                    # categorical: shrunken per-level means (no smoothing across codes)
+                    f_new = sums / (w + self.cat_shrink)
+                else:
+                    ab = P * lam
+                    ab[-1] = ab[-1] + w
+                    try:
+                        f_new = solveh_banded(ab, sums, lower=False)
+                    except Exception:
+                        f_new = np.where(w > 0, sums / np.maximum(w, 1e-9), 0.0)
                 F += f_new[b_tr[:, j]] - shapes[j][b_tr[:, j]]
                 if len(f_new):
                     delta = max(delta, float(np.max(np.abs(f_new - shapes[j]))))
@@ -210,6 +217,14 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
 
         y_var = float(np.var(y)) + 1e-12
         y_std = float(np.sqrt(y_var))
+
+        # integer-coded low-cardinality features get categorical treatment
+        is_cat_feat = np.zeros(d, dtype=bool)
+        for j in range(d):
+            col = X[np.isfinite(X[:, j]), j]
+            u = np.unique(col)
+            if 2 <= len(u) <= self.cat_max_levels and np.allclose(u, np.round(u)):
+                is_cat_feat[j] = True
 
         # --- quantile binning at a given resolution ---
         def make_bins(max_bins):
@@ -248,7 +263,10 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                     xbar[bad] = centers[bad]
                 xr = xbar[-1] - xbar[0]
                 xs = (xbar - xbar[0]) / (xr if xr > 0 else 1.0)
-                bands[j] = (w, xbar, self._penalty_banded(xs))
+                if is_cat_feat[j]:
+                    bands[j] = (w, xbar, None, True)
+                else:
+                    bands[j] = (w, xbar, self._penalty_banded(xs), False)
             return bands
 
         # --- joint (bin resolution, lambda) selection on validation ---
@@ -353,7 +371,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             mu = float(np.sum(acc[j] * w) / max(w.sum(), 1))
             sh = acc[j] - mu
             intercept += mu
-            _, xbar, _ = bands_full[j]
+            _, xbar, _, _ = bands_full[j]
             order = np.argsort(xbar)
             self.shape_x_[j] = xbar[order]
             self.shape_y_[j] = sh[order]
@@ -367,7 +385,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
 
         # --- pairwise stage (residual, val-gated) ---
         self.pair_terms_ = []
-        if len(val_ids) and self.max_pairs > 0 and len(kept_list) >= 2:
+        if len(val_ids) and self.max_pairs > 0 and len(active) >= 2:
             from itertools import combinations
             # screening cell index per feature
             scr_idx, pair_cand_feats = {}, []
@@ -537,9 +555,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v11"
-model_description = ("v10 + joint validation selection of bin resolution {48,256} and lambda; 4 bagged backfits; "
-                     "up to 8 val-gated pairwise terms (grid/product/split-linear) on residuals")
+model_shorthand_name = "GA2MBoost_v12"
+model_description = ("v11 + categorical-aware backfit (shrunken per-level means for integer features with <=32 "
+                     "levels), pairwise stage gated on active (not kept) features, gentler pruning")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
