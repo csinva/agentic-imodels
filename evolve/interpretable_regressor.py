@@ -125,7 +125,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                  pair_top_candidates=5, cat_max_levels=32, cat_shrink=5.0,
                  feat_lambda_refine=False, alternate=True, ens_top=1,
                  boost_lr=0.1, boost_rounds=300, boost_patience=25,
-                 boost_bags=8, n_cycles=3, n_seeds=3,
+                 boost_bags=8, n_cycles=3, n_seeds=5,
                  small_n=300, random_state=42):
         self.bins_options = bins_options
         self.lambdas = lambdas
@@ -818,7 +818,7 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v29"
+model_shorthand_name = "GA2MBoost_v30"
 model_description = ("v22 pipeline fit 3x with different random seeds and prediction-averaged (a mean of GA2Ms "
                      "is a GA2M) - averages out internal split noise in all validation gates")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
