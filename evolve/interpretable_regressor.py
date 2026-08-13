@@ -125,6 +125,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                  pair_top_candidates=5, cat_max_levels=32, cat_shrink=5.0,
                  feat_lambda_refine=False, alternate=True, ens_top=1,
                  boost_lr=0.1, boost_rounds=300, boost_patience=25,
+                 boost_bags=4, n_cycles=2,
                  small_n=300, random_state=42):
         self.bins_options = bins_options
         self.lambdas = lambdas
@@ -148,6 +149,8 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         self.boost_lr = boost_lr
         self.boost_rounds = boost_rounds
         self.boost_patience = boost_patience
+        self.boost_bags = boost_bags
+        self.n_cycles = n_cycles
         self.small_n = small_n
         self.random_state = random_state
 
@@ -500,131 +503,142 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         y_rng = float(np.max(y) - np.min(y))
         self.clip_ = (float(np.min(y)) - 0.05 * y_rng, float(np.max(y)) + 0.05 * y_rng)
 
-        # --- pairwise stage (residual, val-gated) ---
+        # --- GA2M cycles: (pairs -> alternation -> boost) x n_cycles, all val-gated ---
         self.pair_terms_ = []
-        if len(val_ids) and self.max_pairs > 0 and len(active) >= 2:
-            from itertools import combinations
-            # screening cell index per feature
-            scr_idx, pair_cand_feats = {}, []
-            for j in active:
-                qs = np.quantile(X[tr_ids, j], np.linspace(0, 1, self.pair_screen_bins + 1)[1:-1])
-                e = np.unique(qs)
-                if len(e) >= 1:
-                    scr_idx[j] = (np.searchsorted(e, X[:, j], side="right"), len(e) + 1)
-                    pair_cand_feats.append(j)
-            tr_mask = np.zeros(n, dtype=bool); tr_mask[tr_ids] = True
-            for _ in range(self.max_pairs):
-                resid = y - self._predict_raw(X, clip=False)
-                r_tr, r_val = resid[tr_ids], resid[val_ids]
-                cur_mse = float(np.mean(r_val ** 2))
-                screen = []
-                for a_, b_ in combinations(pair_cand_feats, 2):
-                    ia, na = scr_idx[a_]; ib, nb = scr_idx[b_]
-                    cell = ia[tr_ids] * nb + ib[tr_ids]
-                    cnt = np.bincount(cell, minlength=na * nb).astype(float)
-                    sums = np.bincount(cell, weights=r_tr, minlength=na * nb)
-                    mu = np.where(cnt > 0, sums / np.maximum(cnt, 1), 0.0)
-                    mu *= cnt / (cnt + self.pair_shrink)
-                    screen.append((float(np.sum(cnt * mu ** 2)), a_, b_))
-                screen.sort(reverse=True)
-                best = None
-                for _, a_, b_ in screen[:self.pair_top_candidates]:
-                    for cand in self._pair_candidates(X, resid, tr_ids, tr_mask, a_, b_):
-                        contrib = cand.pop("contrib")
-                        dshift = float(np.mean(contrib[tr_ids]))
-                        mse2 = float(np.mean((r_val - (contrib[val_ids] - dshift)) ** 2))
-                        gain = cur_mse - mse2
-                        if best is None or gain > best[0]:
-                            best = (gain, cand, contrib, dshift)
-                if best is None or best[0] < max(self.pair_gain * cur_mse, 5e-4 * y_var):
-                    break
-                _, term, contrib, dshift = best
-                self.pair_terms_.append(term)
-                self.intercept_ -= dshift
+        for _cycle in range(self.n_cycles):
+          if len(val_ids) and self.max_pairs > 0 and len(active) >= 2:
+              from itertools import combinations
+              # screening cell index per feature
+              scr_idx, pair_cand_feats = {}, []
+              for j in active:
+                  qs = np.quantile(X[tr_ids, j], np.linspace(0, 1, self.pair_screen_bins + 1)[1:-1])
+                  e = np.unique(qs)
+                  if len(e) >= 1:
+                      scr_idx[j] = (np.searchsorted(e, X[:, j], side="right"), len(e) + 1)
+                      pair_cand_feats.append(j)
+              tr_mask = np.zeros(n, dtype=bool); tr_mask[tr_ids] = True
+              for _ in range(self.max_pairs):
+                  resid = y - self._predict_raw(X, clip=False)
+                  r_tr, r_val = resid[tr_ids], resid[val_ids]
+                  cur_mse = float(np.mean(r_val ** 2))
+                  screen = []
+                  for a_, b_ in combinations(pair_cand_feats, 2):
+                      ia, na = scr_idx[a_]; ib, nb = scr_idx[b_]
+                      cell = ia[tr_ids] * nb + ib[tr_ids]
+                      cnt = np.bincount(cell, minlength=na * nb).astype(float)
+                      sums = np.bincount(cell, weights=r_tr, minlength=na * nb)
+                      mu = np.where(cnt > 0, sums / np.maximum(cnt, 1), 0.0)
+                      mu *= cnt / (cnt + self.pair_shrink)
+                      screen.append((float(np.sum(cnt * mu ** 2)), a_, b_))
+                  screen.sort(reverse=True)
+                  best = None
+                  for _, a_, b_ in screen[:self.pair_top_candidates]:
+                      for cand in self._pair_candidates(X, resid, tr_ids, tr_mask, a_, b_):
+                          contrib = cand.pop("contrib")
+                          dshift = float(np.mean(contrib[tr_ids]))
+                          mse2 = float(np.mean((r_val - (contrib[val_ids] - dshift)) ** 2))
+                          gain = cur_mse - mse2
+                          if best is None or gain > best[0]:
+                              best = (gain, cand, contrib, dshift)
+                  if best is None or best[0] < max(self.pair_gain * cur_mse, 5e-4 * y_var):
+                      break
+                  _, term, contrib, dshift = best
+                  self.pair_terms_.append(term)
+                  self.intercept_ -= dshift
 
-        if self.pair_terms_ and self.alternate and len(val_ids):
-            # one alternation: re-fit additive shapes against y minus pair terms,
-            # kept only if validation error does not worsen
-            old_state = ([None if v is None else v.copy() for v in self.shape_x_],
-                         [None if v is None else v.copy() for v in self.shape_y_],
-                         self.intercept_)
-            val_before = float(np.mean((y[val_ids] - self._predict_raw(X[val_ids], clip=False)) ** 2))
-            y_eff = y - (self._predict_raw(X, clip=False)
-                         - np.full(n, self.intercept_)
-                         - sum(np.interp(X[:, j], self.shape_x_[j], self.shape_y_[j])
-                               for j in range(d) if self.shape_x_[j] is not None))
-            icpt2, shapes2, _ = self._backfit(y_eff, bin_idx, bands_full, n_bins, kept_list, lam,
-                                              self.n_sweeps, lam_by_feat=lam_by_feat)
-            intercept2 = icpt2
-            for j in kept_list:
-                w = w_full[j]
-                mu = float(np.sum(shapes2[j] * w) / max(w.sum(), 1))
-                sh = shapes2[j] - mu
-                intercept2 += mu
-                _, xbar, _, _ = bands_full[j]
-                order = np.argsort(xbar)
-                self.shape_x_[j] = xbar[order]
-                self.shape_y_[j] = sh[order]
-            self.intercept_ = intercept2
-            val_after = float(np.mean((y[val_ids] - self._predict_raw(X[val_ids], clip=False)) ** 2))
-            if val_after > val_before:
-                self.shape_x_, self.shape_y_, self.intercept_ = old_state
+          if self.pair_terms_ and self.alternate and len(val_ids):
+              # one alternation: re-fit additive shapes against y minus pair terms,
+              # kept only if validation error does not worsen
+              old_state = ([None if v is None else v.copy() for v in self.shape_x_],
+                           [None if v is None else v.copy() for v in self.shape_y_],
+                           self.intercept_)
+              val_before = float(np.mean((y[val_ids] - self._predict_raw(X[val_ids], clip=False)) ** 2))
+              y_eff = y - (self._predict_raw(X, clip=False)
+                           - np.full(n, self.intercept_)
+                           - sum(np.interp(X[:, j], self.shape_x_[j], self.shape_y_[j])
+                                 for j in range(d) if self.shape_x_[j] is not None))
+              icpt2, shapes2, _ = self._backfit(y_eff, bin_idx, bands_full, n_bins, kept_list, lam,
+                                                self.n_sweeps, lam_by_feat=lam_by_feat)
+              intercept2 = icpt2
+              for j in kept_list:
+                  w = w_full[j]
+                  mu = float(np.sum(shapes2[j] * w) / max(w.sum(), 1))
+                  sh = shapes2[j] - mu
+                  intercept2 += mu
+                  _, xbar, _, _ = bands_full[j]
+                  order = np.argsort(xbar)
+                  self.shape_x_[j] = xbar[order]
+                  self.shape_y_[j] = sh[order]
+              self.intercept_ = intercept2
+              val_after = float(np.mean((y[val_ids] - self._predict_raw(X[val_ids], clip=False)) ** 2))
+              if val_after > val_before:
+                  self.shape_x_, self.shape_y_, self.intercept_ = old_state
 
-        # --- final boost pass over mains AND pair grid cells (val early stop) ---
-        if len(val_ids) and self.boost_rounds > 0 and kept_list:
-            edges_b, nb_b, bidx_b, _ = binned[mb_best]
-            resid = y - self._predict_raw(X, clip=False)
-            r_tr, r_val = resid[tr_ids].copy(), resid[val_ids].copy()
-            b_tr_, b_val_ = bidx_b[tr_ids], bidx_b[val_ids]
-            cnt_tr = {j: np.bincount(b_tr_[:, j], minlength=nb_b[j]).astype(float) for j in kept_list}
-            grid_terms = [t for t in self.pair_terms_ if t["type"] == "grid"]
-            gcells = []
-            for t in grid_terms:
-                ia = np.searchsorted(t["ei"], X[:, t["i"]], side="right")
-                ib = np.searchsorted(t["ej"], X[:, t["j"]], side="right")
-                cell = ia * t["nb"] + ib
-                ncell = len(t["vals"])
-                gcells.append((cell[tr_ids], cell[val_ids],
-                               np.bincount(cell[tr_ids], minlength=ncell).astype(float), ncell))
-            u_tot = {j: np.zeros(nb_b[j]) for j in kept_list}
-            g_tot = [np.zeros(gc[3]) for gc in gcells]
-            best_val = float(np.mean(r_val ** 2))
-            best_u = {j: u.copy() for j, u in u_tot.items()}
-            best_g = [g.copy() for g in g_tot]
-            stall = 0
-            for it in range(self.boost_rounds):
-                for j in kept_list:
-                    sums = np.bincount(b_tr_[:, j], weights=r_tr, minlength=nb_b[j])
-                    u = self.boost_lr * sums / (cnt_tr[j] + 2.0)
-                    u_tot[j] += u
-                    r_tr -= u[b_tr_[:, j]]
-                    r_val -= u[b_val_[:, j]]
-                for k, (ctr, cval, ccnt, ncell) in enumerate(gcells):
-                    sums = np.bincount(ctr, weights=r_tr, minlength=ncell)
-                    u = self.boost_lr * sums / (ccnt + 4.0)
-                    g_tot[k] += u
-                    r_tr -= u[ctr]
-                    r_val -= u[cval]
-                v = float(np.mean(r_val ** 2))
-                if v < best_val - 1e-12:
-                    best_val = v
-                    best_u = {j: u.copy() for j, u in u_tot.items()}
-                    best_g = [g.copy() for g in g_tot]
-                    stall = 0
-                else:
-                    stall += 1
-                    if stall >= self.boost_patience:
-                        break
-            for j in kept_list:
-                if self.shape_x_[j] is None or not np.any(best_u[j]):
-                    continue
-                gb = np.searchsorted(edges_b[j], self.shape_x_[j], side="right")
-                corr = best_u[j][gb]
-                mu = float(np.mean(best_u[j][bidx_b[:, j]]))
-                self.shape_y_[j] = self.shape_y_[j] + corr - mu
-                self.intercept_ += mu
-            for t, g in zip(grid_terms, best_g):
-                t["vals"] = t["vals"] + g
+          # --- boost pass over mains AND pair grid cells (bag-averaged, val early stop) ---
+          if len(val_ids) and self.boost_rounds > 0 and kept_list:
+              edges_b, nb_b, bidx_b, _ = binned[mb_best]
+              resid = y - self._predict_raw(X, clip=False)
+              grid_terms = [t for t in self.pair_terms_ if t["type"] == "grid"]
+              gcell_all = []
+              for t in grid_terms:
+                  ia = np.searchsorted(t["ei"], X[:, t["i"]], side="right")
+                  ib = np.searchsorted(t["ej"], X[:, t["j"]], side="right")
+                  gcell_all.append((ia * t["nb"] + ib, len(t["vals"])))
+              best_u = {j: np.zeros(nb_b[j]) for j in kept_list}
+              best_g = [np.zeros(nc) for _, nc in gcell_all]
+              for rep in range(self.boost_bags):
+                  perm_b = rng.permutation(n)
+                  nv = max(20, int(n * self.val_frac))
+                  v_i, t_i = perm_b[:nv], perm_b[nv:]
+                  r_tr, r_val = resid[t_i].copy(), resid[v_i].copy()
+                  b_tr_, b_val_ = bidx_b[t_i], bidx_b[v_i]
+                  cnt_tr = {j: np.bincount(b_tr_[:, j], minlength=nb_b[j]).astype(float) for j in kept_list}
+                  gcells = [(cell[t_i], cell[v_i],
+                             np.bincount(cell[t_i], minlength=nc).astype(float), nc)
+                            for cell, nc in gcell_all]
+                  u_tot = {j: np.zeros(nb_b[j]) for j in kept_list}
+                  g_tot = [np.zeros(gc[3]) for gc in gcells]
+                  bv = float(np.mean(r_val ** 2))
+                  bu = {j: u.copy() for j, u in u_tot.items()}
+                  bg = [g.copy() for g in g_tot]
+                  stall = 0
+                  for it in range(self.boost_rounds):
+                      for j in kept_list:
+                          sums = np.bincount(b_tr_[:, j], weights=r_tr, minlength=nb_b[j])
+                          u = self.boost_lr * sums / (cnt_tr[j] + 2.0)
+                          u_tot[j] += u
+                          r_tr -= u[b_tr_[:, j]]
+                          r_val -= u[b_val_[:, j]]
+                      for k, (ctr, cval, ccnt, ncell) in enumerate(gcells):
+                          sums = np.bincount(ctr, weights=r_tr, minlength=ncell)
+                          u = self.boost_lr * sums / (ccnt + 4.0)
+                          g_tot[k] += u
+                          r_tr -= u[ctr]
+                          r_val -= u[cval]
+                      v = float(np.mean(r_val ** 2))
+                      if v < bv - 1e-12:
+                          bv = v
+                          bu = {j: u.copy() for j, u in u_tot.items()}
+                          bg = [g.copy() for g in g_tot]
+                          stall = 0
+                      else:
+                          stall += 1
+                          if stall >= self.boost_patience:
+                              break
+                  for j in kept_list:
+                      best_u[j] += bu[j] / self.boost_bags
+                  for k in range(len(best_g)):
+                      best_g[k] += bg[k] / self.boost_bags
+              for j in kept_list:
+                  if self.shape_x_[j] is None or not np.any(best_u[j]):
+                      continue
+                  gb = np.searchsorted(edges_b[j], self.shape_x_[j], side="right")
+                  corr = best_u[j][gb]
+                  mu = float(np.mean(best_u[j][bidx_b[:, j]]))
+                  self.shape_y_[j] = self.shape_y_[j] + corr - mu
+                  self.intercept_ += mu
+              for t, g in zip(grid_terms, best_g):
+                  t["vals"] = t["vals"] + g
 
         pred = self._predict_raw(X, clip=False)
         self.intercept_ += float(np.mean(y) - np.mean(pred))
@@ -756,9 +770,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v20"
-model_description = ("v18 + finer lambda grid (10 values) and a final val-stopped boost pass over mains AND "
-                     "pair-grid cells after the pairwise stage")
+model_shorthand_name = "GA2MBoost_v21"
+model_description = ("v20 + two GA2M cycles (pairs->alternation->boost, each val-gated) and boost corrections "
+                     "bag-averaged over 4 random splits")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
