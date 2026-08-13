@@ -123,7 +123,9 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                  val_frac=0.15, n_bags=8, max_pairs=8, pair_bins=12,
                  pair_shrink=8.0, pair_gain=0.005, pair_screen_bins=8,
                  pair_top_candidates=5, cat_max_levels=32, cat_shrink=5.0,
-                 feat_lambda_refine=False, alternate=True, small_n=300, random_state=42):
+                 feat_lambda_refine=False, alternate=True, ens_top=1,
+                 boost_lr=0.1, boost_rounds=300, boost_patience=25,
+                 small_n=300, random_state=42):
         self.bins_options = bins_options
         self.lambdas = lambdas
         self.n_sweeps = n_sweeps
@@ -142,6 +144,10 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         self.cat_shrink = cat_shrink
         self.feat_lambda_refine = feat_lambda_refine
         self.alternate = alternate
+        self.ens_top = ens_top
+        self.boost_lr = boost_lr
+        self.boost_rounds = boost_rounds
+        self.boost_patience = boost_patience
         self.small_n = small_n
         self.random_state = random_state
 
@@ -307,7 +313,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                         scored.append((sse, mb, lam_c, cmask))
             scored.sort(key=lambda t: t[0])
             best_sse = scored[0][0]
-            ens_configs = [(mb, l, cm) for ss, mb, l, cm in scored[:3] if ss <= 1.05 * best_sse]
+            ens_configs = [(mb, l, cm) for ss, mb, l, cm in scored[:self.ens_top] if ss <= 1.05 * best_sse]
             _, mb_best, lam, cat_best = scored[0]
             # fit on tr split with selected config (basis for pruning decisions)
             edges, nb, bidx, act = binned[mb_best]
@@ -452,6 +458,43 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             self.shape_x_[j] = grid
             self.shape_y_[j] = vals
         self.intercept_ = intercept
+
+        # --- EBM-style boosting fine-tune of main effects (val early stopping) ---
+        if len(val_ids) and self.boost_rounds > 0 and kept_list:
+            edges_b, nb_b, bidx_b, _ = binned[mb_best]
+            resid = y - self._predict_raw(X, clip=False)
+            r_tr, r_val = resid[tr_ids].copy(), resid[val_ids].copy()
+            b_tr_, b_val_ = bidx_b[tr_ids], bidx_b[val_ids]
+            cnt_tr = {j: np.bincount(b_tr_[:, j], minlength=nb_b[j]).astype(float) for j in kept_list}
+            u_tot = {j: np.zeros(nb_b[j]) for j in kept_list}
+            best_val = float(np.mean(r_val ** 2))
+            best_u = {j: u.copy() for j, u in u_tot.items()}
+            stall = 0
+            for it in range(self.boost_rounds):
+                for j in kept_list:
+                    sums = np.bincount(b_tr_[:, j], weights=r_tr, minlength=nb_b[j])
+                    u = self.boost_lr * sums / (cnt_tr[j] + 2.0)
+                    u_tot[j] += u
+                    r_tr -= u[b_tr_[:, j]]
+                    r_val -= u[b_val_[:, j]]
+                v = float(np.mean(r_val ** 2))
+                if v < best_val - 1e-12:
+                    best_val = v
+                    best_u = {j: u.copy() for j, u in u_tot.items()}
+                    stall = 0
+                else:
+                    stall += 1
+                    if stall >= self.boost_patience:
+                        break
+            # fold the boosted step corrections into the shape tables
+            for j in kept_list:
+                if self.shape_x_[j] is None or not np.any(best_u[j]):
+                    continue
+                gb = np.searchsorted(edges_b[j], self.shape_x_[j], side="right")
+                corr = best_u[j][gb]
+                mu = float(np.mean(best_u[j][bidx_b[:, j]]))
+                self.shape_y_[j] = self.shape_y_[j] + corr - mu
+                self.intercept_ += mu
 
         # prediction clipping range
         y_rng = float(np.max(y) - np.min(y))
@@ -657,9 +700,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v17"
-model_description = ("v16 + additive stage averages the top CV configs (within 5% of best, max 3) - an ensemble "
-                     "of GAMs collapsed onto one shape table per feature, still a GA2M")
+model_shorthand_name = "GA2MBoost_v18"
+model_description = ("v16 + EBM-style cyclic gradient-boosting fine-tune of main effects on residuals "
+                     "(lr 0.1, val early stopping) after the bagged backfit; config-ensemble off (tested worse)")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
