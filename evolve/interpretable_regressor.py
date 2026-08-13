@@ -292,21 +292,23 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             for f_ids in cv_folds:
                 t_ids = np.setdiff1d(np.arange(n), f_ids)
                 cv_sets.append((t_ids, f_ids))
-            best = (np.inf, None, None, None)
+            scored = []
             for mb, (edges, nb, bidx, act) in binned.items():
                 for cmask in cat_options:
                     fold_bands = [build_bands(t_ids, edges, nb, bidx, act, cmask) for t_ids, _ in cv_sets]
-                    for lam in self.lambdas:
+                    for lam_c in self.lambdas:
                         sse = 0.0
                         for (t_ids, f_ids), bands_f in zip(cv_sets, fold_bands):
-                            icpt, shapes, _ = self._backfit(y[t_ids], bidx[t_ids], bands_f, nb, act, lam, self.n_sweeps)
+                            icpt, shapes, _ = self._backfit(y[t_ids], bidx[t_ids], bands_f, nb, act, lam_c, self.n_sweeps)
                             pv = np.full(len(f_ids), icpt)
                             for j in act:
                                 pv += shapes[j][bidx[f_ids, j]]
                             sse += float(np.sum((y[f_ids] - pv) ** 2))
-                        if sse < best[0]:
-                            best = (sse, mb, lam, cmask)
-            _, mb_best, lam, cat_best = best
+                        scored.append((sse, mb, lam_c, cmask))
+            scored.sort(key=lambda t: t[0])
+            best_sse = scored[0][0]
+            ens_configs = [(mb, l, cm) for ss, mb, l, cm in scored[:3] if ss <= 1.05 * best_sse]
+            _, mb_best, lam, cat_best = scored[0]
             # fit on tr split with selected config (basis for pruning decisions)
             edges, nb, bidx, act = binned[mb_best]
             bands_tr_sel = build_bands(tr_ids, edges, nb, bidx, act, cat_best)
@@ -369,6 +371,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             lam = min(cv_mse, key=cv_mse.get)
             icpt_sel, shapes_sel = None, None
             lam_by_feat = {}
+            ens_configs = [(mb_best, lam, cat_best)]
         self.lambda_ = lam
         self.bins_ = mb_best
         bin_edges, n_bins, bin_idx, active = binned[mb_best]
@@ -397,40 +400,57 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         else:
             kept_list = list(active)
 
-        # --- bagged final backfit on all data ---
-        bands_full = build_bands(np.arange(n), bin_edges, n_bins, bin_idx, active, cat_best)
+        # --- bagged final backfit, averaged over the ensemble of top configs ---
         n_bags = self.n_bags if n >= 80 else 1
-        acc = [np.zeros(n_bins[j]) for j in range(d)]
-        icpt_acc = 0.0
-        for b in range(n_bags):
-            if b == 0:
-                ids = np.arange(n)
-                bands_b = bands_full
-            else:
-                ids = rng.randint(0, n, size=n)
-                bands_b = build_bands(ids, bin_edges, n_bins, bin_idx, active, cat_best)
-            icpt_b, shapes_b, _ = self._backfit(y[ids], bin_idx[ids], bands_b, n_bins, kept_list, lam, self.n_sweeps, lam_by_feat=lam_by_feat)
-            for j in kept_list:
-                acc[j] += shapes_b[j] / n_bags
-            icpt_acc += icpt_b / n_bags
-        intercept = icpt_acc
-
-        # center shapes, store as interpolation tables
-        self.shape_x_ = [None] * d
-        self.shape_y_ = [None] * d
+        cw = 1.0 / len(ens_configs)
+        self.shape_tables_ = [[] for _ in range(d)]   # per feature: list of (weight, x, y)
         self.pruned_ = [True] * d
         self.importance_ = np.zeros(d)
-        for j in kept_list:
-            w = w_full[j]
-            mu = float(np.sum(acc[j] * w) / max(w.sum(), 1))
-            sh = acc[j] - mu
-            intercept += mu
-            _, xbar, _, _ = bands_full[j]
-            order = np.argsort(xbar)
-            self.shape_x_[j] = xbar[order]
-            self.shape_y_[j] = sh[order]
-            self.pruned_[j] = False
-            self.importance_[j] = float(np.sqrt(np.sum(w * sh ** 2) / max(w.sum(), 1)))
+        intercept = 0.0
+        bands_full = None
+        for (mb_c, lam_c, cm_c) in ens_configs:
+            edges_c, nb_c, bidx_c, act_c = binned[mb_c]
+            bands_c = build_bands(np.arange(n), edges_c, nb_c, bidx_c, act_c, cm_c)
+            if mb_c == mb_best and bands_full is None:
+                bands_full = bands_c
+            kept_c = [j for j in kept_list if j in act_c]
+            acc = [np.zeros(nb_c[j]) for j in range(d)]
+            icpt_acc = 0.0
+            for b in range(n_bags):
+                if b == 0:
+                    ids = np.arange(n)
+                    bands_b = bands_c
+                else:
+                    ids = rng.randint(0, n, size=n)
+                    bands_b = build_bands(ids, edges_c, nb_c, bidx_c, act_c, cm_c)
+                icpt_b, shapes_b, _ = self._backfit(y[ids], bidx_c[ids], bands_b, nb_c, kept_c, lam_c, self.n_sweeps, lam_by_feat=lam_by_feat)
+                for j in kept_c:
+                    acc[j] += shapes_b[j] / n_bags
+                icpt_acc += icpt_b / n_bags
+            intercept += cw * icpt_acc
+            wf = [np.bincount(bidx_c[:, j], minlength=nb_c[j]).astype(float) for j in range(d)]
+            for j in kept_c:
+                w = wf[j]
+                mu = float(np.sum(acc[j] * w) / max(w.sum(), 1))
+                sh = acc[j] - mu
+                intercept += cw * mu
+                _, xbar, _, _ = bands_c[j]
+                order = np.argsort(xbar)
+                self.shape_tables_[j].append((cw, xbar[order], sh[order]))
+                self.pruned_[j] = False
+                self.importance_[j] += cw * float(np.sqrt(np.sum(w * sh ** 2) / max(w.sum(), 1)))
+        # collapse ensemble tables onto a common grid per feature
+        self.shape_x_ = [None] * d
+        self.shape_y_ = [None] * d
+        for j in range(d):
+            if not self.shape_tables_[j]:
+                continue
+            grid = np.unique(np.concatenate([t[1] for t in self.shape_tables_[j]]))
+            vals = np.zeros_like(grid)
+            for (wgt, xs, ys) in self.shape_tables_[j]:
+                vals += wgt * np.interp(grid, xs, ys)
+            self.shape_x_[j] = grid
+            self.shape_y_[j] = vals
         self.intercept_ = intercept
 
         # prediction clipping range
@@ -637,8 +657,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v16"
-model_description = ("v15 + 8 outer bags (was 4); max_pairs kept at 8 after 12 tested worse")
+model_shorthand_name = "GA2MBoost_v17"
+model_description = ("v16 + additive stage averages the top CV configs (within 5% of best, max 3) - an ensemble "
+                     "of GAMs collapsed onto one shape table per feature, still a GA2M")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
