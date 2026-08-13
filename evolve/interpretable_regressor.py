@@ -118,7 +118,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
     training target range. Heavy-tailed targets are winsorized before fitting.
     """
 
-    def __init__(self, bins_options=(48, 256), lambdas=(0.1, 1.0, 10.0, 100.0, 1000.0, 3000.0),
+    def __init__(self, bins_options=(48, 256), lambdas=(0.03, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1000.0, 3000.0),
                  n_sweeps=30, tol=1e-4, prune_rel_tol=0.002, prune_imp_frac=0.005,
                  val_frac=0.15, n_bags=8, max_pairs=8, pair_bins=12,
                  pair_shrink=8.0, pair_gain=0.005, pair_screen_bins=8,
@@ -570,6 +570,62 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
             if val_after > val_before:
                 self.shape_x_, self.shape_y_, self.intercept_ = old_state
 
+        # --- final boost pass over mains AND pair grid cells (val early stop) ---
+        if len(val_ids) and self.boost_rounds > 0 and kept_list:
+            edges_b, nb_b, bidx_b, _ = binned[mb_best]
+            resid = y - self._predict_raw(X, clip=False)
+            r_tr, r_val = resid[tr_ids].copy(), resid[val_ids].copy()
+            b_tr_, b_val_ = bidx_b[tr_ids], bidx_b[val_ids]
+            cnt_tr = {j: np.bincount(b_tr_[:, j], minlength=nb_b[j]).astype(float) for j in kept_list}
+            grid_terms = [t for t in self.pair_terms_ if t["type"] == "grid"]
+            gcells = []
+            for t in grid_terms:
+                ia = np.searchsorted(t["ei"], X[:, t["i"]], side="right")
+                ib = np.searchsorted(t["ej"], X[:, t["j"]], side="right")
+                cell = ia * t["nb"] + ib
+                ncell = len(t["vals"])
+                gcells.append((cell[tr_ids], cell[val_ids],
+                               np.bincount(cell[tr_ids], minlength=ncell).astype(float), ncell))
+            u_tot = {j: np.zeros(nb_b[j]) for j in kept_list}
+            g_tot = [np.zeros(gc[3]) for gc in gcells]
+            best_val = float(np.mean(r_val ** 2))
+            best_u = {j: u.copy() for j, u in u_tot.items()}
+            best_g = [g.copy() for g in g_tot]
+            stall = 0
+            for it in range(self.boost_rounds):
+                for j in kept_list:
+                    sums = np.bincount(b_tr_[:, j], weights=r_tr, minlength=nb_b[j])
+                    u = self.boost_lr * sums / (cnt_tr[j] + 2.0)
+                    u_tot[j] += u
+                    r_tr -= u[b_tr_[:, j]]
+                    r_val -= u[b_val_[:, j]]
+                for k, (ctr, cval, ccnt, ncell) in enumerate(gcells):
+                    sums = np.bincount(ctr, weights=r_tr, minlength=ncell)
+                    u = self.boost_lr * sums / (ccnt + 4.0)
+                    g_tot[k] += u
+                    r_tr -= u[ctr]
+                    r_val -= u[cval]
+                v = float(np.mean(r_val ** 2))
+                if v < best_val - 1e-12:
+                    best_val = v
+                    best_u = {j: u.copy() for j, u in u_tot.items()}
+                    best_g = [g.copy() for g in g_tot]
+                    stall = 0
+                else:
+                    stall += 1
+                    if stall >= self.boost_patience:
+                        break
+            for j in kept_list:
+                if self.shape_x_[j] is None or not np.any(best_u[j]):
+                    continue
+                gb = np.searchsorted(edges_b[j], self.shape_x_[j], side="right")
+                corr = best_u[j][gb]
+                mu = float(np.mean(best_u[j][bidx_b[:, j]]))
+                self.shape_y_[j] = self.shape_y_[j] + corr - mu
+                self.intercept_ += mu
+            for t, g in zip(grid_terms, best_g):
+                t["vals"] = t["vals"] + g
+
         pred = self._predict_raw(X, clip=False)
         self.intercept_ += float(np.mean(y) - np.mean(pred))
         return self
@@ -700,9 +756,9 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v18"
-model_description = ("v16 + EBM-style cyclic gradient-boosting fine-tune of main effects on residuals "
-                     "(lr 0.1, val early stopping) after the bagged backfit; config-ensemble off (tested worse)")
+model_shorthand_name = "GA2MBoost_v20"
+model_description = ("v18 + finer lambda grid (10 values) and a final val-stopped boost pass over mains AND "
+                     "pair-grid cells after the pairwise stage")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
