@@ -125,7 +125,8 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                  pair_top_candidates=5, cat_max_levels=32, cat_shrink=5.0,
                  feat_lambda_refine=False, alternate=True, ens_top=1,
                  boost_lr=0.1, boost_rounds=300, boost_patience=25,
-                 boost_bags=8, n_cycles=3,
+                 boost_bags=8, n_cycles=3, winsorize=True, pair_gated=False,
+                 ungated_pairs=10, ungated_pair_bins=16,
                  small_n=300, random_state=42):
         self.bins_options = bins_options
         self.lambdas = lambdas
@@ -151,6 +152,10 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         self.boost_patience = boost_patience
         self.boost_bags = boost_bags
         self.n_cycles = n_cycles
+        self.winsorize = winsorize
+        self.pair_gated = pair_gated
+        self.ungated_pairs = ungated_pairs
+        self.ungated_pair_bins = ungated_pair_bins
         self.small_n = small_n
         self.random_state = random_state
 
@@ -220,7 +225,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         rng = np.random.RandomState(self.random_state)
 
         # winsorize extremely heavy-tailed targets (outliers dominate LS bins)
-        if n >= 80:
+        if self.winsorize and n >= 80:
             q_lo, q_hi = np.quantile(y, [0.002, 0.998])
             med = float(np.median(y))
             if (float(np.max(y)) - q_hi) > 2.0 * max(q_hi - med, 1e-12) or \
@@ -315,48 +320,9 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
                             sse += float(np.sum((y[f_ids] - pv) ** 2))
                         scored.append((sse, mb, lam_c, cmask))
             scored.sort(key=lambda t: t[0])
-            # pipeline-aware resolution choice: compare each bin-resolution's
-            # best config by CV of backfit + short boosting fine-tune
-            finalists = {}
-            for ss, mb, l, cm in scored:
-                if mb not in finalists:
-                    finalists[mb] = (ss, mb, l, cm)
-            if len(finalists) > 1:
-                rescored = []
-                for ss, mb, l, cm in finalists.values():
-                    edges, nb, bidx, act = binned[mb]
-                    sse_p = 0.0
-                    for (t_ids, f_ids) in cv_sets:
-                        bands_f = build_bands(t_ids, edges, nb, bidx, act, cm)
-                        icpt, shapes, _ = self._backfit(y[t_ids], bidx[t_ids], bands_f, nb, act, l, self.n_sweeps)
-                        r_tr = y[t_ids] - np.full(len(t_ids), icpt)
-                        r_val = y[f_ids] - np.full(len(f_ids), icpt)
-                        bt, bv_ = bidx[t_ids], bidx[f_ids]
-                        for j in act:
-                            r_tr -= shapes[j][bt[:, j]]
-                            r_val -= shapes[j][bv_[:, j]]
-                        cnt = {j: np.bincount(bt[:, j], minlength=nb[j]).astype(float) for j in act}
-                        bvv, stall = float(np.mean(r_val ** 2)), 0
-                        for it in range(150):
-                            for j in act:
-                                sums = np.bincount(bt[:, j], weights=r_tr, minlength=nb[j])
-                                u = self.boost_lr * sums / (cnt[j] + 2.0)
-                                r_tr -= u[bt[:, j]]
-                                r_val -= u[bv_[:, j]]
-                            v = float(np.mean(r_val ** 2))
-                            if v < bvv - 1e-12:
-                                bvv, stall = v, 0
-                            else:
-                                stall += 1
-                                if stall >= 12:
-                                    break
-                        sse_p += bvv * len(f_ids)
-                    rescored.append((sse_p, mb, l, cm))
-                rescored.sort(key=lambda t: t[0])
-                _, mb_best, lam, cat_best = rescored[0]
-            else:
-                _, mb_best, lam, cat_best = scored[0]
-            ens_configs = [(mb_best, lam, cat_best)]
+            best_sse = scored[0][0]
+            ens_configs = [(mb, l, cm) for ss, mb, l, cm in scored[:self.ens_top] if ss <= 1.05 * best_sse]
+            _, mb_best, lam, cat_best = scored[0]
             # fit on tr split with selected config (basis for pruning decisions)
             edges, nb, bidx, act = binned[mb_best]
             bands_tr_sel = build_bands(tr_ids, edges, nb, bidx, act, cat_best)
@@ -545,7 +511,37 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
         # --- GA2M cycles: (pairs -> alternation -> boost) x n_cycles, all val-gated ---
         self.pair_terms_ = []
         for _cycle in range(self.n_cycles):
-          if len(val_ids) and self.max_pairs > 0 and len(active) >= 2:
+          if (not self.pair_gated) and _cycle == 0 and len(val_ids) and len(active) >= 2:
+              # EBM-style: FAST-screen once, register top pairs with zero grids;
+              # the bag-averaged val-stopped boost pass fits their values
+              from itertools import combinations
+              resid = y - self._predict_raw(X, clip=False)
+              r_tr = resid[tr_ids]
+              scr_idx = {}
+              for j in active:
+                  qs = np.quantile(X[tr_ids, j], np.linspace(0, 1, self.pair_screen_bins + 1)[1:-1])
+                  e = np.unique(qs)
+                  if len(e) >= 1:
+                      scr_idx[j] = (np.searchsorted(e, X[:, j], side="right"), len(e) + 1)
+              screen = []
+              for a_, b_ in combinations(sorted(scr_idx), 2):
+                  ia, na = scr_idx[a_]; ib, nb2 = scr_idx[b_]
+                  cell = ia[tr_ids] * nb2 + ib[tr_ids]
+                  cnt = np.bincount(cell, minlength=na * nb2).astype(float)
+                  sums = np.bincount(cell, weights=r_tr, minlength=na * nb2)
+                  mu = np.where(cnt > 0, sums / np.maximum(cnt, 1), 0.0)
+                  mu *= cnt / (cnt + self.pair_shrink)
+                  screen.append((float(np.sum(cnt * mu ** 2)), a_, b_))
+              screen.sort(reverse=True)
+              for _, a_, b_ in screen[:self.ungated_pairs]:
+                  ea = np.unique(np.quantile(X[tr_ids, a_], np.linspace(0, 1, self.ungated_pair_bins + 1)[1:-1]))
+                  eb = np.unique(np.quantile(X[tr_ids, b_], np.linspace(0, 1, self.ungated_pair_bins + 1)[1:-1]))
+                  if len(ea) < 1 or len(eb) < 1:
+                      continue
+                  nb2 = len(eb) + 1
+                  self.pair_terms_.append({"type": "grid", "i": a_, "j": b_, "ei": ea, "ej": eb,
+                                           "nb": nb2, "vals": np.zeros((len(ea) + 1) * nb2)})
+          if self.pair_gated and len(val_ids) and self.max_pairs > 0 and len(active) >= 2:
               from itertools import combinations
               # screening cell index per feature
               scr_idx, pair_cand_feats = {}, []
@@ -615,9 +611,7 @@ class GA2MBoostRegressor(BaseEstimator, RegressorMixin):
 
           # --- boost pass over mains AND pair grid cells (bag-averaged, val early stop) ---
           if len(val_ids) and self.boost_rounds > 0 and kept_list:
-              # boost on the finest binning: sharp corrections regardless of the
-              # (smoothness-oriented) resolution the backfit selection chose
-              edges_b, nb_b, bidx_b, _ = binned[max(binned)]
+              edges_b, nb_b, bidx_b, _ = binned[mb_best]
               resid = y - self._predict_raw(X, clip=False)
               grid_terms = [t for t in self.pair_terms_ if t["type"] == "grid"]
               gcell_all = []
@@ -811,9 +805,8 @@ GA2MBoostRegressor.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "GA2MBoost_v24"
-model_description = ("v23 + bin resolution chosen by pipeline-aware CV (backfit + short boost per finalist "
-                     "config) instead of backfit-only CV")
+model_shorthand_name = "GA2MBoost_v25"
+model_description = ("v21 + 8 boost bags and 3 GA2M cycles (lr sweep showed 0.05 no better than 0.1)")
 model_defs = [(model_shorthand_name, GA2MBoostRegressor())]
 
 
