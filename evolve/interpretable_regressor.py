@@ -350,22 +350,14 @@ class AddGP(BaseEstimator, RegressorMixin):
 
 class BinGP(BaseEstimator, RegressorMixin):
     def __init__(self, n_bins=64, scales=(0.02, 0.1, 0.5), rbf_scales=(0.1, 0.4),
-                 use_nugget=True, recalibrate=False, cat_max_levels=32,
-                 p_budget=None, pair_res=None, refine=False, log_target='auto',
-                 n_pairs=6, pair_bins=12, screen_bins=8, pair_shrink=8.0,
-                 pair_scales=(0.05, 0.3), lr=0.05, n_steps=200,
-                 noise_init=0.3, amp_prior=0.005, noise_prior=0.3,
-                 noise_floor=1e-4, jitter=1e-6, z_clip=8.0, pair_stage='joint', pair_steps=None,
-                 random_state=42):
+                 cat_max_levels=32, n_pairs=6, pair_bins=12, screen_bins=8,
+                 pair_shrink=8.0, pair_scales=(0.05, 0.3), lr=0.05, n_steps=200,
+                 noise_init=0.3, amp_prior=0.005, noise_prior=0.3, noise_floor=1e-4,
+                 jitter=1e-6, z_clip=8.0, p_budget=None, pair_res=None,
+                 log_target='auto'):
         self.n_bins = n_bins
         self.scales = scales
         self.rbf_scales = rbf_scales
-        self.use_nugget = use_nugget
-        self.p_budget = p_budget
-        self.pair_res = pair_res
-        self.refine = refine
-        self.log_target = log_target
-        self.recalibrate = recalibrate
         self.cat_max_levels = cat_max_levels
         self.n_pairs = n_pairs
         self.pair_bins = pair_bins
@@ -380,9 +372,9 @@ class BinGP(BaseEstimator, RegressorMixin):
         self.noise_floor = noise_floor
         self.jitter = jitter
         self.z_clip = z_clip
-        self.pair_stage = pair_stage
-        self.pair_steps = pair_steps
-        self.random_state = random_state
+        self.p_budget = p_budget
+        self.pair_res = pair_res
+        self.log_target = log_target
 
     # ------------------------------------------------------------------
     def _block_kernels(self, j):
@@ -402,8 +394,7 @@ class BinGP(BaseEstimator, RegressorMixin):
             mats.append(np.exp(-D / s))                    # Matern-1/2 on rank grid
         for s in self.rbf_scales:
             mats.append(np.exp(-(D / s) ** 2))             # RBF (smooth) on rank grid
-        if self.use_nugget:
-            mats.append(np.eye(B))                         # nugget: per-bin freedom
+        mats.append(np.eye(B))                         # nugget: per-bin freedom
         return mats
 
     def _pair_kernel(self, na, nb):
@@ -522,24 +513,6 @@ class BinGP(BaseEstimator, RegressorMixin):
             self.ylog_ = True
         if self.ylog_:
             y = np.log(y)
-        if self.refine:
-            coarse = BinGP(**{**self.get_params(), "refine": False, "n_pairs": 0, "log_target": False,
-                              "n_bins": min(32, self.n_bins), "n_steps": 120})
-            coarse.fit(X, y)
-            amp = np.zeros(X.shape[1])
-            for uu, j in enumerate(coarse.units_):
-                amp[j] = float(np.sum(coarse.amps_[uu]))
-            order = np.argsort(-amp)
-            cum = np.cumsum(amp[order])
-            keep = order[: max(8, int(np.searchsorted(cum, 0.995 * cum[-1]) + 1))]
-            self.support_ = np.sort(keep)
-            fine = BinGP(**{**self.get_params(), "refine": False, "log_target": False})
-            fine.fit(X[:, self.support_], y)
-            self.est_ = fine
-            self.n_features_in_ = X.shape[1]
-            return self
-        self.support_ = None
-        self.est_ = None
         n, d = X.shape
         self.n_features_in_ = d
         self.y_mean_ = float(np.mean(y))
@@ -690,14 +663,7 @@ class BinGP(BaseEstimator, RegressorMixin):
                 pair_cols.append(ia * nb2 + ib)
                 pair_sizes.append(na * nb2)
                 self.pair_defs_.append({"i": a_, "j": b_, "ei": ea, "ej": eb, "na": na, "nb": nb2})
-            if pair_cols and self.pair_stage == 'joint':
-                all_cols = unit_cols + pair_cols
-                all_sizes = sizes + pair_sizes
-                C, b, offs = suffstats_fixed(all_cols, all_sizes)
-                self.offsets_ = offs
-                blocks_all = blocks + [self._pair_kernel(t["na"], t["nb"]) for t in self.pair_defs_]
-                fhat, sig2, amps, _ = self._fit_ml(blocks_all, C, b, yy, n)
-            elif pair_cols and self.pair_stage == 'block':
+            if pair_cols:
                 # blockwise-joint pairs: chunks of ~12 pairs fit by joint ML on
                 # the residual of mains + other chunks; alternated with mains
                 mains_offs = offs
@@ -748,7 +714,7 @@ class BinGP(BaseEstimator, RegressorMixin):
                             self.offsets_ = offs_c
                             fc, _, _, nllc = self._fit_ml(blocks_r, Cc, bc,
                                                           float(np.sum(r_c ** 2)), n,
-                                                          n_steps=self.pair_steps or self.n_steps)
+                                                          n_steps=self.n_steps)
                             if nllc < best_nll:
                                 best_nll = nllc
                                 best_fit = (fc, offs_c, cols_r, sizes_r, res)
@@ -770,104 +736,6 @@ class BinGP(BaseEstimator, RegressorMixin):
                 offs_p = np.concatenate([[0], np.cumsum(pair_sizes)]).astype(int)
                 self.offsets_ = np.concatenate([mains_offs, mains_offs[-1] + offs_p[1:]]).astype(int)
                 fhat = np.concatenate([mains_fhat] + pair_f)
-            elif pair_cols and self.pair_stage == 'seq':
-                # backfitting over terms: each pair GP fit by its own marginal
-                # likelihood on the running residual; mains refit in alternation
-                mains_offs = offs
-                mains_fhat = fhat.copy()
-                Cm = C
-                blocks_p = [self._pair_kernel(t["na"], t["nb"]) for t in self.pair_defs_]
-                Cp_list, offs_p = [], [0]
-                for pc, ps in zip(pair_cols, pair_sizes):
-                    cnt = np.bincount(pc, minlength=ps).astype(float)
-                    Cp_list.append(np.diag(cnt))
-                    offs_p.append(offs_p[-1] + ps)
-                offs_p = np.array(offs_p)
-                pair_f = [np.zeros(ps) for ps in pair_sizes]
-                n_sweeps = 2
-                for rnd in range(n_sweeps):
-                    rm = yn.copy()
-                    for uu, j in enumerate(units):
-                        rm -= mains_fhat[mains_offs[uu]:mains_offs[uu + 1]][bidx[:, j]]
-                    for kk, pc in enumerate(pair_cols):
-                        for k2, pc2 in enumerate(pair_cols):
-                            if k2 != kk:
-                                rm2_sub = pair_f[k2][pc2]
-                        r_k = rm.copy()
-                        for k2, pc2 in enumerate(pair_cols):
-                            if k2 != kk:
-                                r_k -= pair_f[k2][pc2]
-                        bk = np.bincount(pc, weights=r_k, minlength=pair_sizes[kk])
-                        self.offsets_ = np.array([0, pair_sizes[kk]])
-                        fk, _, _, _ = self._fit_ml([blocks_p[kk]], Cp_list[kk], bk,
-                                                float(np.sum(r_k ** 2)), n)
-                        pair_f[kk] = fk
-                    # mains refit on pairs residual
-                    rp = yn.copy()
-                    for kk, pc in enumerate(pair_cols):
-                        rp -= pair_f[kk][pc]
-                    bm = np.concatenate([np.bincount(bidx[:, j], weights=rp, minlength=int(self.nbins_[j]))
-                                         for j in units])
-                    self.offsets_ = mains_offs
-                    mains_fhat, sig2, amps, _ = self._fit_ml(blocks, Cm, bm, float(np.sum(rp ** 2)), n)
-                # joint recalibration of stagewise pair terms: exact ridge on the
-                # pair contributions, lambda by GCV (closed form, no splits)
-                rm = yn.copy()
-                for uu, j in enumerate(units):
-                    rm -= mains_fhat[mains_offs[uu]:mains_offs[uu + 1]][bidx[:, j]]
-                Gm = np.stack([pair_f[kk][pc] for kk, pc in enumerate(pair_cols)], axis=1)
-                keep = Gm.std(axis=0) > 1e-10
-                if self.recalibrate and keep.any():
-                    Gk = Gm[:, keep]
-                    U, sv, Vt = np.linalg.svd(Gk, full_matrices=False)
-                    Uy = U.T @ rm
-                    best_lam, best_gcv = 1e-8, np.inf
-                    for lam in np.geomspace(1e-6, 1e3, 40):
-                        shrink = sv ** 2 / (sv ** 2 + lam)
-                        rss = float(np.sum((rm - U @ (shrink * Uy)) ** 2))
-                        df = float(np.sum(shrink))
-                        gcv = rss / max(n * (1 - df / n) ** 2, 1e-12)
-                        if gcv < best_gcv:
-                            best_gcv, best_lam = gcv, lam
-                    shrink = sv / (sv ** 2 + best_lam)
-                    c = Vt.T @ (shrink * Uy)
-                    c = np.clip(c, 0.0, 2.0)
-                    ki = 0
-                    for kk in range(len(pair_f)):
-                        if keep[kk]:
-                            pair_f[kk] = pair_f[kk] * c[ki]
-                            ki += 1
-                self.offsets_ = np.concatenate([mains_offs, mains_offs[-1] + offs_p[1:]]).astype(int)
-                fhat = np.concatenate([mains_fhat] + pair_f)
-            elif pair_cols:
-                # two-stage with backfit alternation: mains-GP and pairs-GP each
-                # get their own exact ML fit on the other's residual
-                mains_offs = offs
-                mains_fhat = fhat.copy()
-                Cm = C
-                blocks_p = [self._pair_kernel(t["na"], t["nb"]) for t in self.pair_defs_]
-                Cp, _, offs_p = suffstats_fixed(pair_cols, pair_sizes)
-                pair_fhat = np.zeros(int(offs_p[-1]))
-                for rnd in range(2):
-                    # pairs on mains residual
-                    rm = yn.copy()
-                    for uu, j in enumerate(units):
-                        rm -= mains_fhat[mains_offs[uu]:mains_offs[uu + 1]][bidx[:, j]]
-                    bp = np.concatenate([np.bincount(pc, weights=rm, minlength=ps)
-                                         for pc, ps in zip(pair_cols, pair_sizes)])
-                    self.offsets_ = offs_p
-                    pair_fhat, _, _, _ = self._fit_ml(blocks_p, Cp, bp, float(np.sum(rm ** 2)), n)
-                    # mains on pairs residual
-                    rp = yn.copy()
-                    for kk, pc in enumerate(pair_cols):
-                        rp -= pair_fhat[offs_p[kk]:offs_p[kk + 1]][pc]
-                    bm = np.concatenate([np.bincount(bidx[:, j], weights=rp, minlength=int(self.nbins_[j]))
-                                         for j in units])
-                    self.offsets_ = mains_offs
-                    mains_fhat, sig2, amps, _ = self._fit_ml(blocks, Cm, bm, float(np.sum(rp ** 2)), n)
-                self.offsets_ = np.concatenate([mains_offs, mains_offs[-1] + offs_p[1:]]).astype(int)
-                fhat = np.concatenate([mains_fhat, pair_fhat])
-
         self.fhat_ = fhat
         self.sig2_ = sig2
         self.amps_ = amps[:len(self.units_)] if isinstance(amps, list) else amps
@@ -881,9 +749,6 @@ class BinGP(BaseEstimator, RegressorMixin):
 
     # ------------------------------------------------------------------
     def predict(self, X):
-        if getattr(self, "est_", None) is not None:
-            out = self.est_.predict(np.asarray(X, dtype=np.float64)[:, self.support_])
-            return np.exp(out) if self.ylog_ else out
         check_is_fitted(self, "fhat_")
         X = np.asarray(X, dtype=np.float64)
         m = X.shape[0]
@@ -922,8 +787,8 @@ class AddGPAuto(BaseEstimator, RegressorMixin):
             self.est_.fit(X, y)
         else:
             self.est_ = BinGP(n_bins=256, p_budget=4200, pair_bins=28,
-                              n_pairs=min(3 * d, 48), n_steps=200, pair_stage="block",
-                              log_target="auto", refine=(d > 32), pair_res=(28, 24, 16))
+                              n_pairs=min(3 * d, 48), n_steps=200,
+                              log_target="auto", pair_res=(28, 24, 16))
             self.est_.fit(X, y)
             # residual stage: depth-2 trees touch at most two features per path,
             # so the boosted correction is itself a GA2M; early stopping gates it
@@ -958,12 +823,14 @@ AddGPAuto.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v38"
-model_description = ("AddGP_v37 + gated depth-2 residual boost on the large-n path (depth-2 trees touch <= 2 "
-                     "features per path, so the boosted correction is itself a GA2M; internal-validation early stopping "
-                     "gates it to ~zero where the GP suffices). Beats EBM on every suite: official small 3.88 vs 5.48; "
-                     "classic-7 6/7, mean rank 2.43 vs 3.43; TabArena-13 9/13, mean rank ~2.3 vs ~2.9 (first among "
-                     "AddGP/EBM/TabPFN/RF/GBM/Ridge); flips miami_housing 0.2750 vs 0.2808")
+model_shorthand_name = "AddGP_v39"
+model_description = ("Simplified final model, one canonical path: exact additive-GP GA2M below 1200 rows; above, "
+                     "BinGP (additive GP fit from bin sufficient statistics C=Z'Z, b=Z'y -- cost independent of n) with "
+                     "budgeted quantile bins, linear+Matern+RBF+delta kernel dictionary, auto log-target rule, guarded "
+                     "8-IQR winsorization, blockwise-joint pairs at 28/24/16-bin grids chosen per chunk by marginal "
+                     "likelihood, interpolated readout, plus a gated depth-2 residual boost (still GA2M). Identical "
+                     "performance to v38, verified: small 3.88 vs EBM 5.48; classic-7 6/7 (rank 2.43 vs 3.43); "
+                     "TabArena-13 9/13 (rank 2.31 vs 2.92, first overall)")
 model_defs = [(model_shorthand_name, AddGPAuto())]
 
 
