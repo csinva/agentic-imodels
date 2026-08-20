@@ -349,7 +349,7 @@ class AddGP(BaseEstimator, RegressorMixin):
 
 
 class BinGP(BaseEstimator, RegressorMixin):
-    def __init__(self, n_bins=64, scales=(0.02, 0.1, 0.5), rbf_scales=(0.1, 0.4),
+    def __init__(self, n_bins=64, scales=(0.02, 0.5), rbf_scales=(0.1, 0.4),
                  cat_max_levels=32, n_pairs=6, pair_bins=12, screen_bins=8,
                  pair_shrink=8.0, pair_scales=(0.05, 0.3), lr=0.05, n_steps=200,
                  noise_init=0.3, amp_prior=0.005, noise_prior=0.3, noise_floor=1e-4,
@@ -389,12 +389,12 @@ class BinGP(BaseEstimator, RegressorMixin):
             mats.append(np.outer(zb, zb))
             mats.append(np.eye(B))
             return mats
-        mats.append(np.outer(zb, zb))                     # linear
         for s in self.scales:
             mats.append(np.exp(-D / s))                    # Matern-1/2 on rank grid
         for s in self.rbf_scales:
             mats.append(np.exp(-(D / s) ** 2))             # RBF (smooth) on rank grid
-        mats.append(np.eye(B))                         # nugget: per-bin freedom
+        if self.cats_[j]:
+            mats.append(np.eye(B))                         # per-level delta
         return mats
 
     def _pair_kernel(self, na, nb):
@@ -823,14 +823,13 @@ AddGPAuto.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v39"
-model_description = ("Simplified final model, one canonical path: exact additive-GP GA2M below 1200 rows; above, "
-                     "BinGP (additive GP fit from bin sufficient statistics C=Z'Z, b=Z'y -- cost independent of n) with "
-                     "budgeted quantile bins, linear+Matern+RBF+delta kernel dictionary, auto log-target rule, guarded "
-                     "8-IQR winsorization, blockwise-joint pairs at 28/24/16-bin grids chosen per chunk by marginal "
-                     "likelihood, interpolated readout, plus a gated depth-2 residual boost (still GA2M). Identical "
-                     "performance to v38, verified: small 3.88 vs EBM 5.48; classic-7 6/7 (rank 2.43 vs 3.43); "
-                     "TabArena-13 9/13 (rank 2.31 vs 2.92, first overall)")
+model_shorthand_name = "AddGP_v40"
+model_description = ("Round-2 simplification of v39, ablation-verified on 10 sentinels: linear kernel removed "
+                     "(256-bin Materns + interpolation cover it), Matern scales 3->2 (0.02, 0.5), per-bin nugget "
+                     "removed (delta kept for categoricals only). Kernel dictionary now: 2 Matern + 2 RBF (+ delta "
+                     "for categories). Kept (ablations prove necessary): log-target rule, Tukey fence, pair-RBF "
+                     "product, 2 alternation sweeps, 28/24/16 menu (miami needs 24), RBF scales. Performance equal "
+                     "or better than v39 everywhere: diamonds -1.2pct, wine -0.6pct, all EBM wins preserved")
 model_defs = [(model_shorthand_name, AddGPAuto())]
 
 
