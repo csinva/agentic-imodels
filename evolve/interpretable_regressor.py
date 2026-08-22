@@ -110,244 +110,6 @@ _imodelsx_llm.get_llm = _claude_haiku_llm
 # the pruning (irrelevant features' amplitudes go to zero); the scale mixture
 # does the smoothness selection; the likelihood does the interaction gating.
 
-def _rank_transform(col, ref=None):
-    """Map values to [0,1] by the empirical CDF of ref (or col)."""
-    if ref is None:
-        ref = col
-    order = np.argsort(ref)
-    ranks = np.searchsorted(ref[order], col, side="left").astype(float)
-    return ranks / max(len(ref) - 1, 1)
-
-
-class AddGP(BaseEstimator, RegressorMixin):
-    def __init__(self, scales=(0.02, 0.1, 0.5), cat_max_levels=32, n_pairs=6,
-                 screen_bins=8, pair_shrink=8.0, lr=0.05, n_steps=200,
-                 noise_init=0.3, jitter=1e-5, z_clip=4.0, amp_prior=0.02,
-                 noise_prior=0.3, noise_floor=1e-4, pair_scales=None, random_state=42):
-        self.scales = scales
-        self.cat_max_levels = cat_max_levels
-        self.n_pairs = n_pairs
-        self.screen_bins = screen_bins
-        self.pair_shrink = pair_shrink
-        self.lr = lr
-        self.n_steps = n_steps
-        self.noise_init = noise_init
-        self.jitter = jitter
-        self.z_clip = z_clip
-        self.amp_prior = amp_prior
-        self.noise_prior = noise_prior
-        self.noise_floor = noise_floor
-        self.pair_scales = pair_scales
-        self.random_state = random_state
-
-    # ------------------------------------------------------------------
-    def _base_kernels(self, R, cats, X, Z):
-        """Per feature: linear kernel on clipped z-scores, Matern-1/2 kernels on
-        ranks at several scales, and a delta kernel for integer categories."""
-        n, d = R.shape
-        mats, labels = [], []
-        for j in range(d):
-            if not np.any(R[:, j]) and not np.any(Z[:, j]):
-                pass
-            D = np.abs(R[:, j][:, None] - R[:, j][None, :])
-            mats.append(np.outer(Z[:, j], Z[:, j]).astype(np.float32))
-            labels.append(("lin", j, 0.0))
-            for s in self.scales:
-                mats.append(np.exp(-D / s).astype(np.float32))
-                labels.append(("m", j, s))
-            if cats[j]:
-                E = (X[:, j][:, None] == X[:, j][None, :]).astype(np.float32)
-                mats.append(E)
-                labels.append(("cat", j, 0.0))
-        return mats, labels
-
-    def _fit_ml(self, mats, y_arr, y_std):
-        """Maximize log marginal likelihood over kernel amplitudes + noise."""
-        y = y_arr
-        n = len(y)
-        K = torch.stack([torch.from_numpy(m) for m in mats])       # (S,n,n)
-        yt = torch.from_numpy((y / y_std).astype(np.float32))
-        S = K.shape[0]
-        log_a = torch.full((S,), np.log(0.5 / S), dtype=torch.float32, requires_grad=True)
-        log_n = torch.tensor(float(np.log(self.noise_init)), dtype=torch.float32, requires_grad=True)
-        opt = torch.optim.Adam([log_a, log_n], lr=self.lr)
-        eye = torch.eye(n, dtype=torch.float32)
-        best = (np.inf, None, None)
-        for step in range(self.n_steps):
-            opt.zero_grad()
-            amps = torch.exp(log_a)
-            Kf = torch.tensordot(amps, K, dims=1) + (torch.exp(log_n) + self.jitter) * eye
-            try:
-                L = torch.linalg.cholesky(Kf)
-            except Exception:
-                with torch.no_grad():
-                    log_n += 0.5
-                continue
-            alpha = torch.cholesky_solve(yt[:, None], L)[:, 0]
-            nll = 0.5 * (yt @ alpha) + torch.log(torch.diagonal(L)).sum()
-            # weak MAP priors: stabilize noise and amplitudes (matters at tiny n)
-            nll = nll + self.noise_prior * (log_n - float(np.log(self.noise_init))) ** 2 \
-                      + self.amp_prior * ((log_a - float(np.log(0.5 / S))) ** 2).sum()
-            nll.backward()
-            opt.step()
-            v = float(nll.detach())
-            if v < best[0]:
-                best = (v, log_a.detach().clone(), log_n.detach().clone())
-        _, la, ln = best
-        amps = np.exp(la.numpy().astype(np.float64))
-        noise = max(float(np.exp(float(ln))), self.noise_floor)
-        # final solve in float64 with an escalation ladder for stability
-        Kf64 = np.zeros((n, n))
-        for a, m in zip(amps, mats):
-            Kf64 += a * m.astype(np.float64)
-        y64 = (y_arr / y_std).astype(np.float64)
-        from scipy.linalg import cho_factor, cho_solve
-        alpha = None
-        for bump in (1.0, 3.0, 10.0, 100.0, 1000.0):
-            try:
-                cf = cho_factor(Kf64 + (noise * bump + self.jitter) * np.eye(n), lower=True)
-                a_try = cho_solve(cf, y64)
-            except Exception:
-                continue
-            # sanity: the GP posterior mean must fit train no worse than the mean
-            train_rmse = float(np.sqrt(np.mean((y64 - Kf64 @ a_try) ** 2)))
-            if np.isfinite(train_rmse) and train_rmse <= 1.2:
-                alpha = a_try
-                break
-        if alpha is None:
-            alpha = np.linalg.lstsq(Kf64 + np.eye(n), y64, rcond=None)[0]
-        return amps, noise, alpha
-
-    # ------------------------------------------------------------------
-    def fit(self, X, y):
-        import os
-        X = np.asarray(X, dtype=np.float64)
-        y = np.asarray(y, dtype=np.float64).ravel()
-        n, d = X.shape
-        self.n_features_in_ = d
-        self.y_mean_ = float(np.mean(y))
-        self.y_std_ = float(np.std(y)) + 1e-12
-        yc = y - self.y_mean_
-
-        # rank transforms + categorical flags
-        self.X_train_ = X.copy()
-        R = np.zeros((n, d))
-        cats = np.zeros(d, dtype=bool)
-        ok = np.zeros(d, dtype=bool)
-        for j in range(d):
-            u = np.unique(X[np.isfinite(X[:, j]), j])
-            if len(u) <= 1:
-                continue
-            ok[j] = True
-            R[:, j] = _rank_transform(X[:, j])
-            if len(u) <= self.cat_max_levels and np.allclose(u, np.round(u)):
-                cats[j] = True
-        self.ok_, self.cats_ = ok, cats
-        self.R_train_ = R
-        Z = np.zeros((n, d))
-        self.z_mu_ = np.zeros(d)
-        self.z_sd_ = np.ones(d)
-        for j in range(d):
-            if ok[j]:
-                self.z_mu_[j] = float(np.mean(X[:, j]))
-                self.z_sd_[j] = float(np.std(X[:, j])) + 1e-12
-                Z[:, j] = np.clip((X[:, j] - self.z_mu_[j]) / self.z_sd_[j], -self.z_clip, self.z_clip)
-        self.Z_train_ = Z
-
-        mats, labels = self._base_kernels(R, cats, X, Z)
-        self.labels_ = labels
-
-        amps, noise, alpha = self._fit_ml(mats, yc, self.y_std_)
-
-        # pair candidates from residual of mains fit
-        self.pair_labels_ = []
-        if self.n_pairs > 0 and ok.sum() >= 2:
-            Kf = np.zeros((n, n), dtype=np.float64)
-            for a, m in zip(amps, mats):
-                Kf += a * m.astype(np.float64)
-            resid = yc / self.y_std_ - Kf @ alpha
-            from itertools import combinations
-            scr = {}
-            for j in range(d):
-                if not ok[j]:
-                    continue
-                e = np.unique(np.quantile(X[:, j], np.linspace(0, 1, self.screen_bins + 1)[1:-1]))
-                if len(e) >= 1:
-                    scr[j] = (np.searchsorted(e, X[:, j], side="right"), len(e) + 1)
-            gains = []
-            for a_, b_ in combinations(sorted(scr), 2):
-                ia, na = scr[a_]; ib, nb2 = scr[b_]
-                cell = ia * nb2 + ib
-                cnt = np.bincount(cell, minlength=na * nb2).astype(float)
-                sums = np.bincount(cell, weights=resid, minlength=na * nb2)
-                mu = np.where(cnt > 0, sums / np.maximum(cnt, 1), 0.0)
-                mu *= cnt / (cnt + self.pair_shrink)
-                gains.append((float(np.sum(cnt * mu ** 2)), a_, b_))
-            gains.sort(reverse=True)
-            pair_mats = []
-            p_scales = self.pair_scales or (self.scales[len(self.scales) // 2],)
-            for _, a_, b_ in gains[:self.n_pairs]:
-                Da = np.abs(R[:, a_][:, None] - R[:, a_][None, :])
-                Db = np.abs(R[:, b_][:, None] - R[:, b_][None, :])
-                for ps in p_scales:
-                    pair_mats.append((np.exp(-Da / ps) * np.exp(-Db / ps)).astype(np.float32))
-                    self.pair_labels_.append(("pair", a_, b_, ps))
-            if pair_mats:
-                amps, noise, alpha = self._fit_ml(mats + pair_mats, yc, self.y_std_)
-
-        self.amps_ = amps
-        self.noise_ = noise
-        self.alpha_ = alpha
-        y_rng = float(np.max(y) - np.min(y))
-        self.clip_ = (float(np.min(y)) - 0.05 * y_rng, float(np.max(y)) + 0.05 * y_rng)
-        return self
-
-    # ------------------------------------------------------------------
-    def predict(self, X):
-        check_is_fitted(self, "alpha_")
-        X = np.asarray(X, dtype=np.float64)
-        m = X.shape[0]
-        n = self.X_train_.shape[0]
-        Kx = np.zeros((m, n))
-        # rank-transform test features against train
-        Rt = np.zeros((m, self.n_features_in_))
-        for j in range(self.n_features_in_):
-            if self.ok_[j]:
-                Rt[:, j] = _rank_transform(X[:, j], ref=self.X_train_[:, j])
-        idx = 0
-        for (kind, j, s) in self.labels_:
-            if kind == "m":
-                D = np.abs(Rt[:, j][:, None] - self.R_train_[:, j][None, :])
-                Kx += self.amps_[idx] * np.exp(-D / s)
-            elif kind == "lin":
-                zt = np.clip((X[:, j] - self.z_mu_[j]) / self.z_sd_[j], -self.z_clip, self.z_clip)
-                Kx += self.amps_[idx] * np.outer(zt, self.Z_train_[:, j])
-            else:
-                Kx += self.amps_[idx] * (X[:, j][:, None] == self.X_train_[:, j][None, :])
-            idx += 1
-        for (kind, a_, b_, s) in self.pair_labels_:
-            Da = np.abs(Rt[:, a_][:, None] - self.R_train_[:, a_][None, :])
-            Db = np.abs(Rt[:, b_][:, None] - self.R_train_[:, b_][None, :])
-            Kx += self.amps_[idx] * np.exp(-Da / s) * np.exp(-Db / s)
-            idx += 1
-        out = self.y_mean_ + self.y_std_ * (Kx @ self.alpha_)
-        return np.clip(out, self.clip_[0], self.clip_[1])
-
-    def __str__(self):
-        check_is_fitted(self, "alpha_")
-        lines = ["Additive Gaussian-process GA2M (marginal-likelihood fit)."]
-        per_feat = {}
-        for amp, (kind, j, s) in zip(self.amps_, self.labels_):
-            per_feat[j] = per_feat.get(j, 0.0) + amp
-        for j, a in sorted(per_feat.items(), key=lambda t: -t[1]):
-            lines.append(f"f(x{j}): amplitude {a:.4f}")
-        for (kind, a_, b_, s) in self.pair_labels_:
-            lines.append(f"pair kernel on (x{a_}, x{b_})")
-        return "\n".join(lines)
-
-
-
-
 class BinGP(BaseEstimator, RegressorMixin):
     def __init__(self, n_bins=64, scales=(0.02, 0.5), rbf_scales=(0.1, 0.4),
                  cat_max_levels=32, n_pairs=6, pair_bins=12, screen_bins=8,
@@ -771,65 +533,63 @@ class BinGP(BaseEstimator, RegressorMixin):
 
 
 class AddGPAuto(BaseEstimator, RegressorMixin):
-    """The additive GP at any scale: below exact_max_n rows the kernels are
-    computed exactly on all points (AddGP); above, the identical model is fit
-    from bin sufficient statistics (BinGP), whose cost is independent of n."""
+    """One additive-GP GA2M at every scale. All capacity knobs are a resource
+    schedule in n: bin budget, pair count, and pair-grid resolutions scale with
+    the data; the fit itself is always the same marginal-likelihood computation
+    from bin sufficient statistics. A gated depth-2 boosted correction on the
+    residual (trees touch at most two features per path, so it is itself a
+    GA2M) catches sharp structure the smooth prior misses."""
 
-    def __init__(self, exact_max_n=1200):
-        self.exact_max_n = exact_max_n
+    def __init__(self):
+        pass
 
     def fit(self, X, y):
+        X = np.asarray(X, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64).ravel()
-        d = np.asarray(X).shape[1]
-        self.boost_ = None
-        if len(y) <= self.exact_max_n:
-            self.est_ = AddGP(z_clip=8.0, amp_prior=0.005, pair_scales=(0.05, 0.3))
-            self.est_.fit(X, y)
+        n, d = X.shape
+        if n <= 2000:
+            kw = dict(n_bins=64, p_budget=1500, pair_bins=12,
+                      n_pairs=min(2 * d, 12), pair_res=(12,))
         else:
-            self.est_ = BinGP(n_bins=256, p_budget=4200, pair_bins=28,
-                              n_pairs=min(3 * d, 48), n_steps=200,
-                              log_target="auto", pair_res=(28, 24, 16))
-            self.est_.fit(X, y)
-            # residual stage: depth-2 trees touch at most two features per path,
-            # so the boosted correction is itself a GA2M; early stopping gates it
-            from sklearn.ensemble import HistGradientBoostingRegressor
-            self.boost_ = HistGradientBoostingRegressor(
-                max_depth=2, learning_rate=0.05, max_iter=3000, early_stopping=True,
-                validation_fraction=0.15, n_iter_no_change=50, random_state=42)
-            self.boost_.fit(X, y - self.est_.predict(X))
-        self.n_features_in_ = self.est_.n_features_in_
+            kw = dict(n_bins=256, p_budget=4200, pair_bins=28,
+                      n_pairs=min(3 * d, 48), pair_res=(28, 24, 16))
+        self.est_ = BinGP(n_steps=200, log_target="auto", **kw)
+        self.est_.fit(X, y)
+        from sklearn.ensemble import HistGradientBoostingRegressor
+        self.boost_ = HistGradientBoostingRegressor(
+            max_depth=2, learning_rate=0.05, max_iter=3000, early_stopping=True,
+            validation_fraction=0.15, n_iter_no_change=50, random_state=42)
+        self.boost_.fit(X, y - self.est_.predict(X))
+        self.n_features_in_ = d
         return self
 
     def predict(self, X):
         check_is_fitted(self, "est_")
-        out = self.est_.predict(X)
-        if self.boost_ is not None:
-            out = out + self.boost_.predict(np.asarray(X, dtype=np.float64))
-        return out
+        X = np.asarray(X, dtype=np.float64)
+        return self.est_.predict(X) + self.boost_.predict(X)
 
     def interpretable_description(self):
-        if hasattr(self.est_, "interpretable_description"):
-            return self.est_.interpretable_description()
-        return "additive GP (binned sufficient-statistics fit)"
+        return self.est_.interpretable_description() if hasattr(self.est_, "interpretable_description") \
+            else "additive GP GA2M (binned sufficient-statistics fit) + depth-2 residual terms"
 
 
 # Make class picklable when script is run as __main__ (required for joblib caching/parallel)
 import sys as _sys
 _sys.modules.setdefault("interpretable_regressor", _sys.modules[__name__])
-AddGP.__module__ = "interpretable_regressor"
 BinGP.__module__ = "interpretable_regressor"
 AddGPAuto.__module__ = "interpretable_regressor"
 
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v40"
-model_description = ("Round-2 simplification of v39, ablation-verified on 10 sentinels: linear kernel removed "
-                     "(256-bin Materns + interpolation cover it), Matern scales 3->2 (0.02, 0.5), per-bin nugget "
-                     "removed (delta kept for categoricals only). Kernel dictionary now: 2 Matern + 2 RBF (+ delta "
-                     "for categories). Kept (ablations prove necessary): log-target rule, Tukey fence, pair-RBF "
-                     "product, 2 alternation sweeps, 28/24/16 menu (miami needs 24), RBF scales. Performance equal "
-                     "or better than v39 everywhere: diamonds -1.2pct, wine -0.6pct, all EBM wins preserved")
+model_shorthand_name = "AddGP_v41"
+model_description = ("Single-path simplification: the exact-kernel small-n class and dual dispatcher are deleted; "
+                     "ONE BinGP (additive GP from bin sufficient statistics) serves every n, with capacity as a "
+                     "resource schedule (small n: 64-bin/1500-budget mains, 12 pairs at 12-bin grids; large n: "
+                     "256-bin/4200-budget mains, up to 48 pairs at ML-selected 28/24/16 grids) + the gated depth-2 "
+                     "residual boost at all n. Small suite 4.45 vs EBM 5.06 (was 3.88 via exact path -- traded for "
+                     "deleting a whole model class); large-scale behavior identical to v40 (classic-7 6/7 rank 2.43; "
+                     "TabArena-13 8/13 rank 2.31, first overall)")
 model_defs = [(model_shorthand_name, AddGPAuto())]
 
 
