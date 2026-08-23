@@ -547,7 +547,7 @@ class AddGPAuto(BaseEstimator, RegressorMixin):
         X = np.asarray(X, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64).ravel()
         n, d = X.shape
-        if n <= 2000:
+        if n <= 1000:
             kw = dict(n_bins=64, p_budget=1500, pair_bins=12,
                       n_pairs=min(2 * d, 12), pair_res=(12,))
         else:
