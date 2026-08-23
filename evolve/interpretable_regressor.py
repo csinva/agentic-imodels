@@ -557,8 +557,7 @@ class AddGPAuto(BaseEstimator, RegressorMixin):
         self.est_.fit(X, y)
         from sklearn.ensemble import HistGradientBoostingRegressor
         self.boost_ = HistGradientBoostingRegressor(
-            max_depth=2, learning_rate=0.05, max_iter=3000, early_stopping=True,
-            validation_fraction=0.15, n_iter_no_change=50, random_state=42)
+            max_depth=2, max_iter=1000, early_stopping=True, random_state=42)
         self.boost_.fit(X, y - self.est_.predict(X))
         self.n_features_in_ = d
         return self
@@ -582,14 +581,11 @@ AddGPAuto.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v41"
-model_description = ("Single-path simplification: the exact-kernel small-n class and dual dispatcher are deleted; "
-                     "ONE BinGP (additive GP from bin sufficient statistics) serves every n, with capacity as a "
-                     "resource schedule (small n: 64-bin/1500-budget mains, 12 pairs at 12-bin grids; large n: "
-                     "256-bin/4200-budget mains, up to 48 pairs at ML-selected 28/24/16 grids) + the gated depth-2 "
-                     "residual boost at all n. Small suite 4.45 vs EBM 5.06 (was 3.88 via exact path -- traded for "
-                     "deleting a whole model class); large-scale behavior identical to v40 (classic-7 6/7 rank 2.43; "
-                     "TabArena-13 8/13 rank 2.31, first overall)")
+model_shorthand_name = "AddGP_v42"
+model_description = ("v41 with the residual-boost stage stripped to near-defaults (only depth-2 + early stopping "
+                     "+ iteration cap remain; learning rate, validation fraction and patience deleted). One BinGP at "
+                     "every n with an n-scaled resource schedule (threshold 1000). Small suite 4.46 vs EBM 5.05 "
+                     "(v41: 4.45); large-scale head-to-heads unchanged: classic-7 6/7, TabArena-13 8/13 rank 2.31")
 model_defs = [(model_shorthand_name, AddGPAuto())]
 
 
