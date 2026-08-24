@@ -115,7 +115,7 @@ class BinGP(BaseEstimator, RegressorMixin):
                  cat_max_levels=32, n_pairs=6, pair_bins=12, screen_bins=8,
                  pair_shrink=8.0, pair_scales=(0.05, 0.3), lr=0.05, n_steps=200,
                  noise_init=0.3, amp_prior=0.005, noise_prior=0.3, noise_floor=1e-4,
-                 jitter=1e-6, z_clip=8.0, p_budget=None, pair_res=None,
+                 jitter=1e-6, p_budget=None, pair_res=None,
                  log_target='auto'):
         self.n_bins = n_bins
         self.scales = scales
@@ -133,7 +133,6 @@ class BinGP(BaseEstimator, RegressorMixin):
         self.noise_prior = noise_prior
         self.noise_floor = noise_floor
         self.jitter = jitter
-        self.z_clip = z_clip
         self.p_budget = p_budget
         self.pair_res = pair_res
         self.log_target = log_target
@@ -145,10 +144,8 @@ class BinGP(BaseEstimator, RegressorMixin):
         mats = []
         g = np.linspace(0.0, 1.0, B) if B > 1 else np.zeros(1)
         D = np.abs(g[:, None] - g[None, :])
-        zb = self.zbar_[j]
         if B <= 3:
-            # tiny grids: {linear, delta} already spans every kernel above
-            mats.append(np.outer(zb, zb))
+            # a delta kernel already spans every function on <= 3 points
             mats.append(np.eye(B))
             return mats
         for s in self.scales:
@@ -306,7 +303,6 @@ class BinGP(BaseEstimator, RegressorMixin):
         # quantile binning + per-bin z-means
         self.edges_ = [None] * d
         self.nbins_ = np.zeros(d, dtype=int)
-        self.zbar_ = [None] * d
         self.xbar_ = {}
         self.cats_ = np.zeros(d, dtype=bool)
         bidx = np.zeros((n, d), dtype=np.int64)
@@ -323,10 +319,7 @@ class BinGP(BaseEstimator, RegressorMixin):
             B = len(e) + 1
             self.nbins_[j] = B
             bidx[:, j] = np.searchsorted(e, X[:, j], side="right")
-            mu, sd = float(np.mean(X[:, j])), float(np.std(X[:, j])) + 1e-12
             w = np.bincount(bidx[:, j], minlength=B).astype(float)
-            sz = np.bincount(bidx[:, j], weights=np.clip((X[:, j] - mu) / sd, -self.z_clip, self.z_clip), minlength=B)
-            self.zbar_[j] = np.where(w > 0, sz / np.maximum(w, 1), 0.0)
             sx = np.bincount(bidx[:, j], weights=X[:, j], minlength=B)
             xb = np.where(w > 0, sx / np.maximum(w, 1), np.nan)
             if np.isnan(xb).any():
@@ -581,11 +574,11 @@ AddGPAuto.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v42"
-model_description = ("v41 with the residual-boost stage stripped to near-defaults (only depth-2 + early stopping "
-                     "+ iteration cap remain; learning rate, validation fraction and patience deleted). One BinGP at "
-                     "every n with an n-scaled resource schedule (threshold 1000). Small suite 4.46 vs EBM 5.05 "
-                     "(v41: 4.45); large-scale head-to-heads unchanged: classic-7 6/7, TabArena-13 8/13 rank 2.31")
+model_shorthand_name = "AddGP_v43"
+model_description = ("v42 minus the per-bin z-mean machinery: the linear kernel now fires nowhere (a delta "
+                     "kernel already spans every function on a <=3-bin grid), so zbar_ and z_clip are deleted. "
+                     "Kernel dictionary per feature: 2 Matern + 2 RBF (+ delta for categories/tiny grids). "
+                     "Small suite 4.43 vs EBM 5.03 (best of v41-v43); large-scale head-to-heads unchanged")
 model_defs = [(model_shorthand_name, AddGPAuto())]
 
 
