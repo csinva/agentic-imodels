@@ -111,7 +111,7 @@ _imodelsx_llm.get_llm = _claude_haiku_llm
 # does the smoothness selection; the likelihood does the interaction gating.
 
 class BinGP(BaseEstimator, RegressorMixin):
-    def __init__(self, n_bins=64, scales=(0.02, 0.5), rbf_scales=(0.1, 0.4),
+    def __init__(self, n_bins=64, scales=(0.05,), rbf_scales=(0.25,),
                  cat_max_levels=32, n_pairs=6, pair_bins=12, screen_bins=8,
                  pair_shrink=8.0, pair_scales=(0.05, 0.3), lr=0.05, n_steps=200,
                  noise_init=0.3, amp_prior=0.005, noise_prior=0.3, noise_floor=1e-4,
@@ -574,11 +574,11 @@ AddGPAuto.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v43"
-model_description = ("v42 minus the per-bin z-mean machinery: the linear kernel now fires nowhere (a delta "
-                     "kernel already spans every function on a <=3-bin grid), so zbar_ and z_clip are deleted. "
-                     "Kernel dictionary per feature: 2 Matern + 2 RBF (+ delta for categories/tiny grids). "
-                     "Small suite 4.43 vs EBM 5.03 (best of v41-v43); large-scale head-to-heads unchanged")
+model_shorthand_name = "AddGP_v44"
+model_description = ("v43 with the kernel dictionary halved: one Matern (0.05) + one RBF (0.25) per feature "
+                     "(+ delta for categories/tiny grids) instead of two of each. Small suite 4.52 vs EBM 5.00 "
+                     "(v43 was 4.43 -- ~0.09 rank is the measured price of the simpler dictionary); large-scale "
+                     "sentinels same-or-better, house_16H improves 1.3% to 0.6954")
 model_defs = [(model_shorthand_name, AddGPAuto())]
 
 
