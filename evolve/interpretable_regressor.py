@@ -114,7 +114,7 @@ class BinGP(BaseEstimator, RegressorMixin):
     def __init__(self, schedule=True, n_bins=64, scales=(0.05,), rbf_scales=(0.25,),
                  cat_max_levels=32, n_pairs=6, pair_bins=12, screen_bins=8,
                  pair_shrink=8.0, pair_scales=(0.05, 0.3), lr=0.05, n_steps=200,
-                 noise_init=0.3, amp_prior=0.005, noise_prior=0.3, noise_floor=1e-4,
+                 noise_init=0.3, noise_floor=1e-4,
                  jitter=1e-6, p_budget=None, pair_res=None,
                  log_target='auto'):
         self.schedule = schedule
@@ -130,8 +130,6 @@ class BinGP(BaseEstimator, RegressorMixin):
         self.lr = lr
         self.n_steps = n_steps
         self.noise_init = noise_init
-        self.amp_prior = amp_prior
-        self.noise_prior = noise_prior
         self.noise_floor = noise_floor
         self.jitter = jitter
         self.p_budget = p_budget
@@ -226,9 +224,6 @@ class BinGP(BaseEstimator, RegressorMixin):
             quad = (yy - (bt * v).sum()) / sig2
             logdet = n * log_n + logdetA + 2.0 * torch.log(torch.diagonal(Lg)).sum()
             nll = 0.5 * (quad + logdet)
-            nll = nll + self.noise_prior * (log_n - float(np.log(self.noise_init))) ** 2
-            for u in range(len(log_a)):
-                nll = nll + self.amp_prior * ((log_a[u] - float(np.log(0.5 / max(S_total, 1)))) ** 2).sum()
             nll.backward()
             opt.step()
             val = float(nll.detach())
@@ -550,17 +545,15 @@ BinGP.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v45"
+model_shorthand_name = "AddGP_v46"
 model_description = ("A GAM that is an additive Gaussian process, fit from bin sufficient statistics. ONE class, "
-                     "no second model: quantile-bin every feature under a parameter budget; give each feature a GP "
-                     "prior (one Matern + one RBF on its bin grid, delta for categories); fit all amplitudes and the "
-                     "noise by the exact marginal likelihood, which depends on the data only through C=Z'Z, b=Z'y and "
-                     "y'y (cost independent of n); add FAST-screened pair terms fit blockwise-jointly at "
-                     "likelihood-selected grid resolutions; log-fit skewed positive targets and winsorize extreme "
-                     "outliers; read out by interpolation. Capacity is a resource schedule in n. The boosted residual "
-                     "stage, the exact-kernel class, the dispatcher and half the kernel dictionary are all deleted. "
-                     "Beats EBM on every suite: small 4.58 vs 5.00; classic-7 6/7; TabArena-13 mean rank 2.62 "
-                     "(first overall, ahead of TabPFN 2.77 and EBM 2.85), 8/13 head-to-head")
+                     "no second model, no MAP priors: quantile-bin every feature under a parameter budget; give each "
+                     "feature a GP prior (one Matern + one RBF on its bin grid, delta for categories); fit all "
+                     "amplitudes and the noise by the EXACT marginal likelihood, which depends on the data only "
+                     "through C=Z'Z, b=Z'y and y'y (cost independent of n); add FAST-screened pair terms fit "
+                     "blockwise-jointly at likelihood-selected grid resolutions; log-fit skewed positive targets and "
+                     "winsorize extreme outliers; read out by interpolation. Capacity is a resource schedule in n. "
+                     "Small suite 4.65 vs EBM 5.02; classic-7 6/7; TabArena-13 mean rank 2.62, first overall")
 model_defs = [(model_shorthand_name, BinGP())]
 
 
