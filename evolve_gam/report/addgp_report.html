@@ -214,7 +214,7 @@ footer{border-top:1px solid var(--rule); margin-top:72px; padding-top:26px;
     <span><b>AddGP</b> v47</span>
     <span>686 lines, one class</span>
     <span>4 benchmark suites, 113 datasets</span>
-    <span>Beats EBM on every suite</span>
+    <span>Beats EBM on 3 of 4 suites, ties the 4th</span>
   </div>
 </header>
 
@@ -223,8 +223,8 @@ footer{border-top:1px solid var(--rule); margin-top:72px; padding-top:26px;
     <div class="s">EBM 5.00 &middot; mean rank</div></div>
   <div class="stat lead"><div class="k">Classic-7</div><div class="v">2.43</div>
     <div class="s">EBM 3.43 &middot; 6 of 7 wins</div></div>
-  <div class="stat lead"><div class="k">TabArena-13</div><div class="v">2.62</div>
-    <div class="s">EBM 2.85 &middot; 1st of 6</div></div>
+  <div class="stat"><div class="k">TabArena-13</div><div class="v">2.69</div>
+    <div class="s">EBM 2.69 &middot; tied</div></div>
   <div class="stat lead"><div class="k">CTR23-28</div><div class="v">2.11</div>
     <div class="s">EBM 2.32 &middot; glass-box pool</div></div>
 </div>
@@ -506,13 +506,13 @@ const SUITES={
         ['Head-to-head','AddGP beats EBM on 6 of 7; loses only cpu_act']]},
  tabarena:{
   title:'TabArena-v0.1 — the regression subset',
-  note:'TabPFN could not fit two datasets (1,024-feature fingerprints; superconductivity) and is ranked last on those.',
+  note:'AddGP ties EBM here — this is the one suite where the simplification rounds cost something. TabPFN could not fit two datasets (1,024-feature fingerprints; superconductivity) and is ranked last on those.',
   cols:['model','mean rank'],
-  rows:[['AddGP',2.62],['TabPFN',2.77],['EBM',2.85],['RF',2.85],['GBM',4.38],['Ridge',5.54]],
+  rows:[['AddGP',2.69],['EBM',2.69],['TabPFN',2.77],['RF',2.85],['GBM',4.46],['Ridge',5.54]],
   meta:[['Source','OpenML study 457, all 13 regression tasks'],
         ['Sizes','907–53,940 rows, 5–1,024 features'],
         ['Processing','Categoricals to integer codes; non-finite numerics median-filled; 80/20 (seed 42)'],
-        ['Head-to-head','AddGP beats EBM on 8 of 13 — and finishes first overall']]},
+        ['Head-to-head','AddGP beats EBM on 6 of 13; an earlier, larger version won 8']]},
  ctr23:{
   title:'OpenML-CTR23 — held out entirely',
   note:'28 of 35 datasets: the 7 that overlap TabArena were dropped. Two views — the full pool, and the interpretable-model pool.',
