@@ -49,14 +49,25 @@ interpretable model.
 | Suite | AddGP | EBM | RF | GBM | TabPFN | notes |
 |---|---|---|---|---|---|---|
 | imodels (65 datasets) | **4.60** | 5.00 | 6.66 | 6.38 | 3.40 | training capped at 1k rows |
-| Classic-7 (full size) | **2.43** | 3.43 | 3.00 | 4.43 | 1.71 | v47 wins 6/7 head-to-head |
-| TabArena-13 | **2.62** | 2.85 | 2.85 | 4.38 | 2.77 | first of six; TabPFN fails 2 |
+| Classic-7 (full size) | **2.43** | 3.43 | 3.00 | 4.43 | 1.71 | wins 6/7 head-to-head |
+| TabArena-13 | 2.69 | 2.69 | 2.85 | 4.46 | 2.77 | tied with EBM; wins 6/13 |
 | OpenML-CTR23 (28) | **2.11** | 2.32 | 3.07 | 3.18 | — | held out; interpretable pool |
 | OpenML-CTR23 (27) | **2.85** | 3.04 | 3.81 | 4.00 | 1.96 | with TabPFN, where it runs |
 
-AddGP is the strongest interpretable model on every suite. Only TabPFN — a black-box
-foundation model, capped at 2,500 training rows by GPU memory and unable to fit
-several of the wider datasets at all — ranks higher overall.
+All numbers are for the model as shipped here (`AddGP_v47`).
+
+AddGP is the strongest interpretable model on three of the four suites, and ties EBM
+on the fourth. Only TabPFN — a black-box foundation model, capped at 2,500 training
+rows by GPU memory and unable to fit several of the wider datasets at all — ranks
+higher overall.
+
+**TabArena is where simplification cost something.** An earlier, larger version of
+this model (before the last few ablation rounds) scored 2.62 there and won 8 of 13
+head-to-head. The shipped model ties at 2.69 and wins 6. Four of those datasets sit
+within 0.5% of EBM, which is inside the run-to-run noise of a float32 fit, so the
+head-to-head count is fragile — but the direction is real: roughly 400 lines of
+deleted machinery cost about 0.07 mean rank on this suite. The other three suites
+were unaffected.
 
 **CTR23 is the one that matters.** It was downloaded *after* the method was final and
 informed no design decision, so it measures generalization rather than tuning.
@@ -113,11 +124,9 @@ uv run benchmarks/v47_suites.py      # classic-7 and TabArena on the shipped mod
 - Defaults-versus-defaults on a single split per dataset. TabArena and CTR23 both
   define richer official protocols with repeated folds and hyperparameter search;
   these numbers are not comparable to published leaderboard entries.
-- Baseline numbers for the classic-7 and TabArena tables were collected with the
-  model as it stood a few simplification rounds earlier. The final rounds traded a
-  little accuracy on near-tie datasets for a much smaller model — several TabArena
-  datasets sit within 0.5% of EBM and can land on either side of the line between
-  runs (float32 threading alone moves results ±0.5–1%).
+- Several TabArena datasets sit within 0.5% of EBM and can land on either side of
+  the line between identical runs (float32 threading alone moves results ±0.5–1%),
+  so treat that suite's head-to-head count as noisy.
 - The imodels port and the research model agree to four decimals on held-out RMSE,
   but they are not bit-identical: the port derives its gradients analytically in
   numpy rather than using autograd.
