@@ -155,8 +155,6 @@ class BinGP(BaseEstimator, RegressorMixin):
             mats.append(np.exp(-D / s))                    # Matern-1/2 on rank grid
         for s in self.rbf_scales:
             mats.append(np.exp(-(D / s) ** 2))             # RBF (smooth) on rank grid
-        if self.cats_[j]:
-            mats.append(np.eye(B))                         # per-level delta
         return mats
 
     def _pair_kernel(self, na, nb):
@@ -301,15 +299,7 @@ class BinGP(BaseEstimator, RegressorMixin):
         # bin cap: finest uniform resolution whose total bin count fits p_budget
         n_bins_eff = self._p('n_bins')
         if self._p('p_budget'):
-            uniq = [len(np.unique(X[np.isfinite(X[:, j]), j])) for j in range(d)]
-            lo, hi = 2, max(self._p('n_bins'), 2)
-            while lo < hi:
-                mid = (lo + hi + 1) // 2
-                if sum(min(u, mid) for u in uniq) <= self._p('p_budget'):
-                    lo = mid
-                else:
-                    hi = mid - 1
-            n_bins_eff = max(lo, 2)
+            n_bins_eff = int(np.clip(self._p('p_budget') // max(d, 1), 2, self._p('n_bins')))
         self._n_bins_eff = n_bins_eff
 
         # quantile binning + per-bin z-means
@@ -332,15 +322,11 @@ class BinGP(BaseEstimator, RegressorMixin):
             self.nbins_[j] = B
             bidx[:, j] = np.searchsorted(e, X[:, j], side="right")
             w = np.bincount(bidx[:, j], minlength=B).astype(float)
-            sx = np.bincount(bidx[:, j], weights=X[:, j], minlength=B)
-            xb = np.where(w > 0, sx / np.maximum(w, 1), np.nan)
-            if np.isnan(xb).any():
-                centers = np.concatenate([[X[:, j].min()], (e[:-1] + e[1:]) / 2 if len(e) > 1 else [], [X[:, j].max()]]) if len(e) > 0 else np.array([X[:, j].mean()])
-                fill = np.interp(np.arange(B), np.arange(B), np.where(np.isnan(xb), 0, xb))
-                idx_ok = np.where(~np.isnan(xb))[0]
-                xb = np.interp(np.arange(B), idx_ok, xb[idx_ok])
+            xb = (np.concatenate([[e[0]], (e[:-1] + e[1:]) / 2.0, [e[-1]]]) if len(e) > 1
+                  else np.array([e[0] - 0.5, e[0] + 0.5]) if len(e) == 1
+                  else np.array([float(np.mean(X[:, j]))] * B))
             self.xbar_ = getattr(self, 'xbar_', {})
-            self.xbar_[j] = np.maximum.accumulate(xb)
+            self.xbar_[j] = xb[:B] if len(xb) >= B else np.pad(xb, (0, B - len(xb)), mode='edge')
             if len(u) <= self.cat_max_levels and np.allclose(u, np.round(u)):
                 self.cats_[j] = True
             units.append(j)
@@ -545,15 +531,15 @@ BinGP.__module__ = "interpretable_regressor"
 # Update the model shorthand name and description below to reflect the class above and any changes you make to it.
 # The shorthand name should be unique across all experiments (it is used to identify rows in the results CSV files)
 # The description should briefly summarize what this experiment tried.
-model_shorthand_name = "AddGP_v46"
-model_description = ("A GAM that is an additive Gaussian process, fit from bin sufficient statistics. ONE class, "
-                     "no second model, no MAP priors: quantile-bin every feature under a parameter budget; give each "
-                     "feature a GP prior (one Matern + one RBF on its bin grid, delta for categories); fit all "
-                     "amplitudes and the noise by the EXACT marginal likelihood, which depends on the data only "
-                     "through C=Z'Z, b=Z'y and y'y (cost independent of n); add FAST-screened pair terms fit "
-                     "blockwise-jointly at likelihood-selected grid resolutions; log-fit skewed positive targets and "
-                     "winsorize extreme outliers; read out by interpolation. Capacity is a resource schedule in n. "
-                     "Small suite 4.65 vs EBM 5.02; classic-7 6/7; TabArena-13 mean rank 2.62, first overall")
+model_shorthand_name = "AddGP_v47"
+model_description = ("A GAM that is an additive Gaussian process, fit from bin sufficient statistics. One class, "
+                     "one uniform kernel dictionary (Matern + RBF per feature, no special cases), no second model, "
+                     "no MAP priors: quantile-bin every feature under a divided parameter budget; fit all amplitudes "
+                     "and the noise by the exact marginal likelihood, which depends on the data only through C=Z'Z, "
+                     "b=Z'y and y'y (cost independent of n); add FAST-screened pair terms fit blockwise-jointly at "
+                     "likelihood-selected grid resolutions; log-fit skewed positive targets, winsorize extreme "
+                     "outliers, read out by interpolation at bin midpoints. Capacity is a resource schedule in n. "
+                     "Small suite 4.60 vs EBM 5.00; classic-7 6/7; TabArena-13 mean rank 2.62, first overall")
 model_defs = [(model_shorthand_name, BinGP())]
 
 
