@@ -1,0 +1,599 @@
+<title>Bins as Sufficient Statistics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#F5F7F5; --surface:#FFFFFF; --surface-2:#EEF2F0;
+  --ink:#131E1C; --ink-2:#3A4A47; --muted:#6B7B77;
+  --rule:#DCE3E0; --rule-2:#C6D1CD;
+  --accent:#1B6E60; --accent-soft:#E2EFEB;
+  --accent-2:#6B4E9B; --accent-2-soft:#EDE7F5;
+  --warn:#A8541F; --warn-soft:#F6E9DF;
+  --shadow:0 1px 2px rgba(19,30,28,.05),0 8px 24px -12px rgba(19,30,28,.14);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0D1413; --surface:#151F1D; --surface-2:#1B2725;
+    --ink:#E9EFEC; --ink-2:#B7C4C0; --muted:#839792;
+    --rule:#24322F; --rule-2:#31423E;
+    --accent:#52B7A4; --accent-soft:#14302B;
+    --accent-2:#A98CDC; --accent-2-soft:#241E33;
+    --warn:#D4854A; --warn-soft:#2C1D12;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0D1413; --surface:#151F1D; --surface-2:#1B2725;
+  --ink:#E9EFEC; --ink-2:#B7C4C0; --muted:#839792;
+  --rule:#24322F; --rule-2:#31423E;
+  --accent:#52B7A4; --accent-soft:#14302B;
+  --accent-2:#A98CDC; --accent-2-soft:#241E33;
+  --warn:#D4854A; --warn-soft:#2C1D12;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16.5px; line-height:1.62; margin:0;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1120px; margin:0 auto; padding:0 28px 96px}
+.col{max-width:68ch; margin-inline:auto}
+h1,h2,h3{font-family:Newsreader,Georgia,serif; font-weight:500; text-wrap:balance; margin:0}
+h1{font-size:clamp(2.6rem,6vw,4.1rem); line-height:1.02; letter-spacing:-.02em}
+h2{font-size:clamp(1.75rem,3.2vw,2.35rem); line-height:1.12; letter-spacing:-.012em}
+h3{font-size:1.16rem; line-height:1.3; font-weight:600}
+p{margin:0 0 1.05em}
+a{color:var(--accent)}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.72rem;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 .8rem
+}
+.lede{font-size:1.22rem; line-height:1.55; color:var(--ink-2)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+.num{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums}
+
+/* ---- masthead ---- */
+header.mast{padding:76px 0 40px; border-bottom:1px solid var(--rule)}
+.mast h1{margin-bottom:.42em}
+.mast .lede{max-width:60ch}
+.byline{
+  display:flex; flex-wrap:wrap; gap:8px 20px; margin-top:26px;
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.76rem; color:var(--muted)
+}
+.byline b{color:var(--ink-2); font-weight:500}
+
+/* ---- headline stats ---- */
+.stats{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+  gap:1px; background:var(--rule); border:1px solid var(--rule);
+  border-radius:3px; overflow:hidden; margin:38px 0 8px
+}
+.stat{background:var(--surface); padding:18px 20px}
+.stat .k{font-family:"IBM Plex Mono",monospace; font-size:.68rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted)}
+.stat .v{font-family:Newsreader,Georgia,serif; font-size:2rem; line-height:1.1; margin-top:6px;
+  font-variant-numeric:tabular-nums}
+.stat .s{font-size:.8rem; color:var(--muted); margin-top:3px}
+.stat.lead .v{color:var(--accent)}
+
+section{padding-top:64px}
+.rule-top{border-top:1px solid var(--rule); margin-top:64px; padding-top:56px}
+
+/* ---- figure panels ---- */
+.panel{
+  background:var(--surface); border:1px solid var(--rule); border-radius:4px;
+  box-shadow:var(--shadow); padding:24px; margin:28px 0
+}
+.panel h3{margin-bottom:4px}
+.panel .cap{font-size:.85rem; color:var(--muted); margin:0 0 18px}
+.controls{display:flex; flex-wrap:wrap; gap:18px 26px; align-items:center; margin:18px 0 4px}
+.ctl{display:flex; flex-direction:column; gap:5px; flex:1 1 210px; min-width:190px}
+.ctl label{font-family:"IBM Plex Mono",monospace; font-size:.7rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted)}
+input[type=range]{width:100%; accent-color:var(--accent); cursor:pointer}
+canvas{display:block; width:100%; border-radius:3px}
+.readout{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px;
+  margin-top:18px; padding-top:16px; border-top:1px solid var(--rule)
+}
+.readout div{font-size:.82rem; color:var(--muted)}
+.readout b{display:block; font-family:"IBM Plex Mono",monospace; font-size:1.22rem;
+  color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums; margin-top:2px}
+.readout .hl b{color:var(--accent)}
+
+/* ---- bars ---- */
+.barrow{display:grid; grid-template-columns:112px 1fr 92px; gap:12px; align-items:center;
+  margin:9px 0; font-size:.84rem}
+.barrow .lab{font-family:"IBM Plex Mono",monospace; font-size:.76rem; color:var(--ink-2)}
+.bartrack{height:11px; background:var(--surface-2); border-radius:2px; overflow:hidden}
+.barfill{height:100%; background:var(--accent); border-radius:2px; transition:width .18s ease}
+.barfill.flat{background:var(--accent-2)}
+.barval{font-family:"IBM Plex Mono",monospace; font-size:.78rem; text-align:right;
+  font-variant-numeric:tabular-nums; color:var(--ink-2)}
+
+/* ---- pipeline ---- */
+ol.pipe{list-style:none; counter-reset:step; margin:26px 0 0; padding:0}
+ol.pipe li{
+  counter-increment:step; position:relative; padding:0 0 26px 56px;
+  border-left:1px solid var(--rule); margin-left:15px
+}
+ol.pipe li:last-child{border-left-color:transparent; padding-bottom:0}
+ol.pipe li::before{
+  content:counter(step,decimal-leading-zero); position:absolute; left:-15px; top:-2px;
+  width:30px; height:30px; border-radius:50%; background:var(--accent-soft);
+  color:var(--accent); border:1px solid var(--accent);
+  font-family:"IBM Plex Mono",monospace; font-size:.72rem; font-weight:600;
+  display:grid; place-items:center
+}
+ol.pipe h3{margin-bottom:3px}
+ol.pipe p{margin:0; color:var(--ink-2); font-size:.95rem}
+ol.pipe code{font-family:"IBM Plex Mono",monospace; font-size:.86em;
+  background:var(--surface-2); padding:1px 5px; border-radius:3px}
+
+/* ---- tabs + tables ---- */
+.tabs{display:flex; flex-wrap:wrap; gap:6px; margin:26px 0 0}
+.tab{
+  font-family:"IBM Plex Mono",monospace; font-size:.76rem; letter-spacing:.03em;
+  padding:9px 14px; border:1px solid var(--rule-2); background:var(--surface);
+  color:var(--ink-2); border-radius:3px; cursor:pointer; transition:all .14s
+}
+.tab:hover{border-color:var(--accent)}
+.tab[aria-selected="true"]{background:var(--accent); border-color:var(--accent); color:#fff}
+:root[data-theme="dark"] .tab[aria-selected="true"],
+:root:not([data-theme="light"]) .tab[aria-selected="true"]{color:#08110F}
+.tabpanel{margin-top:20px}
+.tablewrap{overflow-x:auto; border:1px solid var(--rule); border-radius:4px; background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-size:.88rem}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--rule); white-space:nowrap}
+th{font-family:"IBM Plex Mono",monospace; font-size:.68rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--muted); font-weight:500; background:var(--surface-2)}
+td.n{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; text-align:right}
+tr:last-child td{border-bottom:none}
+tr.us{background:var(--accent-soft)}
+tr.us td{font-weight:600}
+tr.ebm td:first-child{color:var(--warn)}
+.rankbar{display:inline-block; height:8px; background:var(--accent); border-radius:1px;
+  vertical-align:middle; margin-right:8px; min-width:2px}
+tr:not(.us) .rankbar{background:var(--rule-2)}
+.suitemeta{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px;
+  margin-top:18px; padding-top:16px; border-top:1px solid var(--rule); font-size:.84rem
+}
+.suitemeta .k{font-family:"IBM Plex Mono",monospace; font-size:.66rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:3px}
+.suitemeta .v{color:var(--ink-2)}
+
+/* ---- ledger ---- */
+.filters{display:flex; gap:6px; margin:22px 0 16px; flex-wrap:wrap}
+.ledger{display:flex; flex-direction:column; gap:1px; background:var(--rule);
+  border:1px solid var(--rule); border-radius:4px; overflow:hidden}
+.item{background:var(--surface); padding:13px 16px; display:grid;
+  grid-template-columns:1fr auto; gap:4px 18px; align-items:baseline}
+.item .what{font-size:.94rem}
+.item .cost{font-family:"IBM Plex Mono",monospace; font-size:.78rem; text-align:right;
+  white-space:nowrap; font-variant-numeric:tabular-nums}
+.item .why{grid-column:1/-1; font-size:.83rem; color:var(--muted)}
+.item.gone .cost{color:var(--accent)}
+.item.kept .cost{color:var(--warn)}
+.tag{font-family:"IBM Plex Mono",monospace; font-size:.62rem; letter-spacing:.09em;
+  text-transform:uppercase; padding:2px 6px; border-radius:2px; margin-right:9px;
+  vertical-align:.09em}
+.item.gone .tag{background:var(--accent-soft); color:var(--accent)}
+.item.kept .tag{background:var(--warn-soft); color:var(--warn)}
+
+.callout{
+  border-left:2px solid var(--accent); background:var(--surface); padding:16px 20px;
+  margin:26px 0; font-size:.95rem; color:var(--ink-2); border-radius:0 3px 3px 0
+}
+.callout b{color:var(--ink)}
+.eq{
+  font-family:"IBM Plex Mono",monospace; font-size:.92rem; background:var(--surface);
+  border:1px solid var(--rule); border-radius:4px; padding:16px 18px; margin:22px 0;
+  overflow-x:auto; color:var(--ink)
+}
+.eq .c{color:var(--accent)}
+.eq .v{color:var(--accent-2)}
+footer{border-top:1px solid var(--rule); margin-top:72px; padding-top:26px;
+  font-size:.82rem; color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header class="mast col">
+  <p class="eyebrow">Method report &middot; additive models</p>
+  <h1>Bins as Sufficient Statistics</h1>
+  <p class="lede">A generalized additive model that is a Gaussian process — and a change of
+  representation that makes its exact marginal likelihood cost the same whether you have
+  a thousand rows or a hundred thousand.</p>
+  <div class="byline">
+    <span><b>AddGP</b> v47</span>
+    <span>686 lines, one class</span>
+    <span>4 benchmark suites, 113 datasets</span>
+    <span>Beats EBM on every suite</span>
+  </div>
+</header>
+
+<div class="stats col">
+  <div class="stat lead"><div class="k">imodels-65</div><div class="v">4.60</div>
+    <div class="s">EBM 5.00 &middot; mean rank</div></div>
+  <div class="stat lead"><div class="k">Classic-7</div><div class="v">2.43</div>
+    <div class="s">EBM 3.43 &middot; 6 of 7 wins</div></div>
+  <div class="stat lead"><div class="k">TabArena-13</div><div class="v">2.62</div>
+    <div class="s">EBM 2.85 &middot; 1st of 6</div></div>
+  <div class="stat lead"><div class="k">CTR23-28</div><div class="v">2.11</div>
+    <div class="s">EBM 2.32 &middot; glass-box pool</div></div>
+</div>
+
+<section class="col">
+  <p class="eyebrow">The idea</p>
+  <h2>Every component is one-dimensional, so the data collapses</h2>
+  <p>A GA<sup>2</sup>M predicts with main effects and pairwise terms only:
+  <span class="mono">y = Σ f<sub>j</sub>(x<sub>j</sub>) + Σ f<sub>ab</sub>(x<sub>a</sub>,x<sub>b</sub>) + ε</span>.
+  Fitting that as a Gaussian process normally means an <span class="mono">n×n</span> kernel matrix —
+  hopeless past a few thousand rows.</p>
+  <p>But quantile-bin each feature first, and every component becomes a function on a
+  <em>small grid</em>: one value per bin. Write <span class="mono">Z</span> for the indicator matrix
+  that says which bin each row falls in. Then the exact GP marginal likelihood touches the data only
+  through three quantities:</p>
+
+  <div class="eq">
+    <span class="c">C = Z<sup>T</sup>Z</span>&nbsp; (bin co-occurrence counts) &nbsp;·&nbsp;
+    <span class="c">b = Z<sup>T</sup>y</span>&nbsp; (bin sums) &nbsp;·&nbsp;
+    <span class="c">y<sup>T</sup>y</span>
+  </div>
+
+  <p>Those are <span class="mono">P×P</span> and <span class="mono">P</span> numbers, where
+  <span class="mono">P</span> is the total bin count — a few thousand, fixed by a budget. One pass over
+  the data builds them; every optimizer step afterwards works on them alone. <b>The fit is
+  O(P³) per step and completely independent of n.</b></p>
+</section>
+
+<div class="panel">
+  <h3>Data grows, the fit input does not</h3>
+  <p class="cap">Drag the sample size. The left bar is the data; the right bar is what the
+  optimizer actually sees.</p>
+  <div class="controls">
+    <div class="ctl">
+      <label for="nrows">Rows in the dataset</label>
+      <input type="range" id="nrows" min="0" max="100" value="28">
+    </div>
+    <div class="ctl">
+      <label for="nfeat">Features</label>
+      <input type="range" id="nfeat" min="4" max="64" value="16">
+    </div>
+  </div>
+  <div style="margin-top:20px">
+    <div class="barrow"><span class="lab">raw data</span>
+      <span class="bartrack"><span class="barfill" id="bar-data" style="width:12%"></span></span>
+      <span class="barval" id="val-data">—</span></div>
+    <div class="barrow"><span class="lab">C, b, yᵀy</span>
+      <span class="bartrack"><span class="barfill flat" id="bar-suff" style="width:9%"></span></span>
+      <span class="barval" id="val-suff">—</span></div>
+  </div>
+  <div class="readout">
+    <div>rows × features<b id="ro-shape">—</b></div>
+    <div>bins per feature<b id="ro-bins">—</b></div>
+    <div>P (total bins)<b id="ro-p">—</b></div>
+    <div class="hl">cost per fit step<b id="ro-cost">—</b></div>
+  </div>
+</div>
+
+<section class="col rule-top">
+  <p class="eyebrow">The prior</p>
+  <h2>Two kernels per feature, and the likelihood picks the mix</h2>
+  <p>Each feature's shape function gets a GP prior built from exactly two covariance kernels on its
+  bin grid: a Matérn-½ at lengthscale 0.05, which produces rough, jumpy functions, and a squared-exponential
+  at 0.25, which produces smooth ones. Their amplitudes are free parameters. Maximizing the marginal
+  likelihood chooses the blend per feature — so smoothness is <em>inferred</em>, never tuned, and a
+  feature that needs a step function and a feature that needs a gentle curve are both served without
+  a lengthscale search.</p>
+  <p>The same amplitudes do feature selection. A feature that explains nothing has its amplitude
+  driven toward zero and drops out of the model — automatic relevance determination, for free,
+  as a by-product of the same objective.</p>
+</section>
+
+<div class="panel">
+  <h3>Sample shape functions from the prior</h3>
+  <p class="cap">Four draws, redrawn as you shift the mixture. Left end: only the rough kernel.
+  Right end: only the smooth one. The fitted model sits wherever the evidence puts it.</p>
+  <div class="controls">
+    <div class="ctl">
+      <label for="mix">Rough (Matérn ½) &nbsp;⟷&nbsp; smooth (RBF)</label>
+      <input type="range" id="mix" min="0" max="100" value="42">
+    </div>
+    <div class="ctl">
+      <label for="reseed">&nbsp;</label>
+      <button class="tab" id="reseed" style="align-self:flex-start">New draws</button>
+    </div>
+  </div>
+  <canvas id="kern" height="260" aria-label="Sample functions drawn from the kernel mixture"></canvas>
+</div>
+
+<section class="col rule-top">
+  <p class="eyebrow">The fit</p>
+  <h2>What happens when you call fit</h2>
+  <ol class="pipe">
+    <li><h3>Condition the target</h3><p>If the target is positive and taking logs substantially
+      reduces its skew, fit on the log scale. Winsorize extreme outliers at a guarded Tukey fence —
+      only when the fence would clip at most 1% of rows, so zero-inflated targets are left alone.</p></li>
+    <li><h3>Bin every feature</h3><p>Quantile bins, with the bin count set by a parameter budget
+      divided across features. Capacity is a schedule in <code>n</code>: below 1,000 rows a lean
+      64-bin model, above it a 256-bin one.</p></li>
+    <li><h3>Reduce to sufficient statistics</h3><p>One pass builds <code>C</code>, <code>b</code>,
+      <code>yᵀy</code>. The rows are never touched again.</p></li>
+    <li><h3>Fit main effects by marginal likelihood</h3><p>Gradient ascent on the log-amplitudes and
+      the noise level — the exact GP evidence, with no priors and no penalty. The finite step count
+      is the only regularizer, and it is a deliberate one.</p></li>
+    <li><h3>Screen candidate pairs</h3><p>FAST screening on the residual: shrunken cell means over
+      coarse 2-D grids rank which interactions are worth spending parameters on.</p></li>
+    <li><h3>Fit pair terms blockwise-jointly</h3><p>Pairs are fit in chunks that share shrinkage,
+      each chunk trying several grid resolutions and keeping whichever the marginal likelihood
+      prefers, alternating twice with a refit of the main effects.</p></li>
+    <li><h3>Read out</h3><p>Every component becomes a lookup table over bin midpoints, interpolated
+      at predict time. The model you inspect is exactly the model that predicts.</p></li>
+  </ol>
+  <div class="callout"><b>No randomness anywhere.</b> No cross-validation, no train/validation split,
+  no bagging, no seeds. Two runs on the same data give the same model; every structural choice —
+  smoothness, relevance, which interactions to include, how finely to grid them — is made by the
+  same marginal likelihood.</div>
+</section>
+
+<section class="rule-top">
+  <div class="col">
+    <p class="eyebrow">Evidence</p>
+    <h2>Four benchmark suites</h2>
+    <p>Two suites were used during development; two were held out. CTR23 in particular was
+    downloaded only after the method was finished, and no design decision was ever made
+    against it.</p>
+  </div>
+
+  <div class="tabs" role="tablist" id="suitetabs">
+    <button class="tab" role="tab" aria-selected="true" data-s="small">imodels-65</button>
+    <button class="tab" role="tab" aria-selected="false" data-s="classic">Classic-7</button>
+    <button class="tab" role="tab" aria-selected="false" data-s="tabarena">TabArena-13</button>
+    <button class="tab" role="tab" aria-selected="false" data-s="ctr23">CTR23-28</button>
+  </div>
+  <div class="tabpanel" id="suitepanel"></div>
+</section>
+
+<section class="col rule-top">
+  <p class="eyebrow">Method development</p>
+  <h2>What was taken out, and what fought back</h2>
+  <p>The model began as a 1,110-line pipeline with a boosted tree ensemble bolted on. Thirteen rounds
+  of ablation removed everything that could not prove its worth. Each entry below is a measured
+  result, not a judgement call: removals are listed with what they cost, and survivors with what
+  removing them <em>would</em> have cost.</p>
+  <div class="filters">
+    <button class="tab" aria-selected="true" data-f="all">Everything</button>
+    <button class="tab" aria-selected="false" data-f="gone">Removed</button>
+    <button class="tab" aria-selected="false" data-f="kept">Load-bearing</button>
+  </div>
+  <div class="ledger" id="ledger"></div>
+</section>
+
+<section class="col rule-top">
+  <p class="eyebrow">Limits</p>
+  <h2>Where it loses, and why that is the same answer every time</h2>
+  <p>The losses are consistent across all four suites and they are not fitting failures. They are the
+  model class: smooth deterministic simulations and heavy-interaction data, where the target depends
+  on three or more inputs jointly and no sum of pairwise pieces can represent it.</p>
+  <p>On CTR23 the worst cases are wave energy (+109% vs EBM), building energy efficiency (+79%),
+  an FPS benchmark (+39%), FIFA player ratings (+34%) and robot arm dynamics (+17%) — physics
+  simulations and sports ratings. On TabArena it is molecular fingerprints and superconductor
+  critical temperature, where even EBM trails random forests. A model restricted to main effects
+  and pairs has a ceiling on that data, and this one sits at it.</p>
+  <p>Against the black-box foundation model TabPFN the pattern is equally consistent: TabPFN leads
+  three of four suites, AddGP leads the interpretable field on all four. On TabArena, where several
+  datasets exceed TabPFN's memory limits, AddGP finishes first overall.</p>
+</section>
+
+<footer class="col">
+  <p>All figures from a single 80/20 split per dataset at <span class="mono">random_state=42</span>,
+  RMSE on the train-standardized target, models at library defaults. This is defaults-versus-defaults,
+  not a tuned comparison; TabArena and CTR23 both define richer official protocols with repeated
+  folds and hyperparameter search.</p>
+</footer>
+</div>
+
+<script>
+/* ---------------- sufficient statistics ---------------- */
+(function(){
+  const nr=document.getElementById('nrows'), nf=document.getElementById('nfeat');
+  const fmt=x=>x>=1e6?(x/1e6).toFixed(1)+'M':x>=1e3?(x/1e3).toFixed(x>=1e4?0:1)+'k':String(x);
+  function draw(){
+    const t=+nr.value/100;
+    const n=Math.round(1000*Math.pow(200,t));           // 1k .. 200k
+    const d=+nf.value;
+    const B=n<=1000?64:256;
+    const bins=Math.min(B,Math.max(2,Math.floor((n>1000?4200:1500)/d)));
+    const P=bins*d;
+    const dataCells=n*d, suffCells=P*P+P+1;
+    const maxData=200000*64;
+    document.getElementById('bar-data').style.width=(4+96*Math.sqrt(dataCells/maxData))+'%';
+    document.getElementById('bar-suff').style.width=(4+96*Math.sqrt(Math.min(1,suffCells/maxData)))+'%';
+    document.getElementById('val-data').textContent=fmt(dataCells)+' vals';
+    document.getElementById('val-suff').textContent=fmt(suffCells)+' vals';
+    document.getElementById('ro-shape').textContent=fmt(n)+' × '+d;
+    document.getElementById('ro-bins').textContent=bins;
+    document.getElementById('ro-p').textContent=P;
+    document.getElementById('ro-cost').textContent='O('+P+'³)';
+  }
+  nr.addEventListener('input',draw); nf.addEventListener('input',draw); draw();
+})();
+
+/* ---------------- kernel mixture sampler ---------------- */
+(function(){
+  const cv=document.getElementById('kern'), mix=document.getElementById('mix');
+  let seed=7;
+  function rng(){ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }
+  function gauss(){ let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
+  const N=240;
+  function ou(L){ // Matern-1/2 sample path
+    const dt=1/(N-1), rho=Math.exp(-dt/L), s=Math.sqrt(1-rho*rho), x=new Float64Array(N);
+    x[0]=gauss(); for(let i=1;i<N;i++) x[i]=rho*x[i-1]+s*gauss(); return x;
+  }
+  function rbf(L){ // random Fourier features for the squared-exponential
+    const M=64, w=[],b=[],a=[];
+    for(let m=0;m<M;m++){ w.push(gauss()/L); b.push(rng()*2*Math.PI); a.push(gauss()); }
+    const x=new Float64Array(N), c=Math.sqrt(2/M);
+    for(let i=0;i<N;i++){ const t=i/(N-1); let s=0;
+      for(let m=0;m<M;m++) s+=a[m]*Math.cos(w[m]*t+b[m]); x[i]=c*s; }
+    return x;
+  }
+  function paths(){ const P=[]; for(let k=0;k<4;k++) P.push({r:ou(0.05),s:rbf(0.25)}); return P; }
+  let P=paths();
+  function draw(){
+    const dpr=window.devicePixelRatio||1, W=cv.clientWidth, H=260;
+    cv.width=W*dpr; cv.height=H*dpr; const g=cv.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,W,H);
+    const cs=getComputedStyle(document.body);
+    const rule=cs.getPropertyValue('--rule').trim();
+    const acc=cs.getPropertyValue('--accent').trim();
+    const acc2=cs.getPropertyValue('--accent-2').trim();
+    const pad=16, w=W-pad*2, h=H-pad*2;
+    g.strokeStyle=rule; g.lineWidth=1;
+    for(let i=0;i<=4;i++){ const y=pad+h*i/4; g.beginPath(); g.moveTo(pad,y); g.lineTo(W-pad,y); g.stroke(); }
+    const m=+mix.value/100, wr=Math.sqrt(1-m), ws=Math.sqrt(m);
+    let lo=1e9,hi=-1e9; const ys=P.map(p=>{
+      const y=new Float64Array(N);
+      for(let i=0;i<N;i++){ y[i]=wr*p.r[i]+ws*p.s[i]; if(y[i]<lo)lo=y[i]; if(y[i]>hi)hi=y[i]; }
+      return y;});
+    const span=(hi-lo)||1;
+    ys.forEach((y,k)=>{
+      g.beginPath(); g.lineWidth=k===0?2.1:1.25;
+      g.globalAlpha=k===0?1:0.42;
+      g.strokeStyle=k===0?acc:acc2;
+      for(let i=0;i<N;i++){
+        const px=pad+w*i/(N-1), py=pad+h-(y[i]-lo)/span*h;
+        i?g.lineTo(px,py):g.moveTo(px,py);
+      }
+      g.stroke();
+    });
+    g.globalAlpha=1;
+  }
+  mix.addEventListener('input',draw);
+  document.getElementById('reseed').addEventListener('click',()=>{P=paths();draw();});
+  window.addEventListener('resize',draw);
+  matchMedia('(prefers-color-scheme:dark)').addEventListener('change',draw);
+  draw();
+})();
+
+/* ---------------- benchmark suites ---------------- */
+const SUITES={
+ small:{
+  title:'imodels-65 — the development suite',
+  note:'Ranks exclude the method’s own earlier variants from the pool.',
+  cols:['model','mean rank'],
+  rows:[['TabPFN',3.40],['AddGP',4.60],['EBM',5.00],['GBM',6.38],['RF',6.66],['PyGAM',7.89],['RuleFit',9.15]],
+  meta:[['Datasets','65 regression tasks (PMLB + OpenML) shipped with the project harness'],
+        ['Sizes','Training set capped at 1,000 rows per dataset'],
+        ['Processing','Target standardized per dataset; harness-supplied splits'],
+        ['Role','Development suite — used throughout to check for regressions']]},
+ classic:{
+  title:'Classic-7 — full-size standards',
+  note:'Seven widely used OpenML regression datasets at their full size, 3.3k–18k rows.',
+  cols:['model','mean rank'],
+  rows:[['TabPFN',1.71],['AddGP',2.43],['RF',3.00],['EBM',3.43],['GBM',4.43],['Ridge',6.00]],
+  meta:[['Datasets','abalone, cpu_act, kin8nm, pol, elevators, california, house_16H'],
+        ['Sizes','3,341–18,227 training rows, 8–26 features'],
+        ['Processing','80/20 split (seed 42); RMSE on the train-standardized target'],
+        ['Head-to-head','AddGP beats EBM on 6 of 7; loses only cpu_act']]},
+ tabarena:{
+  title:'TabArena-v0.1 — the regression subset',
+  note:'TabPFN could not fit two datasets (1,024-feature fingerprints; superconductivity) and is ranked last on those.',
+  cols:['model','mean rank'],
+  rows:[['AddGP',2.62],['TabPFN',2.77],['EBM',2.85],['RF',2.85],['GBM',4.38],['Ridge',5.54]],
+  meta:[['Source','OpenML study 457, all 13 regression tasks'],
+        ['Sizes','907–53,940 rows, 5–1,024 features'],
+        ['Processing','Categoricals to integer codes; non-finite numerics median-filled; 80/20 (seed 42)'],
+        ['Head-to-head','AddGP beats EBM on 8 of 13 — and finishes first overall']]},
+ ctr23:{
+  title:'OpenML-CTR23 — held out entirely',
+  note:'28 of 35 datasets: the 7 that overlap TabArena were dropped. Two views — the full pool, and the interpretable-model pool.',
+  cols:['model','rank (all 6)','rank (glass-box only)'],
+  rows:[['TabPFN',1.96,null],['AddGP',2.85,2.11],['EBM',3.04,2.32],['RF',3.81,3.07],['GBM',4.00,3.18],['Ridge',5.33,4.32]],
+  meta:[['Source','OpenML study 353 (Curated Tabular Regression 2023)'],
+        ['Sizes','517–72,000 rows, 5–116 features'],
+        ['Coverage','All 6 models on 27 datasets; wave_energy exceeds TabPFN’s GPU memory'],
+        ['Role','Held out — downloaded after the method was final, tuned nothing']]}
+};
+(function(){
+  const tabs=document.getElementById('suitetabs'), panel=document.getElementById('suitepanel');
+  function render(key){
+    const S=SUITES[key];
+    const maxr=Math.max(...S.rows.map(r=>r[1]));
+    const multi=S.cols.length>2;
+    let h='<div class="tablewrap"><table><thead><tr>';
+    h+='<th>'+S.cols[0]+'</th><th style="width:52%">'+S.cols[1]+'</th>';
+    if(multi) h+='<th class="n">'+S.cols[2]+'</th>';
+    h+='</tr></thead><tbody>';
+    for(const r of S.rows){
+      const us=r[0]==='AddGP', cls=us?'us':(r[0]==='EBM'?'ebm':'');
+      const wpx=Math.round(6+140*(r[1]/maxr));
+      h+='<tr class="'+cls+'"><td>'+r[0]+'</td>';
+      h+='<td><span class="rankbar" style="width:'+wpx+'px"></span><span class="num">'+r[1].toFixed(2)+'</span></td>';
+      if(multi) h+='<td class="n">'+(r[2]==null?'—':r[2].toFixed(2))+'</td>';
+      h+='</tr>';
+    }
+    h+='</tbody></table></div>';
+    h+='<p class="cap" style="margin:12px 0 0">'+S.note+'</p>';
+    h+='<div class="suitemeta">';
+    for(const [k,v] of S.meta) h+='<div><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
+    h+='</div>';
+    panel.innerHTML=h;
+  }
+  tabs.addEventListener('click',e=>{
+    const b=e.target.closest('.tab'); if(!b) return;
+    [...tabs.children].forEach(x=>x.setAttribute('aria-selected',String(x===b)));
+    render(b.dataset.s);
+  });
+  render('small');
+})();
+
+/* ---------------- ablation ledger ---------------- */
+const LEDGER=[
+ ['gone','Boosted tree ensemble','0.31 rank','A gradient-boosted residual stage. Removing it cost a third of a rank on TabArena and the model still finished first.'],
+ ['gone','Exact-kernel twin model','0.6 rank','A second class fitting the GP on all points below 1,200 rows, plus the dispatcher between them. One binned model now serves every scale.'],
+ ['gone','Half the kernel dictionary','+0.09 rank','Four kernels per feature became two. Large-scale results were unchanged or better.'],
+ ['gone','Both MAP priors','none','The objective is now the exact marginal likelihood, unqualified. Two datasets improved.'],
+ ['gone','Per-bin z-means, clipping, linear kernel','none','The linear kernel fired only on grids of 3 bins or fewer, where a delta kernel already spans every function.'],
+ ['gone','Categorical special case','none','Identical to four decimals on four datasets. Quantile binning already gives one bin per level.'],
+ ['gone','Bin-cap binary search','+0.3% worst','A search over bin resolutions replaced by dividing the budget across features.'],
+ ['gone','Per-bin x-means','+0.5% worst','Shape tables now read out at bin midpoints instead of tracked means.'],
+ ['gone','Three boost hyperparameters','none','Learning rate, validation fraction and patience, deleted before the stage itself went.'],
+ ['kept','ARD amplitude fitting','+9 to +24%','Fixing amplitudes equal and learning only the noise flipped every dataset tested. This is the mechanism, not an ornament.'],
+ ['kept','Blockwise pair fitting','+25%','Two separate attempts to replace chunking, the resolution menu and the alternating sweeps with one joint fit both failed badly on pol.'],
+ ['kept','Log-target rule','+8 to +11%','Skewed positive targets need it; two wins depend on it outright.'],
+ ['kept','Two alternation sweeps','+5.0%','Cutting to a single pass over pairs and mains costs pol five percent.'],
+ ['kept','Pair-grid resolution menu','flips a win','Different datasets genuinely prefer different pair resolutions; the Bayes factor picks per chunk.'],
+ ['kept','FAST interaction screening','+10.6%','Both replacements — amplitude-ranked pairs, and a product-correlation score — degraded pol sharply.'],
+ ['kept','Screen shrinkage constant','+3.3%','A single magic number that stabilizes low-count cells and flips elevators when removed.'],
+ ['kept','Tukey outlier fence','+1.6%','Guarded so it only fires when it would clip at most 1% of rows.'],
+ ['kept','The second kernel','flips a win','Dropping to one kernel per feature loses elevators.'],
+ ['kept','Bias correction','+4.5%','Corrects retransformation bias on log-fitted targets — a real statistical duty, not a patch.'],
+ ['kept','Prediction clip','+4.0%','Two lines bounding predictions to the observed range.'],
+ ['kept','Finite-step regularization','+2.0%','Running the likelihood to convergence with EM instead overfits. Early stopping is doing the regularizing.']
+];
+(function(){
+  const box=document.getElementById('ledger');
+  const fbar=document.querySelector('.filters');
+  function render(f){
+    box.innerHTML=LEDGER.filter(r=>f==='all'||r[0]===f).map(r=>
+      '<div class="item '+r[0]+'"><div class="what"><span class="tag">'+
+      (r[0]==='gone'?'removed':'kept')+'</span>'+r[1]+'</div>'+
+      '<div class="cost">'+r[2]+'</div><div class="why">'+r[3]+'</div></div>').join('');
+  }
+  fbar.addEventListener('click',e=>{
+    const b=e.target.closest('.tab'); if(!b) return;
+    [...fbar.children].forEach(x=>x.setAttribute('aria-selected',String(x===b)));
+    render(b.dataset.f);
+  });
+  render('all');
+})();
+</script>
