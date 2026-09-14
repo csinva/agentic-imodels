@@ -45,6 +45,8 @@ class GOSDTClassifier(BaseEstimator, ClassifierMixin):
     engine : {"auto", "numba", "python"}, default "auto"
         Bit-counting backend; ``auto`` uses numba when it is installed.  Both
         engines produce identical trees.
+    memory_limit : int, default 0
+        Resident memory (bytes) above which the search stops like a time limit.
     verbose : bool, default False
     """
 
@@ -52,8 +54,10 @@ class GOSDTClassifier(BaseEstimator, ClassifierMixin):
                  balance: bool = False, costs=None, upperbound: float = 0.0,
                  look_ahead: bool = True, similar_support: bool = True,
                  feature_exchange: bool = True, continuous_feature_exchange: bool = True,
-                 greedy_init: bool = True, engine: str = "auto", verbose: bool = False):
+                 greedy_init: bool = True, engine: str = "auto", memory_limit: int = 0,
+                 verbose: bool = False):
         self.regularization = regularization
+        self.memory_limit = memory_limit
         self.time_limit = time_limit
         self.balance = balance
         self.costs = costs
@@ -97,17 +101,18 @@ class GOSDTClassifier(BaseEstimator, ClassifierMixin):
             similar_support=self.similar_support, feature_exchange=self.feature_exchange,
             continuous_feature_exchange=self.continuous_feature_exchange,
             greedy_init=self.greedy_init, upperbound=self.upperbound, engine=self.engine,
-            verbose=self.verbose,
+            memory_limit=self.memory_limit, verbose=self.verbose,
         )
         root = opt.run()
         self.optimal_ = opt.optimal
+        self.stop_reason_ = opt.stop_reason
         self.time_ = opt.elapsed
         self.iterations_ = opt.iterations
         self.size_ = len(opt.memo)
         self.lowerbound_ = root.lb
         self.upperbound_ = root.ub
         if not self.optimal_:
-            warnings.warn("time limit reached before optimality was certified; "
+            warnings.warn(f"{self.stop_reason_} limit reached before optimality was certified; "
                           "returning the best tree found", RuntimeWarning)
 
         raw = opt.extract(root)

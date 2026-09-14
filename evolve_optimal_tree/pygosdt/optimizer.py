@@ -28,6 +28,7 @@ Bounds implemented (all are exact, so the returned tree is provably optimal):
 
 from __future__ import annotations
 
+import sys
 import time
 
 import numpy as np
@@ -39,7 +40,17 @@ EPS = 1e-10
 
 
 class TimeLimitReached(Exception):
-    pass
+    """Raised inside the search when the time or memory limit is hit."""
+
+
+def _rss_bytes() -> int:
+    """Resident set size of this process in bytes (0 if unavailable)."""
+    try:
+        import resource
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    except (ImportError, OSError):
+        return 0
+    return int(rss) if sys.platform == "darwin" else int(rss) * 1024
 
 
 class Node:
@@ -68,8 +79,11 @@ class Optimizer:
                  greedy_init: bool = True,
                  upperbound: float = 0.0,
                  engine: str = "auto",
+                 memory_limit: int = 0,
                  verbose: bool = False):
         self.data = data
+        self.memory_limit = int(memory_limit)
+        self.stop_reason = ""
         if engine == "auto":
             engine = "numba" if HAVE_NUMBA else "python"
         if engine == "numba" and not HAVE_NUMBA:
@@ -120,8 +134,10 @@ class Optimizer:
                 self._greedy(root, features)
             self._solve(root, root.ub, features)
             self.optimal = True
-        except TimeLimitReached:
+            self.stop_reason = "optimal"
+        except TimeLimitReached as exc:
             self.optimal = False
+            self.stop_reason = str(exc)
         self.elapsed = time.perf_counter() - self.start_time
         return root
 
@@ -300,9 +316,11 @@ class Optimizer:
         if node.solved or node.lb > budget + EPS:
             return
         self.iterations += 1
-        if self.time_limit > 0.0 and (self.iterations & 63) == 0:
-            if time.perf_counter() - self.start_time > self.time_limit:
-                raise TimeLimitReached()
+        if (self.iterations & 63) == 0:
+            if self.time_limit > 0.0 and time.perf_counter() - self.start_time > self.time_limit:
+                raise TimeLimitReached("time")
+            if self.memory_limit > 0 and (self.iterations & 1023) == 0 and _rss_bytes() > self.memory_limit:
+                raise TimeLimitReached("memory")
 
         stats = self._child_statistics(node, features)
         if stats is None:

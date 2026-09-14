@@ -14,12 +14,14 @@ Usage (from ``evolve_optimal_tree``)::
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -93,7 +95,16 @@ def evaluate_tree(node: dict, frame: pd.DataFrame):
     return e1 + e2, l1 + l2
 
 
-def run_reference(csv: Path, lam: float, time_limit: int, workdir: Path, workers: int = 1) -> dict:
+def _rss_bytes(pid: int) -> int:
+    try:
+        out = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True)
+        return int(out.stdout.strip() or 0) * 1024
+    except (ValueError, OSError):
+        return 0
+
+
+def run_reference(csv: Path, lam: float, time_limit: int, workdir: Path, workers: int = 1,
+                  memory_limit_bytes: int = 0) -> dict:
     model_path = workdir / f"ref_{csv.stem}_{lam}.json"
     cfg = {
         "regularization": lam, "verbose": True, "worker_limit": workers,
@@ -101,13 +112,23 @@ def run_reference(csv: Path, lam: float, time_limit: int, workdir: Path, workers
     }
     cfg_path = workdir / f"ref_{csv.stem}_{lam}.cfg.json"
     cfg_path.write_text(json.dumps(cfg))
-    with open(csv, "rb") as fh:
+    killed = ""
+    with open(csv, "rb") as fh, open(workdir / f"ref_{csv.stem}_{lam}.out", "w+") as out_fh:
         t0 = time.perf_counter()
-        proc = subprocess.run([str(BINARY), str(cfg_path)], stdin=fh, capture_output=True,
-                              text=True, timeout=time_limit * 2 + 120)
+        proc = subprocess.Popen([str(BINARY), str(cfg_path)], stdin=fh, stdout=out_fh,
+                                stderr=subprocess.STDOUT, text=True)
+        while proc.poll() is None:
+            time.sleep(0.5)
+            if time.perf_counter() - t0 > time_limit * 2 + 120:
+                proc.kill()
+                killed = "timeout"
+            elif memory_limit_bytes and _rss_bytes(proc.pid) > memory_limit_bytes:
+                proc.kill()
+                killed = "memory"
         wall = time.perf_counter() - t0
-    out = proc.stdout
-    res = {"ref_wall": wall, "ref_status": proc.returncode}
+        out_fh.seek(0)
+        out = out_fh.read()
+    res = {"ref_wall": wall, "ref_status": proc.returncode, "ref_killed": killed}
     m = re.search(r"Training Duration: ([0-9.eE+-]+) seconds", out)
     res["ref_time"] = float(m.group(1)) if m else float("nan")
     m = re.search(r"Size of Graph: (\d+)", out)
@@ -129,18 +150,26 @@ def run_reference(csv: Path, lam: float, time_limit: int, workdir: Path, workers
     return res
 
 
-def run_python(csv: Path, lam: float, time_limit: float, engine: str = "auto") -> dict:
+def run_python(csv: Path, lam: float, time_limit: float, engine: str = "auto",
+               memory_limit_bytes: int = 0) -> dict:
     frame = pd.read_csv(csv)
     X, y = frame.iloc[:, :-1], frame.iloc[:, -1]
     t0 = time.perf_counter()
-    model = GOSDTClassifier(regularization=lam, time_limit=time_limit, engine=engine).fit(X, y)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        model = GOSDTClassifier(regularization=lam, time_limit=time_limit, engine=engine,
+                                memory_limit=memory_limit_bytes).fit(X, y)
     wall = time.perf_counter() - t0
-    return {
+    res = {
         "py_wall": wall, "py_time": model.time_, "py_encode_time": model.encoding_time_,
         "py_size": model.size_, "py_iterations": model.iterations_,
-        "py_optimal": model.optimal_, "py_binary_features": model.n_binary_features_,
-        "py_tree": model.tree_,
+        "py_optimal": model.optimal_, "py_stop_reason": model.stop_reason_,
+        "py_binary_features": model.n_binary_features_, "py_lb": model.lowerbound_,
+        "py_ub": model.upperbound_, "py_tree": model.tree_,
     }
+    del model
+    gc.collect()
+    return res
 
 
 def main(argv=None):
@@ -154,6 +183,9 @@ def main(argv=None):
     ap.add_argument("--tag", default="")
     ap.add_argument("--engine", default="auto", help="pygosdt engine: auto, numba or python")
     ap.add_argument("--workers", type=int, default=1, help="reference worker_limit")
+    ap.add_argument("--memory-limit-gb", type=float, default=6.0,
+                    help="stop either implementation when its resident memory exceeds this")
+    ap.add_argument("--resume", action="store_true", help="skip (dataset, lam) pairs already in the output CSV")
     args = ap.parse_args(argv)
 
     out = Path(args.out)
@@ -162,23 +194,32 @@ def main(argv=None):
     workdir.mkdir(exist_ok=True)
     datasets = [d for d in args.datasets.split(",") if d]
     lams = [float(v) for v in args.lams.split(",") if v]
-    rows = []
     csv_out = out / f"benchmark{args.tag}.csv"
+    rows = []
+    done = set()
+    if args.resume and csv_out.exists():
+        previous = pd.read_csv(csv_out)
+        rows = previous.to_dict("records")
+        done = {(r["dataset"], float(r["lam"])) for r in rows}
+    mem_bytes = int(args.memory_limit_gb * (1 << 30))
 
     for name in datasets:
         csv = load_dataset(name, workdir)
         frame = pd.read_csv(csv)
         n, p = frame.shape[0], frame.shape[1] - 1
         for lam in lams:
+            if (name, lam) in done:
+                continue
             row = {"dataset": name, "n": n, "p": p, "lam": lam}
             if not args.skip_reference:
-                r = run_reference(csv, lam, int(args.time_limit), workdir, workers=args.workers)
+                r = run_reference(csv, lam, int(args.time_limit), workdir, workers=args.workers,
+                                  memory_limit_bytes=mem_bytes)
                 if r["ref_tree"] is not None:
                     e, l = evaluate_tree(r["ref_tree"], frame)
                     row.update(ref_errors=e, ref_leaves=l, ref_objective=e / n + lam * l)
                 row.update({k: v for k, v in r.items() if k != "ref_tree"})
             if not args.skip_python:
-                r = run_python(csv, lam, args.time_limit, engine=args.engine)
+                r = run_python(csv, lam, args.time_limit, engine=args.engine, memory_limit_bytes=mem_bytes)
                 e, l = evaluate_tree(r["py_tree"], frame)
                 row.update(py_errors=e, py_leaves=l, py_objective=e / n + lam * l)
                 row.update({k: v for k, v in r.items() if k != "py_tree"})
