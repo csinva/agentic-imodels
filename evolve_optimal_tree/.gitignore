@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[oc]
+*.egg-info/
+build/
+dist/
+benchmarks/results/work/
+GeneralizedOptimalSparseDecisionTreesReference/build/gosdt
+GeneralizedOptimalSparseDecisionTreesReference/**/*.o
+.pytest_cache/
+GeneralizedOptimalSparseDecisionTreesReference/

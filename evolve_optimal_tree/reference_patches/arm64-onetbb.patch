@@ -1,0 +1,36 @@
+diff -ru a/src/bitmask.hpp b/src/bitmask.hpp
+--- a/src/bitmask.hpp	2026-09-14 17:25:20
++++ b/src/bitmask.hpp	2026-09-14 16:56:59
+@@ -9,7 +9,7 @@
+ #include <sstream>
+ #include <gmp.h>
+ #include <boost/dynamic_bitset.hpp>
+-#include <simdpp/simd.h>
++// #include <simdpp/simd.h> // patched: unused and pulls x86 intrinsics on arm64
+ #include <tbb/scalable_allocator.h>
+ 
+ #include "integrity_violation.hpp"
+diff -ru a/src/index.hpp b/src/index.hpp
+--- a/src/index.hpp	2026-09-14 17:25:20
++++ b/src/index.hpp	2026-09-14 16:56:59
+@@ -9,7 +9,7 @@
+ #include <boost/numeric/ublas/vector_proxy.hpp>
+ #include <boost/numeric/ublas/vector_expression.hpp>
+ #include <tbb/scalable_allocator.h>
+-#include <simdpp/simd.h>
++// #include <simdpp/simd.h> // patched: unused and pulls x86 intrinsics on arm64
+ 
+ #ifdef INCLUDE_OPENCL
+ #include <opencl/cl.hpp>
+diff -ru a/src/queue.hpp b/src/queue.hpp
+--- a/src/queue.hpp	2026-09-14 17:25:20
++++ b/src/queue.hpp	2026-09-14 16:56:59
+@@ -47,7 +47,7 @@
+     tbb::scalable_allocator< message_type * > > queue_type;
+ 
+ typedef tbb::concurrent_hash_map< message_type *, bool, MembershipKeyHashCompare, 
+-    tbb::scalable_allocator<std::pair<message_type *, bool>>> membership_table_type;
++    tbb::scalable_allocator<std::pair<message_type * const, bool>>> membership_table_type; // patched for oneTBB 2021+
+ 
+ class Queue {
+ public:

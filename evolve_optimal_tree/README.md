@@ -1,0 +1,167 @@
+# pygosdt: Generalized Optimal Sparse Decision Trees without the C++ toolchain
+
+`pygosdt` re-implements the GOSDT algorithm of the reference repository
+`GeneralizedOptimalSparseDecisionTreesReference` (Lin et al., ICML 2020) as a
+small Python package.  It finds a decision tree that provably minimises
+
+    risk(tree) = misclassification loss + regularization * (number of leaves)
+
+over all trees on the binarized features, exactly like the reference, but needs
+only `numpy`, `pandas`, `scikit-learn` and (optionally, for speed) `numba`.
+No Boost, GMP, TBB, WiredTiger, OpenCL or compiler is required.
+
+Contents of this directory:
+
+| path | what |
+|---|---|
+| `pygosdt/` | the package (`encoder.py`, `dataset.py`, `optimizer.py`, `fastbits.py`, `model.py`, `gosdt.py`, `cli.py`) |
+| `tests/` | exactness tests against an exhaustive search and regression tests on the reference datasets |
+| `benchmarks/` | harness comparing pygosdt with the reference binary, result CSVs, summary table and plot |
+| `reference_patches/` | two-line build fix and build script for the reference C++ code on arm64 macOS / oneTBB |
+| `GeneralizedOptimalSparseDecisionTreesReference/` | the reference implementation (untracked; copy it here from the original location) |
+
+## Getting the reference implementation working
+
+The reference autotools build hard-codes `-msse4.1`, includes an unused SIMD
+header that does not compile on arm64, and uses an allocator type that oneTBB
+2021+ rejects.  `reference_patches/apply.sh` applies the two-line source patch
+(`arm64-onetbb.patch`, see `BUILD_PATCHES.md`) and compiles the CLI directly with
+clang:
+
+```sh
+brew install tbb boost gmp
+reference_patches/apply.sh GeneralizedOptimalSparseDecisionTreesReference
+cat GeneralizedOptimalSparseDecisionTreesReference/experiments/datasets/monk_1/data.csv \
+  | GeneralizedOptimalSparseDecisionTreesReference/build/gosdt config.json
+```
+
+The reference binary reads the dataset from stdin when stdin is not a terminal
+(that is how the benchmark harness invokes it).
+
+## Installing and using pygosdt
+
+```sh
+uv sync                     # creates .venv with numpy/pandas/scikit-learn/numba
+uv run pytest               # 80 tests, ~10 s
+```
+
+scikit-learn style:
+
+```python
+import pandas as pd
+from pygosdt import GOSDTClassifier
+
+df = pd.read_csv("GeneralizedOptimalSparseDecisionTreesReference/experiments/datasets/iris/data.csv")
+X, y = df.iloc[:, :-1], df.iloc[:, -1]
+model = GOSDTClassifier(regularization=0.02).fit(X, y)
+print(model)                 # readable if/else tree
+model.objective_, model.n_leaves_, model.optimal_, model.time_, model.size_
+model.predict(X); model.score(X, y)
+model.json()                 # same JSON schema as the reference (feature/name/relation/reference/true/false)
+```
+
+Reference-wrapper style (`python/model/gosdt.py` in the reference):
+
+```python
+from pygosdt import GOSDT
+model = GOSDT({"regularization": 0.1, "time_limit": 3600}).fit(X, y)
+model.tree, model.time, model.iterations, model.size
+```
+
+Command line, mirroring `gosdt dataset.csv config.json`:
+
+```sh
+uv run pygosdt data.csv config.json        # prints a JSON array with the model
+```
+
+Supported configuration keys: `regularization`, `time_limit`, `balance`,
+`costs` (CSV cost matrix, reference format), `upperbound`, `look_ahead`,
+`similar_support`, `feature_exchange`, `continuous_feature_exchange`,
+`verbose`, `model` (output path), `engine` (`auto`/`numba`/`python`).
+Multi-class targets and arbitrary cost matrices are supported.
+
+## How it works
+
+**Binarization** (`encoder.py`) mirrors the reference `Encoder`: numeric
+columns become `x >= t` predicates at the midpoints between consecutive
+observed values (reported as the upper value for integer columns), categorical
+columns become `x == v` predicates, two-valued columns without missing values
+become a single predicate, constant columns are dropped.  Additionally, binary
+columns that induce the same row partition as an earlier one (identical or
+complementary) are removed, which cannot change the optimum.
+
+**Bitsets** (`dataset.py`) hold every binary column, every class indicator and
+the *equivalent points* mask as Python integers, so a subproblem (the set of
+rows reaching a node, the reference's "capture set") is one `int`, splitting is
+`&`, and the memo table is a plain `dict`.
+
+**Search** (`optimizer.py`) is a depth-first branch-and-bound dynamic program
+over capture sets, memoised in a dependency graph like the reference, with a
+certified interval `[lb, ub]` per subproblem and a budget (the reference's
+"scope") passed down from the parent.  All bounds are exact, so the tree
+returned is the true optimum of the objective on the binarized data:
+
+* leaf risk, and the equivalent-points lower bound `min_loss + 2λ` for any split
+  (`Task::Task` in the reference);
+* leaf-support and incremental-accuracy conditions proving a subproblem is best
+  left as a leaf;
+* one-step look-ahead budgets: a child is only searched with the budget left
+  after subtracting its sibling's lower bound (`send_explorers` scopes);
+* similar-support bound between neighbouring binary features
+  (`Dataset::distance`), computed lazily only when it could prune;
+* continuous feature exchange between consecutive thresholds of one numeric
+  column (`Task::continuous_feature_exchange`), applied per subproblem where it
+  is provably valid, vectorised in numpy;
+* a greedy incumbent and an immediate "both children as leaves" upper bound.
+
+The per-node work, counting `|capture & class_k & feature_j|` for every
+feature, is vectorised: with `engine="numba"` a small `@njit` kernel runs over
+packed 64-bit words; with `engine="python"` the same counts come from
+`int.bit_count` on the big integers.  Both produce identical trees.
+
+**Output** (`model.py`) is the reference's JSON tree schema plus prediction,
+scoring and structure helpers (`leaves()`, `nodes()`, `maximum_depth()`).
+
+### Differences from the reference that affect results
+
+* The reference's pairwise `feature_exchange` bound prunes features for whole
+  subtrees using bounds computed at the parent, which is not exact.  pygosdt
+  only applies the provably valid per-subproblem version.  On
+  `tic-tac-toe` at λ = 0.02 the reference returns objective 0.324593 while
+  pygosdt finds 0.318330 (190 errors, 6 leaves; verified independently and
+  pinned in `tests/test_reference_datasets.py`).  The reference stays at
+  0.324593 even with all of its optional bounds disabled.
+* The reference sorts integer thresholds as strings (so `"10" < "2"`), which
+  breaks the threshold adjacency its continuous-feature-exchange bound relies
+  on.  pygosdt sorts numerically.
+* Missing numeric values never satisfy a predicate in pygosdt; the reference
+  parses them as 0.  The benchmark fills missing values with 0 for both.
+* Arithmetic is float64 (the reference uses float32).
+
+### Exactness testing
+
+`tests/test_bruteforce.py` compares the optimizer with an exhaustive
+dynamic program written with plain Python sets on 50 random problems (2 and 3
+classes, random cost matrices, both engines, with and without optional bounds).
+`tests/test_reference_datasets.py` pins the objectives on 14 real
+(dataset, λ) pairs, recomputed from the predictions.
+
+## Benchmark
+
+`benchmarks/run_benchmark.py` runs both implementations on the same CSV for
+every (dataset, λ) pair, recomputes each returned tree's objective
+independently, and records optimisation time (excluding CSV parsing and
+binarization for both), graph size and iterations.  `benchmarks/summarize.py`
+merges the CSVs into `benchmarks/results/summary.md` and
+`benchmarks/results/benchmark.png`.
+
+Reference settings: `worker_limit = 1` (single thread, like pygosdt), default
+bounds, `time_limit = 600` s.  Hardware: Apple M5, macOS, clang 21, oneTBB
+2023, Python 3.12, numpy 2.5, numba 0.67.
+
+See `benchmarks/results/summary.md` for the full table; the headline results
+are summarised at the end of this file.
+
+## Results summary
+
+_(filled in from `benchmarks/results/summary.md` once the benchmark grid completes)_
