@@ -1399,3 +1399,232 @@ DecisionTreeSimple,simulatability_sinusoidal,standard,True,4.072,4.07
 DecisionTreeSimple,simulatability_abs_value,standard,False,3.479,0.63
 DecisionTreeSimple,simulatability_twelve_features_all_active,standard,False,1.531,8.21
 DecisionTreeSimple,simulatability_nested_threshold,standard,True,2.004,2.00
+SegGAM_ga2m_v8,most_important_feature,standard,True,x0,x0
+SegGAM_ga2m_v8,feature_ranking,standard,True,"x0, x1, x2","x0, x1, x2"
+SegGAM_ga2m_v8,irrelevant_features,standard,True,"x1, x2, x3, x4 are irrelevant","x1, x2, x3, x4"
+SegGAM_ga2m_v8,insight_sparse_feature_set,insight,True,"x0, x1 only","x0, x1, x6"
+SegGAM_ga2m_v8,discrim_dominant_feature_sample,standard,True,"x0 (coefficient ≈7, value=2.0 >> others)",x0
+SegGAM_ga2m_v8,sign_of_effect,standard,True,-4.994,-4.994
+SegGAM_ga2m_v8,point_prediction,standard,True,10.067,10.067335
+SegGAM_ga2m_v8,counterfactual_prediction,standard,True,11.03,11.03
+SegGAM_ga2m_v8,hard_all_features_active,hard,True,6.187,6.19
+SegGAM_ga2m_v8,hard_two_feature_perturbation,hard,True,9.028,9.03
+SegGAM_ga2m_v8,hard_mixed_sign_goes_negative,hard,True,-0.934,-0.923846
+SegGAM_ga2m_v8,hard_pairwise_anti_intuitive,hard,True,2.147,2.1476
+SegGAM_ga2m_v8,discrim_predict_above_threshold,standard,True,1.99,1.99265
+SegGAM_ga2m_v8,discrim_predict_below_threshold,standard,True,0.0,0.001968
+SegGAM_ga2m_v8,discrim_simulate_mixed_sign,standard,True,7.276,7.276117
+SegGAM_ga2m_v8,discrim_simulate_all_active,standard,True,5.412,5.51
+SegGAM_ga2m_v8,insight_simulatability,insight,True,11.007,10.9866958
+SegGAM_ga2m_v8,simulatability_eight_features,standard,True,8.036,8.04
+SegGAM_ga2m_v8,simulatability_fifteen_features_sparse,standard,True,21.972,21.97
+SegGAM_ga2m_v8,simulatability_twenty_features_sparse,standard,True,14.573,14.57
+SegGAM_ga2m_v8,simulatability_twelve_features_all_active,standard,True,1.334,1.334119
+SegGAM_ga2m_v8,simulatability_quadratic,standard,True,5.351,5.351
+SegGAM_ga2m_v8,simulatability_friedman1,standard,True,15.907,15.91
+SegGAM_ga2m_v8,direction_of_change,standard,True,7.999,7.999
+SegGAM_ga2m_v8,hard_quantitative_sensitivity,hard,True,8.056,8.056
+SegGAM_ga2m_v8,discrim_unit_sensitivity,standard,True,5.013,5.013
+SegGAM_ga2m_v8,insight_nonlinear_direction,insight,True,5.977,5.9768
+SegGAM_ga2m_v8,threshold_identification,standard,True,0.5,0.4
+SegGAM_ga2m_v8,insight_nonlinear_threshold,insight,True,~0 (flat for x0<0),-0.008858
+SegGAM_ga2m_v8,insight_counterfactual_target,insight,True,2.999,3.0
+SegGAM_ga2m_v8,simulatability_quadratic_counterfactual,standard,True,12.389,12.389
+SegGAM_ga2m_v8,discrim_compactness,standard,True,,yes
+SegGAM_ga2m_v8,insight_decision_region,insight,True,1.499,1.50
+SegGAM_ga2m_v8,discrim_simulate_double_threshold,standard,True,1.992,1.991684
+SegGAM_ga2m_v8,discrim_simulate_additive_nonlinear,standard,True,5.731,5.7306496
+SegGAM_ga2m_v8,discrim_simulate_interaction,standard,True,13.358,13.357913
+SegGAM_ga2m_v8,simulatability_triple_interaction,standard,True,-2.672,-2.67
+SegGAM_ga2m_v8,simulatability_cascading_threshold,standard,True,2.335,2.335081
+SegGAM_ga2m_v8,simulatability_exponential_decay,standard,True,4.721,4.72093
+SegGAM_ga2m_v8,simulatability_piecewise_three_segment,standard,True,1.49,1.49
+SegGAM_ga2m_v8,simulatability_sinusoidal,standard,True,4.83,4.8296469
+SegGAM_ga2m_v8,simulatability_abs_value,standard,True,3.427,3.427
+SegGAM_ga2m_v8,simulatability_nested_threshold,standard,True,2.13,2.130305
+GA2MBoost_v33,most_important_feature,standard,True,x0,x0
+GA2MBoost_v33,feature_ranking,standard,True,"x0, x1, x2","x0, x1, x2"
+GA2MBoost_v33,irrelevant_features,standard,True,"x1, x2, x3, x4 are irrelevant","x1, x2, x3, x4"
+GA2MBoost_v33,insight_sparse_feature_set,insight,True,"x0, x1 only","x0, x1"
+GA2MBoost_v33,discrim_dominant_feature_sample,standard,True,"x0 (coefficient ≈7, value=2.0 >> others)","Looking at the additive model for x0=2.0, x1=0.1, x2=0.1, x3=0.0:
+
+**f(x0) at x0=2.0:** Interpolating between x0=1.14→+7.63 and x0=3.22→+21.8:
+(2.0-1.14)/(3.22-1.14) = 0.414 → effect ≈ 7.63 + 0.414×(21.8-7.63) ≈ **13.5**
+
+**f(x1) at x1=0.1:** Interpolating between x1=-0.0483→+0.246 and x1=0.226→+0.387:
+(0.1+0.0483)/(0.226+0.0483) = 0.541 → effect ≈ 0.246 + 0.541×(0.387-0.246) ≈ **0.32**
+
+**f(x2) at x2=0.1:** Interpolating between x2=-0.0687→-0.331 and x2=0.243→+0.346:
+(0.1+0.0687)/(0.243+0.0687) = 0.541 → effect ≈ -0.331 + 0.541×(0.346+0.331) ≈ **0.04**
+
+**f(x3):** 0 (no effect)
+
+x0"
+GA2MBoost_v33,sign_of_effect,standard,True,-5.096,-5.06
+GA2MBoost_v33,point_prediction,standard,True,9.948,10.01
+GA2MBoost_v33,counterfactual_prediction,standard,True,9.196,11.03
+GA2MBoost_v33,hard_all_features_active,hard,True,6.231,6.15
+GA2MBoost_v33,hard_two_feature_perturbation,hard,False,9.062,"Looking at this additive model, I need to find f(x0=2.0) and f(x1=1.5) and apply the additive structure.
+
+**Finding the slopes** from the sampled data:
+- For x0: slope ≈ (7.53 - (-7.17)) / (2.48 - (-2.38)) = 14.7 / 4.86 ≈ 3.025
+- For x1: slope ≈ (4.65 - (-4.86)) / (2.17 - (-2.45)) = 9.51 / 4.62 ≈ 2.058
+
+**Finding the intercepts** using the constraint:
+Since the model predicts 0.00 at x0=0, x1=0:
+- baseline + f(0) + f(0) = 0.00
+- -0.1570 + f(x0=0) + f(x1=0) = 0.00
+- f(x0=0) + f(x1=0) = 0.1570
+
+Using the point (0.00866 → 0.0561) to calibrate x0:
+- f(x0=0) = 0.0561 - 3.025(0.00866) ≈ 0.030
+
+Therefore: f(x1=0) ≈ 0.127
+
+**Interpolating to the new point:**
+- f(x0=2.0) ≈ 3.025(2.0) + 0.030 ≈ 6.08
+- f(x1=1.5) ≈ 2.058(1.5) + 0.127 ≈ 3.21
+
+**Final prediction:**
+Prediction = -0.1570 + 6.08 + 3.21 ≈ 9.14
+
+9.14"
+GA2MBoost_v33,hard_mixed_sign_goes_negative,hard,True,-0.924,-1.151
+GA2MBoost_v33,hard_pairwise_anti_intuitive,hard,False,-0.677,1.87
+GA2MBoost_v33,discrim_predict_above_threshold,standard,True,1.99,2.041
+GA2MBoost_v33,discrim_predict_below_threshold,standard,True,-0.02,"Looking at the model:
+
+For x0=-0.5, x1=0.0, x2=0.0:
+- Baseline = 0.3112
+- f(x1) = 0 (no effect)
+- f(x2) = 0 (no effect)
+- f(x0) needs interpolation
+
+x0=-0.5 falls between the sample points -0.776 (effect -0.277) and -0.397 (effect -0.29).
+
+Linear interpolation:
+f(-0.5) ≈ -0.277 + (-0.29 - (-0.277)) × (0.276/0.379) ≈ -0.2865
+
+Prediction = 0.3112 + (-0.2865) = 0.0247
+
+0.0247"
+GA2MBoost_v33,discrim_simulate_mixed_sign,standard,True,7.293,7.21
+GA2MBoost_v33,discrim_simulate_all_active,standard,True,5.537,5.02
+GA2MBoost_v33,insight_simulatability,insight,True,10.854,10.76
+GA2MBoost_v33,simulatability_eight_features,standard,True,7.883,7.87
+GA2MBoost_v33,simulatability_fifteen_features_sparse,standard,True,21.861,22.19
+GA2MBoost_v33,simulatability_twenty_features_sparse,standard,True,14.695,14.80
+GA2MBoost_v33,simulatability_twelve_features_all_active,standard,True,1.978,"Looking at this GA2M model, I need to:
+1. Interpolate each feature function at the given input values
+2. Sum all contributions with the baseline
+3. Clip to [-24.94, 30.24]
+
+**Interpolating each feature:**
+
+- f(x0=1.0): between 0.673→3.48 and 1.07→5.52: 3.48 + 0.824×(5.52-3.48) = 5.160
+- f(x1=-0.5): between -0.771→2.95 and -0.377→1.35: 2.95 + 0.688×(-1.6) = 1.849
+- f(x2=0.8): between 0.782→2.33 and 1.24→3.85: 2.33 + 0.039×1.52 = 2.390
+- f(x3=1.2): between 0.719→-2.03 and 1.21→-3.57: -2.03 + 0.980×(-1.54) = -3.539
+- f(x4=-0.3): between -0.371→-0.841 and 0.036→-0.010: -0.841 + 0.175×0.831 = -0.696
+- f(x5=0.6): between 0.303→-0.731 and 0.658→-1.28: -0.731 + 0.837×(-0.549) = -1.190
+- f(x6=-1.0): between -1.11→-1.69 and -0.626→-0.936: -1.69 + 0.227×0.754 = -1.519
+- f(x7=0.4): between 0.289→-0.134 and 0.602→-0.895: -0.134 + 0.355×(-0.761) = -0.404
+- f(x8=-0.2): between -0.389→-0.383 and 0.011→-0.005: -0.383 + 0.473×0.378 = -0.204
+- f(x9=0.7): between 0.345→-0.163 and 0.744→-0.604: -0.163 + 0.890×(-0.441) = -0.555
+- f(x10=-0.8): between -1.13→-0.539 and -0.63→-0.307: -0.539 + 0.66×0.232 = -0.386
+- f(x11=0.3): between 0.292→-0.091 and 0.662→-0.046: -0.091 + 0.022×0.045 = -0.090
+
+**Sum:** 0.632 + 5.160 + 1.849 + 2.390 - 3.539 - 0.696 - 1.190 - 1.519 - 0.404 - 0.204 - 0.555 - 0.386 - 0.090 = **1.45**"
+GA2MBoost_v33,simulatability_quadratic,standard,True,5.283,6.45
+GA2MBoost_v33,simulatability_friedman1,standard,True,15.483,15.12
+GA2MBoost_v33,direction_of_change,standard,True,7.934,7.88
+GA2MBoost_v33,hard_quantitative_sensitivity,hard,True,8.144,8.27
+GA2MBoost_v33,discrim_unit_sensitivity,standard,True,4.971,4.97
+GA2MBoost_v33,insight_nonlinear_direction,insight,True,6.065,6.02
+GA2MBoost_v33,threshold_identification,standard,True,0.5,0.4
+GA2MBoost_v33,insight_nonlinear_threshold,insight,True,~0 (flat for x0<0),0
+GA2MBoost_v33,insight_counterfactual_target,insight,False,10.0,2.98
+GA2MBoost_v33,simulatability_quadratic_counterfactual,standard,False,12.148,"Looking at the GA2M model, I need to find how f(x0) changes when x0 goes from 0.0 to 2.0, since the other features are held fixed and the prediction change depends only on this.
+
+From the sampled values for f(x0):
+- At x0 = 0.0 (interpolating between x=-0.0224→-2.94 and x=0.291→-2.72): f(x0) ≈ -2.92
+- At x0 = 2.0 (interpolating between x=1.15→0.916 and x=2.77→19.9): f(x0) ≈ 10.88
+
+Change in prediction = 10.88 - (-2.92) = 13.8
+
+13.8"
+GA2MBoost_v33,discrim_compactness,standard,False,,no
+GA2MBoost_v33,insight_decision_region,insight,False,1.506,"Looking at this problem, I need to find when the prediction exceeds 6.0 with x1=0 and x2=0.
+
+**Setting up the prediction equation:**
+- Baseline: -0.3188
+- f(x1) = 0 (no effect)
+- f(x2) = 0 (no effect)
+- Pairwise adjustment (x1=0, x0 ≥ 0.6502): -0.09625(0) + 0.04514 = 0.04514
+
+So: **Prediction = -0.3188 + f(x0) + 0.04514 = f(x0) - 0.27366**
+
+**Finding the threshold:**
+For prediction > 6.0:
+- f(x0) > 6.27366
+
+Looking at the sampled points near this value:
+- At x0 = 1.03: f(x0) = 4.35
+- At x0 = 2.06: f(x0) = 8.64
+
+Using linear interpolation between these points:
+- Slope = (8.64 - 4.35)/(2.06 - 1.03) = 4.29/1.03 ≈ 4.165
+- f(x0) = 4.35 + 4.165(x0 - 1.03)
+
+Setting f(x0) = 6.27366:
+- 6.27366 = 4.35 + 4.165(x0 - 1.03)
+- 1.92366 = 4.165(x0 - 1.03)
+- x0 - 1.03 = 0.4619
+- x0 ≈ 1.492
+
+**Verification:**
+- At x0 = 1.49: prediction ≈ 5.99 (below 6.0) ✓
+- At x0 = 1.50: prediction ≈ 6.04 (above 6.0) ✓
+
+1.49"
+GA2MBoost_v33,discrim_simulate_double_threshold,standard,True,2.023,2.0017
+GA2MBoost_v33,discrim_simulate_additive_nonlinear,standard,True,5.526,5.78
+GA2MBoost_v33,discrim_simulate_interaction,standard,True,13.407,13.70
+GA2MBoost_v33,simulatability_triple_interaction,standard,True,-2.493,-2.94
+GA2MBoost_v33,simulatability_cascading_threshold,standard,True,2.223,3.19
+GA2MBoost_v33,simulatability_exponential_decay,standard,True,5.114,5.09
+GA2MBoost_v33,simulatability_piecewise_three_segment,standard,True,1.487,"Looking at the sampled values for f(x0), I need to interpolate for x0 = 0.5:
+
+- At x0 = 0.291: f(x0) = 0.771
+- At x0 = 0.666: f(x0) = 1.93
+
+Linear interpolation:
+- Fraction: (0.5 - 0.291) / (0.666 - 0.291) = 0.209 / 0.375 ≈ 0.5573
+- f(0.5) ≈ 0.771 + 0.5573 × (1.93 - 0.771) ≈ 0.771 + 0.646 ≈ 1.417
+
+Prediction = baseline + f(x0) + f(x1) + f(x2) + f(x3)
+= 0.0856 + 1.417 + 0 + 0 + 0
+= 1.503
+
+1.50"
+GA2MBoost_v33,simulatability_sinusoidal,standard,True,4.83,"Looking at the sampled values for each feature:
+
+**f(x0) at x0=1.0:**
+Falls between 0.735→2.5 and 1.2→3.65
+Linear interpolation: 2.5 + (1.0-0.735)/(1.2-0.735) × (3.65-2.5) ≈ 3.155
+
+**f(x2) at x2=-0.3:**
+Falls between -0.305→-0.264 and 0.0376→0.0427
+Linear interpolation: -0.264 + (-0.3-(-0.305))/(0.0376-(-0.305)) × (0.0427-(-0.264)) ≈ -0.260
+
+**f(x1) at x1=0.5:**
+Falls between 0.284→0.569 and 0.636→0.328
+Linear interpolation: 0.569 + (0.5-0.284)/(0.636-0.284) × (0.328-0.569) ≈ 0.421
+
+**f(x3)=0, f(x4)=0** (no effect)
+
+**Prediction:** 1.3587 + 3.155 + 0.421 - 0.260 = 4.675
+
+4.675"
+GA2MBoost_v33,simulatability_abs_value,standard,True,3.626,3.48
+GA2MBoost_v33,simulatability_nested_threshold,standard,True,2.078,1.95

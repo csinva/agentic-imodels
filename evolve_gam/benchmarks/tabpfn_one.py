@@ -1,3 +1,4 @@
+import os as _os, sys as _sys
 import os, sys
 import numpy as np
 from tabpfn import TabPFNRegressor
