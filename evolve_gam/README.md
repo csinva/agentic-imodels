@@ -41,42 +41,65 @@ model.predict(X_test)
 
 ## Results
 
-Four regression suites, 113 datasets, 50 → 72,000 rows, up to 1,024 features. One
-80/20 split per dataset (`random_state=42`), RMSE on the train-standardized target,
-all models at library defaults. Lower rank is better; **bold** marks the best
-interpretable model.
+Two later iterations (September 2026) revised the model to **AddGP_v49**, and changed how
+results are measured. The single-split mean rank that drove the original search turned out
+to sit inside split noise: redrawing the train/test split moves EBM's own RMSE by a median
+of 5.7% (37% at the 90th percentile). Every decision from v48 on used a three-seed paired
+test with a rule fixed in advance (geometric-mean RMSE ratio below 1, sign-test p < 0.05,
+tail not worse), and the suite's exact duplicate datasets were collapsed before testing.
 
-| Suite | AddGP | EBM | RF | GBM | TabPFN | notes |
-|---|---|---|---|---|---|---|
-| imodels (65 datasets) | **4.60** | 5.00 | 6.66 | 6.38 | 3.40 | training capped at 1k rows |
-| Classic-7 (full size) | **2.43** | 3.43 | 3.00 | 4.43 | 1.71 | wins 6/7 head-to-head |
-| TabArena-13 | 2.69 | 2.69 | 2.85 | 4.46 | 2.77 | tied with EBM; wins 6/13 |
-| OpenML-CTR23 (28) | **2.11** | 2.32 | 3.07 | 3.18 | — | held out; interpretable pool |
-| OpenML-CTR23 (27) | **2.85** | 3.04 | 3.81 | 4.00 | 1.96 | with TabPFN, where it runs |
+### Development suite (imodels-65), three redrawn splits
 
-All numbers are for the model as shipped here (`AddGP_v47`).
+| model | vs EBM, seed 0 / 1 / 2 (GM RMSE ratio) | wins of 65 | official sibling-free rank |
+|---|---|---|---|
+| AddGP_v47 | 0.98 / **1.02** / 0.97 | 34 / 35 / 39 | 4.60 vs EBM 5.00 |
+| **AddGP_v48 = v49 at n <= 1000** | **0.97 / 0.95 / 0.96** | 37 / 47 / 41 | **4.45 vs EBM 5.05** |
 
-AddGP is the strongest interpretable model on three of the four suites, and ties EBM
-on the fourth. Only TabPFN — a black-box foundation model, capped at 2,500 training
-rows by GPU memory and unable to fit several of the wider datasets at all — ranks
-higher overall.
+v48 vs v47, paired over 186 distinct fits: better on 115, GM 0.981, p = 0.0016. At n = 200
+subsamples v48 vs EBM is 0.92 / 0.93 / 0.94.
 
-**TabArena is where simplification cost something.** An earlier, larger version of
-this model (before the last few ablation rounds) scored 2.62 there and won 8 of 13
-head-to-head. The shipped model ties at 2.69 and wins 6. Four of those datasets sit
-within 0.5% of EBM, which is inside the run-to-run noise of a float32 fit, so the
-head-to-head count is fragile — but the direction is real: roughly 400 lines of
-deleted machinery cost about 0.07 mean rank on this suite. The other three suites
-were unaffected.
+### Held-out sets, de-duplicated (no dataset shared with the development suite)
 
-**CTR23 is the one that matters.** It was downloaded *after* the method was final and
-informed no design decision, so it measures generalization rather than tuning.
+TabArena without `houses` (California housing) and OpenML-CTR23 without its five
+development-suite overlaps and seven TabArena overlaps: 35 datasets, every model refit on
+identical preprocessing and the same 80/20 split.
 
-**Where it loses,** consistently across all four suites: smooth deterministic
-simulations and heavy-interaction data — wave-energy converters (+109% vs EBM),
-building-energy simulation (+79%), robot arm dynamics (+17%), molecular fingerprints.
-There the target depends on three or more inputs jointly, and no sum of pairwise
-pieces can represent it. That is the model class's ceiling, not a fitting failure.
+| | wins vs EBM | GM RMSE ratio vs EBM | 90th-pct ratio |
+|---|---|---|---|
+| AddGP_v47 | 18/35 | 1.016 | 1.27 |
+| AddGP_v48 | 20/35 | 1.006 | 1.21 |
+| **AddGP_v49** | **22/35** | **0.969** | **1.10** |
+
+Mean / median rank in the eleven-model pool of the blog post (EBM, TabPFN, RF, GBM, FIGS,
+RuleFit, hierarchical shrinkage, decision tree, Ridge, MLP): TabArena-12 **v49 2.50 / 2**,
+EBM 3.00 / 3; CTR23-23 TabPFN 2.87 / 2, **v49 3.13 / 2**, EBM 3.48 / 3. v49 vs v48 on the
+held-out set: better on 17 of 21 non-tied datasets (the rest are small and identical by
+construction), GM 0.964, p = 0.007. Largest moves: video_transcoding 0.266 -> 0.168,
+naval_propulsion 0.045 -> 0.031, fps_benchmark 0.040 -> 0.028, supercon 0.334 -> 0.287
+(the last two now ahead of EBM). Remaining losses: wave_energy (0.036 vs EBM 0.014),
+energy_efficiency, fifa, QSAR, sarcos.
+
+### What changed
+
+* **v48** (three changes, each accepted by the three-seed test): one Matern and one RBF
+  lengthscale learned by marginal likelihood and shared by all features, with a weak
+  log-normal prior; a hierarchical prior shrinking each kernel slot's log-amplitudes toward
+  their centre across features; and, below 1000 rows, 96 bins, a 2500-bin budget and up to
+  16 pair surfaces at 16x16 with the pair count scaled by n.
+* **v49** (one change, above 1000 rows): EBM's default fits five interaction terms per
+  feature; v48 was capped at 48 because the chunked joint fit is cubic in cells. v49 keeps
+  the joint fit for the first 48 pairs and backfits the rest, up to five per feature and 16
+  per thousand rows, each as an exact 2-D GP on the joint model's residual with a shared
+  noise level and a per-pair grid resolution chosen by marginal likelihood. Identical to
+  v48 at n <= 1000 (verified on all 65 development datasets).
+
+Falsified along the way, each with a measured cost, in `../results/generalization/` and the
+prompts file: a literal shared template shape across features, a LOO predictive objective,
+correlation-tied amplitudes, empirical-Bayes and Laplace priors, Laplace hyperparameter
+averaging, deterministic subagging, more pairs at n <= 1000, a marginal-likelihood pair
+screen, per-feature lengthscales, finer bins, removing the Tukey fence, bilinear pair
+readout, an exact joint mains+pairs fit at small n, a learned per-feature level component,
+pure backfitting for all pairs, and fixed-amplitude linear sweeps.
 
 ## What the search removed
 

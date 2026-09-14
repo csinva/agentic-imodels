@@ -1,0 +1,8 @@
+dataset,seed,rmse,seconds
+pol,0,0.236058,359.9
+cpu_act,0,0.131501,2207.2
+house_16H,0,0.785652,2024.7
+elevators,0,0.359952,993.2
+california,0,0.578424,855.3
+kin8nm,0,0.651768,940.2
+abalone,0,0.658147,637.9

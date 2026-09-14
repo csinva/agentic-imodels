@@ -1,0 +1,5 @@
+dataset,seed,rmse,seconds
+pol,0,0.242377,291.9
+cpu_act,0,0.135630,1233.0
+house_16H,0,0.772152,1300.1
+elevators,0,0.348274,366.2

@@ -73,3 +73,16 @@ tree ensemble to 686 lines and a single class.)
 > Create a pull request at https://github.com/csinva/imodels/ that integrates in this model,
 > including adding a section "under our favorite models" and a page on the online docs like
 > FIGS has.
+
+
+## Generalization iterations (September 2026)
+
+> Let's continue the autoresearch loop for improving the GAM. This should only be looking at the imodels-65 datasets [...]. Your goal is to improve the GAM algorithm to be more generalizable. You are doing pretty well on the development datasets, but when I try on other datasets, it seems that the GAM has been slightly overfit. Don't explicitly look at those other datasets, but continue the evolve_gam loop thinking about ideas to better generalize. One idea may be to model some shared shape functions between different features. Don't stop until you have something that will definitely beat EBM at different scales.
+
+> Think hard and come up with an elegant solution in the next iteration that consistently beats EBM. Nothing more than pairwise interactions.
+
+> Okay, evaluate it on the held-out benchmarks mentioned in the blog post as well (after deduplication) and see if it still outperforms EBM.
+
+> Think hard and try another round of iteration on the method (v49) to try and improve, using elegant ideas and seeing a clearer improvement over EBM.
+
+> Commit and push v49 into agentic-imodels. Then, think carefully and replace GPGam with this v49 model and then update the blog post with these results and proper model description.
