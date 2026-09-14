@@ -1,0 +1,8 @@
+dataset,model,rmse,seconds
+abalone,AddGP_v49,0.654334,757
+pol,AddGP_v49,0.213877,904
+california,AddGP_v49,0.544229,2886
+cpu_act,AddGP_v49,0.136038,3643
+elevators,AddGP_v49,0.315463,1715
+kin8nm,AddGP_v49,0.627141,2716
+house_16H,AddGP_v49,0.700829,2992

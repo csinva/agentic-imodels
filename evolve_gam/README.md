@@ -72,7 +72,8 @@ identical preprocessing and the same 80/20 split.
 
 Mean / median rank in the eleven-model pool of the blog post (EBM, TabPFN, RF, GBM, FIGS,
 RuleFit, hierarchical shrinkage, decision tree, Ridge, MLP): TabArena-12 **v49 2.50 / 2**,
-EBM 3.00 / 3; CTR23-23 TabPFN 2.87 / 2, **v49 3.13 / 2**, EBM 3.48 / 3. v49 vs v48 on the
+EBM 3.00 / 3; CTR23-23 TabPFN 2.87 / 2, **v49 3.13 / 2**, EBM 3.48 / 3; classic-7 at full
+size TabPFN 1.86, **v49 2.86**, RF 3.14, EBM 3.57 (v49 beats EBM on 6 of 7; cpu_act is the loss). v49 vs v48 on the
 held-out set: better on 17 of 21 non-tied datasets (the rest are small and identical by
 construction), GM 0.964, p = 0.007. Largest moves: video_transcoding 0.266 -> 0.168,
 naval_propulsion 0.045 -> 0.031, fps_benchmark 0.040 -> 0.028, supercon 0.334 -> 0.287
