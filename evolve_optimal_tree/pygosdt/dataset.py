@@ -79,6 +79,7 @@ class BitDataset:
         self.max_costs = C.max(axis=0)
         self.min_costs = C.min(axis=0)
         self.diff_costs = self.max_costs - self.min_costs
+        self._diff_list = [float(v) for v in self.diff_costs]
         mismatch = np.full(K, np.inf)
         for j in range(K):
             for i in range(K):
@@ -145,18 +146,25 @@ class BitDataset:
             total += float(self.mismatch_costs[k]) * (capture & self.minority_by_class[k]).bit_count()
         return total
 
-    def distance(self, capture: int, i: int, j: int) -> float:
-        """Similar-support distance between features ``i`` and ``j`` on ``capture``."""
-        fi, fj = self.features[i], self.features[j]
-        differ = capture & (fi ^ fj)
-        agree = capture & ~differ
+    def distance(self, capture: int, i: int, j: int, needed: float = np.inf) -> float:
+        """Similar-support distance between features ``i`` and ``j`` on ``capture``.
+
+        Returns ``min(cost of rows where i != j, cost of rows where i == j)``.
+        If the first term already exceeds ``needed`` the caller cannot prune, so
+        the second term is skipped and the first is returned.
+        """
+        differ = capture & (self.features[i] ^ self.features[j])
         pos = 0.0
+        for k in range(self.K):
+            d = self._diff_list[k]
+            if d != 0.0:
+                pos += d * (differ & self.targets[k]).bit_count()
+        if pos >= needed:
+            return pos
+        agree = capture & ~differ
         neg = 0.0
         for k in range(self.K):
-            d = float(self.diff_costs[k])
-            if d == 0.0:
-                continue
-            t = self.targets[k]
-            pos += d * (differ & t).bit_count()
-            neg += d * (agree & t).bit_count()
+            d = self._diff_list[k]
+            if d != 0.0:
+                neg += d * (agree & self.targets[k]).bit_count()
         return min(pos, neg)

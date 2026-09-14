@@ -93,12 +93,13 @@ class Optimizer:
         self.optimal = False
 
         # ordinal neighbour map used by the continuous feature exchange bound
+        # ``feature_exchange`` is accepted for configuration compatibility only: the
+        # reference's pairwise version prunes whole subtrees with parent bounds and
+        # is not exact, so it is not applied (see README).
         self.next_in_group = np.full(data.m, -1, dtype=np.int64)
-        self.prev_in_group = np.full(data.m, -1, dtype=np.int64)
         for g in (groups or []):
             for a, b in zip(g[:-1], g[1:]):
                 self.next_in_group[a] = b
-                self.prev_in_group[b] = a
 
         self._has_groups = bool(np.any(self.next_in_group >= 0))
         self._pos_buffer = np.full(data.m, -1, dtype=np.int64)
@@ -254,8 +255,7 @@ class Optimizer:
             lmin += counts[:, K + r] * w
         return L, lmin, dist, min_total
 
-    def _child_node(self, key: int, count: int, leaf: float, lb: float, solved: bool,
-                    l_or_r_pred_key: int | None = None) -> Node:
+    def _child_node(self, key: int, count: int, leaf: float, lb: float, solved: bool) -> Node:
         node = self.memo.get(key)
         if node is not None:
             return node
@@ -338,45 +338,46 @@ class Optimizer:
         rejected = split_lb[active & ~within]
         min_pruned = float(rejected.min()) if rejected.shape[0] else np.inf
 
-        # incorporate memoised bounds of children that already exist, only for
-        # candidates that survive the cheap filter (memo bounds can only tighten)
-        lkeys = {}
-        for i in cand.tolist():
-            lkey = key & F[feats[i]]
-            lkeys[i] = lkey
-            ln = memo.get(lkey)
-            if ln is not None:
-                l_lb[i] = ln.lb
-                l_leaf[i] = ln.ub  # ub is achievable, not necessarily a leaf
-                l_solved[i] = ln.solved
-            rn = memo.get(key ^ lkey)
-            if rn is not None:
-                r_lb[i] = rn.lb
-                r_leaf[i] = rn.ub
-                r_solved[i] = rn.solved
-            if ln is not None or rn is not None:
-                split_lb[i] = l_lb[i] + r_lb[i]
-                split_ub[i] = l_leaf[i] + r_leaf[i]
-                if split_ub[i] < best - EPS:
-                    best = float(split_ub[i])
-                    best_split = int(feats[i])
-                    bound = min(budget, best)
-
-        order = cand[np.lexsort((split_ub[cand], split_lb[cand]))]
+        # Candidates are visited in increasing order of their cheap lower bound, so
+        # the loop can stop at the first one exceeding the budget.  Memoised bounds
+        # of existing children are consulted lazily, only for visited candidates.
+        order = cand[np.lexsort((split_ub[cand], split_lb[cand]))].tolist()
         sim = self.similar_support
+        look_ahead = self.look_ahead
         known_lb = {}  # feature -> proven lower bound of its split at this node
 
-        for oi in order.tolist():
-            i = oi
+        for i in order:
+            raw = float(split_lb[i])
+            if raw > bound + EPS:
+                if raw < min_pruned:
+                    min_pruned = raw
+                break
             j = int(feats[i])
-            slb = float(split_lb[i])
+            lkey = key & F[j]
+            rkey = key ^ lkey
+            ln = memo.get(lkey)
+            rn = memo.get(rkey)
+            if ln is None:
+                llb, lub = float(l_lb[i]), float(l_leaf[i])
+            else:
+                llb, lub = ln.lb, ln.ub
+            if rn is None:
+                rlb, rub = float(r_lb[i]), float(r_leaf[i])
+            else:
+                rlb, rub = rn.lb, rn.ub
+            sub = lub + rub
+            if sub < best - EPS:
+                best = sub
+                best_split = j
+                bound = min(budget, best)
+            slb = llb + rlb
             if sim:
                 # similar support bound from neighbouring features already resolved
                 # here; the distance is only computed when it could prune
                 for nb in (j - 1, j + 1):
                     nlb = known_lb.get(nb)
                     if nlb is not None and nlb > bound + EPS and nlb > slb:
-                        d = data.distance(key, j, nb)
+                        d = data.distance(key, j, nb, nlb - slb)
                         if nlb - d > slb:
                             slb = nlb - d
             if slb > bound + EPS:
@@ -384,25 +385,22 @@ class Optimizer:
                     min_pruned = slb
                 known_lb[j] = slb
                 continue
-            lkey = lkeys[i]
-            rkey = key ^ lkey
-            left = self._child_node(lkey, 0, float(l_leaf[i]), float(l_lb[i]), bool(l_solved[i]))
-            right = self._child_node(rkey, 0, float(r_leaf[i]), float(r_lb[i]), bool(r_solved[i]))
-            if left.count == 0:
-                left.count = lkey.bit_count()
-            if right.count == 0:
-                right.count = rkey.bit_count()
+            if ln is None:
+                ln = self._child_node(lkey, lkey.bit_count(), lub, llb, bool(l_solved[i]))
+            if rn is None:
+                rn = self._child_node(rkey, rkey.bit_count(), rub, rlb, bool(r_solved[i]))
 
-            # solve the child with the larger lower bound first (more likely to prune)
-            first, second = (left, right) if left.lb >= right.lb else (right, left)
-            self._solve(first, bound - second.lb, feats)
+            # solve the child with the larger lower bound first (more likely to prune);
+            # with look-ahead the child only gets the budget its sibling leaves over
+            first, second = (ln, rn) if ln.lb >= rn.lb else (rn, ln)
+            self._solve(first, bound - second.lb if look_ahead else bound, feats)
             if first.lb > bound - second.lb + EPS:
                 slb = first.lb + second.lb
                 if slb < min_pruned:
                     min_pruned = slb
                 known_lb[j] = slb
                 continue
-            self._solve(second, bound - first.ub, feats)
+            self._solve(second, bound - first.ub if look_ahead else bound, feats)
             if second.lb > bound - first.ub + EPS:
                 slb = first.ub + second.lb
                 if slb < min_pruned:

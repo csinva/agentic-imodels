@@ -62,7 +62,6 @@ def load_dataset(name: str, workdir: Path) -> Path:
     frame = pd.read_csv(src)
     if frame.isna().any().any():
         frame = frame.fillna(0)
-    frame = frame.drop_duplicates() if False else frame
     out = workdir / f"{name}.csv"
     frame.to_csv(out, index=False)
     return out
@@ -130,11 +129,11 @@ def run_reference(csv: Path, lam: float, time_limit: int, workdir: Path, workers
     return res
 
 
-def run_python(csv: Path, lam: float, time_limit: float) -> dict:
+def run_python(csv: Path, lam: float, time_limit: float, engine: str = "auto") -> dict:
     frame = pd.read_csv(csv)
     X, y = frame.iloc[:, :-1], frame.iloc[:, -1]
     t0 = time.perf_counter()
-    model = GOSDTClassifier(regularization=lam, time_limit=time_limit).fit(X, y)
+    model = GOSDTClassifier(regularization=lam, time_limit=time_limit, engine=engine).fit(X, y)
     wall = time.perf_counter() - t0
     return {
         "py_wall": wall, "py_time": model.time_, "py_encode_time": model.encoding_time_,
@@ -153,6 +152,8 @@ def main(argv=None):
     ap.add_argument("--skip-reference", action="store_true")
     ap.add_argument("--skip-python", action="store_true")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--engine", default="auto", help="pygosdt engine: auto, numba or python")
+    ap.add_argument("--workers", type=int, default=1, help="reference worker_limit")
     args = ap.parse_args(argv)
 
     out = Path(args.out)
@@ -171,13 +172,13 @@ def main(argv=None):
         for lam in lams:
             row = {"dataset": name, "n": n, "p": p, "lam": lam}
             if not args.skip_reference:
-                r = run_reference(csv, lam, int(args.time_limit), workdir)
+                r = run_reference(csv, lam, int(args.time_limit), workdir, workers=args.workers)
                 if r["ref_tree"] is not None:
                     e, l = evaluate_tree(r["ref_tree"], frame)
                     row.update(ref_errors=e, ref_leaves=l, ref_objective=e / n + lam * l)
                 row.update({k: v for k, v in r.items() if k != "ref_tree"})
             if not args.skip_python:
-                r = run_python(csv, lam, args.time_limit)
+                r = run_python(csv, lam, args.time_limit, engine=args.engine)
                 e, l = evaluate_tree(r["py_tree"], frame)
                 row.update(py_errors=e, py_leaves=l, py_objective=e / n + lam * l)
                 row.update({k: v for k, v in r.items() if k != "py_tree"})

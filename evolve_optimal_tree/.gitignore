@@ -9,3 +9,5 @@ GeneralizedOptimalSparseDecisionTreesReference/build/gosdt
 GeneralizedOptimalSparseDecisionTreesReference/**/*.o
 .pytest_cache/
 GeneralizedOptimalSparseDecisionTreesReference/
+!benchmarks/results/
+benchmarks/results/work/
