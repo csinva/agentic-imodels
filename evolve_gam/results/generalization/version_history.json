@@ -1,0 +1,378 @@
+[
+{
+"v": 0,
+"name": "DecisionTreeSimple",
+"commit": "4141b75",
+"date": "2026-04-19",
+"lines": 222,
+"family": "tree baseline"
+},
+{
+"v": 1,
+"name": "SegGAM_pspline_v1",
+"commit": "fbee076",
+"date": "2026-08-12",
+"lines": 506,
+"family": "spline GAM"
+},
+{
+"v": 2,
+"name": "SegGAM_pspline_v2",
+"commit": "d53c9f2",
+"date": "2026-08-12",
+"lines": 591,
+"family": "spline GAM"
+},
+{
+"v": 3,
+"name": "SegGAM_pspline_v3",
+"commit": "9eb4198",
+"date": "2026-08-12",
+"lines": 606,
+"family": "spline GAM"
+},
+{
+"v": 4,
+"name": "SegGAM_ga2m_v4",
+"commit": "f5068f5",
+"date": "2026-08-12",
+"lines": 717,
+"family": "spline GAM"
+},
+{
+"v": 5,
+"name": "SegGAM_ga2m_v5",
+"commit": "113efb4",
+"date": "2026-08-12",
+"lines": 777,
+"family": "spline GAM"
+},
+{
+"v": 6,
+"name": "SegGAM_ga2m_v6",
+"commit": "2d8fb3d",
+"date": "2026-08-12",
+"lines": 844,
+"family": "spline GAM"
+},
+{
+"v": 7,
+"name": "SegGAM_ga2m_v7",
+"commit": "adf14cf",
+"date": "2026-08-12",
+"lines": 859,
+"family": "spline GAM"
+},
+{
+"v": 8,
+"name": "SegGAM_ga2m_v8",
+"commit": "6e8d231",
+"date": "2026-08-12",
+"lines": 872,
+"family": "spline GAM"
+},
+{
+"v": 9,
+"name": "SegGAM_ga2m_v9",
+"commit": "f451667",
+"date": "2026-08-12",
+"lines": 892,
+"family": "spline GAM"
+},
+{
+"v": 10,
+"name": "GA2MBoost_v10",
+"commit": "2670bfb",
+"date": "2026-08-12",
+"lines": 674,
+"family": "boosted GA2M"
+},
+{
+"v": 11,
+"name": "GA2MBoost_v11",
+"commit": "47eb208",
+"date": "2026-08-12",
+"lines": 686,
+"family": "boosted GA2M"
+},
+{
+"v": 12,
+"name": "GA2MBoost_v12",
+"commit": "1a6ea28",
+"date": "2026-08-13",
+"lines": 704,
+"family": "boosted GA2M"
+},
+{
+"v": 13,
+"name": "GA2MBoost_v13",
+"commit": "d8e90b2",
+"date": "2026-08-13",
+"lines": 708,
+"family": "boosted GA2M"
+},
+{
+"v": 14,
+"name": "GA2MBoost_v14",
+"commit": "b007e8b",
+"date": "2026-08-13",
+"lines": 775,
+"family": "boosted GA2M"
+},
+{
+"v": 15,
+"name": "GA2MBoost_v15",
+"commit": "1f2367c",
+"date": "2026-08-13",
+"lines": 786,
+"family": "boosted GA2M"
+},
+{
+"v": 16,
+"name": "GA2MBoost_v16",
+"commit": "08c22dd",
+"date": "2026-08-13",
+"lines": 785,
+"family": "boosted GA2M"
+},
+{
+"v": 17,
+"name": "GA2MBoost_v17",
+"commit": "74fae4a",
+"date": "2026-08-13",
+"lines": 806,
+"family": "boosted GA2M"
+},
+{
+"v": 18,
+"name": "GA2MBoost_v18",
+"commit": "38ced70",
+"date": "2026-08-13",
+"lines": 849,
+"family": "boosted GA2M"
+},
+{
+"v": 19,
+"name": "GA2MBoost_v19",
+"commit": "bc67984",
+"date": "2026-08-13",
+"lines": 897,
+"family": "boosted GA2M"
+},
+{
+"v": 20,
+"name": "GA2MBoost_v20",
+"commit": "2e02d74",
+"date": "2026-08-13",
+"lines": 905,
+"family": "boosted GA2M"
+},
+{
+"v": 21,
+"name": "GA2MBoost_v21",
+"commit": "9fa5b0b",
+"date": "2026-08-13",
+"lines": 919,
+"family": "boosted GA2M"
+},
+{
+"v": 22,
+"name": "GA2MBoost_v22",
+"commit": "39d6340",
+"date": "2026-08-13",
+"lines": 918,
+"family": "boosted GA2M"
+},
+{
+"v": 24,
+"name": "GA2MBoost_v24",
+"commit": "1bd0e7d",
+"date": "2026-08-13",
+"lines": 960,
+"family": "boosted GA2M"
+},
+{
+"v": 25,
+"name": "GA2MBoost_v25",
+"commit": "83a8342",
+"date": "2026-08-13",
+"lines": 953,
+"family": "boosted GA2M"
+},
+{
+"v": 26,
+"name": "GA2MBoost_v26",
+"commit": "1778184",
+"date": "2026-08-13",
+"lines": 966,
+"family": "boosted GA2M"
+},
+{
+"v": 28,
+"name": "GA2MBoost_v28",
+"commit": "0ae4e16",
+"date": "2026-08-13",
+"lines": 868,
+"family": "boosted GA2M"
+},
+{
+"v": 29,
+"name": "GA2MBoost_v29",
+"commit": "38641fc",
+"date": "2026-08-13",
+"lines": 967,
+"family": "boosted GA2M"
+},
+{
+"v": 30,
+"name": "GA2MBoost_v30",
+"commit": "378dee2",
+"date": "2026-08-13",
+"lines": 967,
+"family": "boosted GA2M"
+},
+{
+"v": 31,
+"name": "GA2MBoost_v31",
+"commit": "16e8a4d",
+"date": "2026-08-13",
+"lines": 968,
+"family": "boosted GA2M"
+},
+{
+"v": 33,
+"name": "GA2MBoost_v33",
+"commit": "90e2552",
+"date": "2026-08-13",
+"lines": 893,
+"family": "boosted GA2M"
+},
+{
+"v": 34,
+"name": "SimpleGA2M_v34",
+"commit": "7c57f3d",
+"date": "2026-08-13",
+"lines": 639,
+"family": "boosted GA2M"
+},
+{
+"v": 35,
+"name": "AddGP_v35",
+"commit": "83b4cec",
+"date": "2026-08-13",
+"lines": 507,
+"family": "GP GAM"
+},
+{
+"v": 36,
+"name": "AddGP_v36",
+"commit": "9a83e8b",
+"date": "2026-08-14",
+"lines": 1035,
+"family": "GP GAM"
+},
+{
+"v": 37,
+"name": "AddGP_v37",
+"commit": "e366a94",
+"date": "2026-08-17",
+"lines": 1101,
+"family": "GP GAM"
+},
+{
+"v": 38,
+"name": "AddGP_v38",
+"commit": "9e459dc",
+"date": "2026-08-18",
+"lines": 1110,
+"family": "GP GAM"
+},
+{
+"v": 39,
+"name": "AddGP_v39",
+"commit": "12001a4",
+"date": "2026-08-18",
+"lines": 977,
+"family": "GP GAM"
+},
+{
+"v": 40,
+"name": "AddGP_v40",
+"commit": "d512e40",
+"date": "2026-08-20",
+"lines": 976,
+"family": "GP GAM"
+},
+{
+"v": 41,
+"name": "AddGP_v41",
+"commit": "a873ec1",
+"date": "2026-08-23",
+"lines": 736,
+"family": "GP GAM"
+},
+{
+"v": 42,
+"name": "AddGP_v42",
+"commit": "ac757a2",
+"date": "2026-08-23",
+"lines": 732,
+"family": "GP GAM"
+},
+{
+"v": 43,
+"name": "AddGP_v43",
+"commit": "d6d4b3a",
+"date": "2026-08-24",
+"lines": 725,
+"family": "GP GAM"
+},
+{
+"v": 44,
+"name": "AddGP_v44",
+"commit": "729b16b",
+"date": "2026-08-25",
+"lines": 725,
+"family": "GP GAM"
+},
+{
+"v": 45,
+"name": "AddGP_v45",
+"commit": "455825a",
+"date": "2026-08-25",
+"lines": 707,
+"family": "GP GAM"
+},
+{
+"v": 46,
+"name": "AddGP_v46",
+"commit": "70233c0",
+"date": "2026-08-31",
+"lines": 700,
+"family": "GP GAM"
+},
+{
+"v": 47,
+"name": "AddGP_v47",
+"commit": "f31f287",
+"date": "2026-09-01",
+"lines": 686,
+"family": "GP GAM"
+},
+{
+"v": 48,
+"name": "AddGP_v48",
+"commit": "46c5ad8",
+"date": "2026-09-09",
+"lines": 689,
+"family": "GP GAM"
+},
+{
+"v": 49,
+"name": "AddGP_v49",
+"commit": "46c5ad8",
+"date": "2026-09-14",
+"lines": 765,
+"family": "GP GAM"
+}
+]
