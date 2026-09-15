@@ -76,6 +76,7 @@ The agent edits `evolve/interpretable_regressor.py` in a loop, commits each atte
 | --- | --- |
 | [`evolve/`](evolve/) | The Claude-driven agentic loop — fixed harness (`run_baselines.py`, `src/`), agent-edited model file (`interpretable_regressor.py`), agent prompt (`program.md`). |
 | [`evolve_codex/`](evolve_codex/) | Same loop, OpenAI Codex agent. |
+| [`evolve_optimal_tree/`](evolve_optimal_tree/) | Same loop for an exact optimal-sparse-decision-tree solver (GOSDT objective): fixed suite with known optima as a correctness gate, speed and coverage as the metrics; starts from `pygosdt_v1`, a pure-Python GOSDT that beats the reference C++ code. |
 | [`result_libs/`](result_libs/) | Raw per-run output: every regressor the agent wrote during each loop, grouped by date / agent / effort. Includes `combined_results.csv` and `pareto_evolved.csv` aggregating all runs. |
 | [`result_libs_processed/agentic-imodels/`](result_libs_processed/agentic-imodels/) | Curated, installable Python package of 10 Pareto-frontier models drawn from `result_libs/`. |
 | [`generalization_experiments/`](generalization_experiments/) | Re-evaluate evolved models on **new** OpenML regression suites and a **new 157-test** interpretability suite to check generalization. |

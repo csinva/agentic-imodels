@@ -12,9 +12,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pygosdt import GOSDTClassifier
+from pygosdt_v1 import GOSDTClassifier
 
-DATA = Path(__file__).resolve().parent.parent / "GeneralizedOptimalSparseDecisionTreesReference" / "experiments" / "datasets"
+DATA = Path(__file__).resolve().parent.parent / "gosdt" / "experiments" / "datasets"
 
 CASES = [
     ("monk_1/data.csv", 0.1, 0.466129), ("monk_1/data.csv", 0.05, 0.338710), ("monk_1/data.csv", 0.02, 0.16),

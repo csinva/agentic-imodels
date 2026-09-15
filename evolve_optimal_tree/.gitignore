@@ -4,10 +4,9 @@ __pycache__/
 *.egg-info/
 build/
 dist/
-benchmarks/results/work/
-GeneralizedOptimalSparseDecisionTreesReference/build/gosdt
-GeneralizedOptimalSparseDecisionTreesReference/**/*.o
 .pytest_cache/
-GeneralizedOptimalSparseDecisionTreesReference/
-!benchmarks/results/
+gosdt/
+run*.log
 benchmarks/results/work/
+!benchmarks/results/
+!results/

@@ -1263,7 +1263,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pygosdt"
+name = "pygosdt-v1"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

@@ -1,10 +1,10 @@
 #!/bin/sh
 # Apply the build-compatibility patches to the reference checkout and build it.
-# Usage: reference_patches/apply.sh [path/to/GeneralizedOptimalSparseDecisionTreesReference]
+# Usage: gosdt_patches/apply.sh [path/to/gosdt]
 # Requires: brew install tbb boost gmp
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-REF=${1:-"$HERE/../GeneralizedOptimalSparseDecisionTreesReference"}
+REF=${1:-"$HERE/../gosdt"}
 cd "$REF"
 if grep -q "patched" src/queue.hpp; then
   echo "patches already applied"

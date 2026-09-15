@@ -447,7 +447,7 @@ decision trees on the binarized features. Each (dataset, λ) pair was run once p
 single-threaded, sequentially on an otherwise idle Apple M5 (16 GB), with a 600 s time cap and a 6 GB memory cap for
 both. The objective of every returned tree was recomputed independently from the tree and the raw data. Times are
 optimisation only; CSV parsing and binarization are excluded for both. The reference is the ICML 2020 code
-(<code>GeneralizedOptimalSparseDecisionTreesReference</code>) with its default bounds and <code>worker_limit = 1</code>.</p>
+(<code>gosdt</code>) with its default bounds and <code>worker_limit = 1</code>.</p>
 </section>
 <div class="scroll"><table class="data"><thead><tr><th>dataset</th><th>rows</th><th>source features</th><th>binary features</th></tr></thead><tbody>{ds_rows}</tbody></table></div>
 <p class="prose">λ ∈ {{0.1, 0.05, 0.02, 0.01, 0.005}} for every dataset. Missing values were filled with 0 for both implementations.</p>
@@ -522,7 +522,7 @@ current <em>scope</em>, the budget handed down by the parent. That lower bound i
 never lowered: when a parent later revisits the vertex with a wider budget, the stale bound stays and the search prunes the
 subtree that held the optimum. On tic-tac-toe at λ = 0.02 the reference reports 0.3246 with a zero optimality gap while a tree
 with 0.3183 exists; it does so with every optional bound, look-ahead and cancellation disabled. Removing the two scope-conditional
-skips (patch <code>reference_patches/scope-lowerbound.patch</code>, two lines) makes it report 0.3183, matching pygosdt. pygosdt
+skips (patch <code>gosdt_patches/scope-lowerbound.patch</code>, two lines) makes it report 0.3183, matching pygosdt. pygosdt
 avoids the problem by construction: when a subproblem fails its budget it records a lower bound that is valid unconditionally
 (the minimum over all pruned and solved splits), so revisiting it with a larger budget is always safe.</li>
 <li><strong>Its numeric encoder sorts integer thresholds as strings</strong> ("10" &lt; "2"), so the threshold-adjacency the
@@ -532,7 +532,7 @@ the parent, which does not carry over to descendants; pygosdt applies the provab
 <li><strong>It overruns its own time limit</strong> because the clock is checked every 10,000 iterations: with a 600 s cap it ran
 for up to 1,321 s, and its memory use is high enough that it was killed at 6 GB on 12 of 75 pairs.</li>
 <li><strong>It does not build as published on current toolchains</strong> (x86-only compiler flags and SIMD headers, an
-allocator type oneTBB 2021+ rejects); two lines and a direct clang build fix that, see <code>reference_patches/</code>.</li>
+allocator type oneTBB 2021+ rejects); two lines and a direct clang build fix that, see <code>gosdt_patches/</code>.</li>
 </ul>
 </section>
 

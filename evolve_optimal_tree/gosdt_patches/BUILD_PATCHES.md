@@ -34,5 +34,5 @@ The benchmark in `benchmarks/results` was run with the *unpatched* algorithm
 the corrected variant:
 
 ```
-cd GeneralizedOptimalSparseDecisionTreesReference && patch -p1 < ../reference_patches/scope-lowerbound.patch && ./build.sh
+cd gosdt && patch -p1 < ../gosdt_patches/scope-lowerbound.patch && ./build.sh
 ```

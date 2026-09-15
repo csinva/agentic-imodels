@@ -29,12 +29,12 @@ import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-REF = ROOT / "GeneralizedOptimalSparseDecisionTreesReference"
+REF = ROOT / "gosdt"
 DATA = REF / "experiments" / "datasets"
 BINARY = REF / "build" / "gosdt"
 
 sys.path.insert(0, str(ROOT))
-from pygosdt import GOSDTClassifier  # noqa: E402
+from pygosdt_v1 import GOSDTClassifier  # noqa: E402
 
 # name -> (csv path, preprocessing)
 DATASETS = {

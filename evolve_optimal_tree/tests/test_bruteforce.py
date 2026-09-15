@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pygosdt import BitDataset, GOSDTClassifier, Optimizer
+from pygosdt_v1 import BitDataset, GOSDTClassifier, Optimizer
 
 
 def exhaustive_optimum(Xb, y, K, lam, costs=None):
