@@ -21,6 +21,7 @@ def load_flat():
     sys.path.insert(0, str(ROOT / "src"))
     spec = importlib.util.spec_from_file_location("optimal_tree", ROOT / "optimal_tree.py")
     module = importlib.util.module_from_spec(spec)
+    sys.modules["optimal_tree"] = module  # numba's cache needs the module to be importable by name
     spec.loader.exec_module(module)
     return module
 
