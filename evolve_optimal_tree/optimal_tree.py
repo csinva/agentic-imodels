@@ -15,7 +15,7 @@ Usage (from inside a run folder, see setup_run.py):
 Results are written to results/ next to this file.  This file is the ONLY file
 the agent edits.  Everything below the "SOLVER" banner is fair game; the
 evaluation loop at the bottom must stay as is.
-The starting point is pygosdt_v1 (see pygosdt_v1/ and REPORT.html) flattened
+The starting point is pygosdt_v1 (see baselines/pygosdt_v1/ and baselines/REPORT.html) flattened
 into one file: a memoised depth-first branch-and-bound over capture-set
 bitsets with the reference GOSDT bounds and a numba counting kernel.
 """

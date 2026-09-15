@@ -96,9 +96,10 @@ src/                 — fixed suite (suite.py), scoring (evaluate.py), known op
                        baseline wrappers (reference_solver.py, streed_solver.py, guesses_solver.py)
 results/             — baseline overall_results.csv (leaderboard) and pair_results.csv
 runs/<tag>/          — one folder per session: optimal_tree.py, results/, optimal_tree_lib/ snapshots
-pygosdt_v1/          — the v1 package the loop starts from (importable: pygosdt_v1.GOSDTClassifier)
+
 tests/               — exactness tests (exhaustive DP on random problems, pinned real pairs)
-baselines/           — gosdt/ (the reference implementation, untracked), gosdt_patches/, pystreed/ (STreeD,
+baselines/           — pygosdt_v1/ (the v1 package the loop starts from; importable as pygosdt_v1),
+                       gosdt/ (the reference implementation, untracked), gosdt_patches/, pystreed/ (STreeD,
                        git metadata removed), gosdt_guesses/ (gosdt-guesses, git metadata removed, static
                        version), benchmarks/ (full 600 s benchmark of every baseline through the same scorer,
                        results, report builder)

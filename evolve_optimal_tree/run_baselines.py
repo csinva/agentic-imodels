@@ -3,7 +3,7 @@ Evaluate the fixed baselines on the development suite and seed the leaderboard.
 
 Baselines:
   gosdt        the reference C++ implementation (skipped if baselines/gosdt/build/gosdt is not built)
-  pygosdt_v1   the pure-Python re-implementation in pygosdt_v1/
+  pygosdt_v1   the pure-Python re-implementation in baselines/pygosdt_v1/
   streed       STreeD (baselines/pystreed, cost-complex-accuracy on the same binarization;
                needs `uv sync --group baselines` unless the cached rows are used)
 
