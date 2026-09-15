@@ -373,6 +373,52 @@ which more than pays for the interpreter overhead per node.</p>
 <div class="scroll"><table class="data"><thead><tr><th>dataset</th><th>rows</th><th>source features</th><th>binary features</th><th>pairs with both trees</th><th>identical</th><th>pygosdt better</th><th>pygosdt worse</th><th>C++ certified optimal</th><th>pygosdt certified optimal</th><th>C++ total time</th><th>pygosdt total time</th><th>C++ ÷ pygosdt time</th></tr></thead><tbody><tr><th scope="row">chudi</th><td>77</td><td>2</td><td>46</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>3.8 s</td><td>40 ms</td><td>23.6×</td></tr><tr><th scope="row">monk_3</th><td>122</td><td>11</td><td>11</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>1.3 s</td><td>173 ms</td><td>3.8×</td></tr><tr><th scope="row">monk_1</th><td>124</td><td>11</td><td>11</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>1.1 s</td><td>31 ms</td><td>10.0×</td></tr><tr><th scope="row">iris</th><td>150</td><td>4</td><td>118</td><td>5</td><td>4</td><td>1</td><td>0</td><td>4</td><td>5</td><td>12.8 min</td><td>751 ms</td><td>632.8×</td></tr><tr><th scope="row">monk_2</th><td>169</td><td>11</td><td>11</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>2.4 s</td><td>391 ms</td><td>2.8×</td></tr><tr><th scope="row">tic-tac-toe</th><td>958</td><td>9</td><td>27</td><td>4</td><td>3</td><td>1</td><td>0</td><td>4</td><td>5</td><td>4.4 min</td><td>38.4 s</td><td>7.7×</td></tr><tr><th scope="row">gaussian_1k</th><td>1,000</td><td>1</td><td>999</td><td>5</td><td>2</td><td>3</td><td>0</td><td>2</td><td>5</td><td>32.9 min</td><td>6.3 min</td><td>16.6×</td></tr><tr><th scope="row">fico_1k</th><td>1,000</td><td>23</td><td>1,357</td><td>3</td><td>3</td><td>0</td><td>0</td><td>0</td><td>1</td><td>43.2 min</td><td>40.2 min</td><td>5.6×</td></tr><tr><th scope="row">sine_1k</th><td>1,000</td><td>1</td><td>999</td><td>4</td><td>3</td><td>1</td><td>0</td><td>0</td><td>1</td><td>57.3 min</td><td>40.0 min</td><td>5.3×</td></tr><tr><th scope="row">car_evaluation</th><td>1,728</td><td>15</td><td>15</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>9.4 s</td><td>841 ms</td><td>6.6×</td></tr><tr><th scope="row">coupon_bar</th><td>1,913</td><td>14</td><td>14</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>2.3 s</td><td>221 ms</td><td>6.9×</td></tr><tr><th scope="row">compas_binned</th><td>6,907</td><td>12</td><td>12</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>72 ms</td><td>14 ms</td><td>3.9×</td></tr><tr><th scope="row">sine_10k</th><td>10,000</td><td>1</td><td>9,999</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td><1 ms</td><td>50.0 min</td><td>–</td></tr><tr><th scope="row">fico_binary</th><td>10,459</td><td>17</td><td>17</td><td>5</td><td>5</td><td>0</td><td>0</td><td>5</td><td>5</td><td>35.1 s</td><td>3.2 s</td><td>6.5×</td></tr><tr><th scope="row">compas_processed</th><td>12,381</td><td>22</td><td>621</td><td>2</td><td>2</td><td>0</td><td>0</td><td>1</td><td>1</td><td>4.9 min</td><td>30.2 min</td><td>21,310.3×</td></tr></tbody></table></div>
 
 <section class="prose">
+<h2>Why pygosdt is faster</h2>
+<p>Both implementations do the same kind of work per subproblem: for every binary feature, count how the rows reaching the
+node split by class. What differs is how many subproblems they expand and what each expansion costs.</p>
+<ul>
+<li><strong>Far fewer subproblems.</strong> pygosdt runs a depth-first search that starts from a greedy tree and immediately
+tightens its incumbent with a "both children as leaves" bound, so at every node it only descends into splits whose lower bound
+beats the best tree found so far. The reference is best-first: a priority queue of messages ordered by support and lower bound
+expands many subproblems breadth-wise before any complete tree exists to prune against. Over the 41 pairs both
+sides solved to optimality, the reference expanded a median 4.3× more subproblems (up to
+267× on iris, where it visits over 200,000 nodes for a 4-leaf tree). Missing bounds are not the reason:
+the two use the same bounds, and pygosdt's extra pruning of neighbouring numeric thresholds is applied per node only.</li>
+<li><strong>Cheaper expansions.</strong> pygosdt gathers a node's per-feature counts in one vectorised call (a numba kernel over
+packed 64-bit words), then filters and orders candidate splits with numpy; the interpreter only touches the few splits that
+survive. The reference copies full row bitmasks into every message and child task, and routes each expansion through several
+concurrent hash maps (vertices, children, edges, bounds, queue membership). On pairs taking the reference more than a second,
+the median cost per expanded subproblem was 150 µs for the reference and 28 µs for pygosdt.</li>
+<li><strong>Lower memory.</strong> A pygosdt subproblem is one big integer key plus a small record; the reference's per-vertex
+bitmask copies and per-edge tables exhausted 6 GB on sine_10k within a minute at every λ, while pygosdt stayed under the same
+cap for the full 600 s with 300,000–500,000 memoised subproblems.</li>
+</ul>
+</section>
+
+<section class="prose">
+<h2>What goes wrong in the reference implementation</h2>
+<ul>
+<li><strong>It certifies suboptimal trees.</strong> When the reference computes a vertex's lower bound (the minimum over its
+splits, in <code>store_children</code> and <code>load_children</code>) it skips every split whose bound exceeds the vertex's
+current <em>scope</em>, the budget handed down by the parent. That lower bound is only valid for that scope, but it is cached and
+never lowered: when a parent later revisits the vertex with a wider budget, the stale bound stays and the search prunes the
+subtree that held the optimum. On tic-tac-toe at λ = 0.02 the reference reports 0.3246 with a zero optimality gap while a tree
+with 0.3183 exists; it does so with every optional bound, look-ahead and cancellation disabled. Removing the two scope-conditional
+skips (patch <code>reference_patches/scope-lowerbound.patch</code>, two lines) makes it report 0.3183, matching pygosdt. pygosdt
+avoids the problem by construction: when a subproblem fails its budget it records a lower bound that is valid unconditionally
+(the minimum over all pruned and solved splits), so revisiting it with a larger budget is always safe.</li>
+<li><strong>Its numeric encoder sorts integer thresholds as strings</strong> ("10" &lt; "2"), so the threshold-adjacency the
+continuous-feature-exchange bound relies on does not hold for integer columns with values above 9.</li>
+<li><strong>Its pairwise feature-exchange bound prunes features for entire subtrees</strong> using dominance established at
+the parent, which does not carry over to descendants; pygosdt applies the provably valid per-node version only.</li>
+<li><strong>It overruns its own time limit</strong> because the clock is checked every 10,000 iterations: with a 600 s cap it ran
+for up to 1,321 s, and its memory use is high enough that it was killed at 6 GB on 12 of 75 pairs.</li>
+<li><strong>It does not build as published on current toolchains</strong> (x86-only compiler flags and SIMD headers, an
+allocator type oneTBB 2021+ rejects); two lines and a direct clang build fix that, see <code>reference_patches/</code>.</li>
+</ul>
+</section>
+
+<section class="prose">
 <h2>Where each implementation ran out of time or memory</h2>
 <p>Each cell shows how the reference (top) and pygosdt (bottom) stopped, with the time used. The reference certified optimality on
 51 pairs, hit the time cap on 12 (it checks the clock only every 10,000 iterations and overran the cap by up to

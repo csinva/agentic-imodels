@@ -1,0 +1,20 @@
+--- a/src/optimizer/dispatch/dispatch.hpp
++++ b/src/optimizer/dispatch/dispatch.hpp
+@@ -151,7 +151,7 @@
+             }            
+         }
+ 
+-        if (std::get<1>(* iterator) > task.upperscope()) { continue; }
++        // patched: every split contributes to the lower bound (see BUILD_PATCHES.md)
+         if (std::get<2>(* iterator) < upper) { optimal_feature = std::get<0>(* iterator); }
+         lower = std::min(lower, std::get<1>(* iterator));
+         upper = std::min(upper, std::get<2>(* iterator));
+@@ -207,7 +207,7 @@
+                 split_upper = left.upperbound() + right.upperbound();
+             }
+             bounds -> second.push_back(std::tuple<int, float, float>(j, split_lower, split_upper));
+-            if (split_lower > task.upperscope()) { continue; }
++            // patched: every split contributes to the lower bound (see BUILD_PATCHES.md)
+             if (split_upper < upper) { optimal_feature = j; }
+             lower = std::min(lower, split_lower);
+             upper = std::min(upper, split_upper);

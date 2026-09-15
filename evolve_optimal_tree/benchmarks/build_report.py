@@ -120,6 +120,20 @@ def compute(df: pd.DataFrame) -> dict:
         "py_mean": float(both["py_time"].mean()), "py_median": float(both["py_time"].median()),
         "ref_total": float(both["ref_time"].sum()), "py_total": float(both["py_time"].sum()),
         "wins": wins, "per": per, "both": both,
+        **node_stats(df),
+    }
+
+
+def node_stats(df: pd.DataFrame) -> dict:
+    """Subproblem counts and per-expansion cost on pairs both sides solved to optimality."""
+    b = df[(df["ref_stop"] == "optimal") & (df["py_stop"] == "optimal") & (df["ref_time"] > 0) & (df["py_time"] > 0)].copy()
+    ratio = b["ref_size"] / b["py_size"]
+    slow = b[b["ref_time"] > 1]
+    return {
+        "both_opt": len(b),
+        "node_ratio_med": float(ratio.median()), "node_ratio_max": float(ratio.max()),
+        "ref_us": float((slow["ref_time"] / slow["ref_size"] * 1e6).median()),
+        "py_us": float((slow["py_time"] / slow["py_size"] * 1e6).median()),
     }
 
 
@@ -475,6 +489,52 @@ which more than pays for the interpreter overhead per node.</p>
 </section>
 <figure>{svg_ratio_bars(s['per'])}<figcaption>Per-dataset geometric mean of reference time ÷ pygosdt time over the λ values where both returned a tree. Bars left of 1× would mean the reference was faster; none reach it. compas_processed has a single comparable pair (295 s vs 14 ms).</figcaption></figure>
 <div class="scroll">{per_dataset_html(s['per'])}</div>
+
+<section class="prose">
+<h2>Why pygosdt is faster</h2>
+<p>Both implementations do the same kind of work per subproblem: for every binary feature, count how the rows reaching the
+node split by class. What differs is how many subproblems they expand and what each expansion costs.</p>
+<ul>
+<li><strong>Far fewer subproblems.</strong> pygosdt runs a depth-first search that starts from a greedy tree and immediately
+tightens its incumbent with a "both children as leaves" bound, so at every node it only descends into splits whose lower bound
+beats the best tree found so far. The reference is best-first: a priority queue of messages ordered by support and lower bound
+expands many subproblems breadth-wise before any complete tree exists to prune against. Over the {s['both_opt']} pairs both
+sides solved to optimality, the reference expanded a median {s['node_ratio_med']:.1f}× more subproblems (up to
+{s['node_ratio_max']:.0f}× on iris, where it visits over 200,000 nodes for a 4-leaf tree). Missing bounds are not the reason:
+the two use the same bounds, and pygosdt's extra pruning of neighbouring numeric thresholds is applied per node only.</li>
+<li><strong>Cheaper expansions.</strong> pygosdt gathers a node's per-feature counts in one vectorised call (a numba kernel over
+packed 64-bit words), then filters and orders candidate splits with numpy; the interpreter only touches the few splits that
+survive. The reference copies full row bitmasks into every message and child task, and routes each expansion through several
+concurrent hash maps (vertices, children, edges, bounds, queue membership). On pairs taking the reference more than a second,
+the median cost per expanded subproblem was {s['ref_us']:.0f} µs for the reference and {s['py_us']:.0f} µs for pygosdt.</li>
+<li><strong>Lower memory.</strong> A pygosdt subproblem is one big integer key plus a small record; the reference's per-vertex
+bitmask copies and per-edge tables exhausted 6 GB on sine_10k within a minute at every λ, while pygosdt stayed under the same
+cap for the full 600 s with 300,000–500,000 memoised subproblems.</li>
+</ul>
+</section>
+
+<section class="prose">
+<h2>What goes wrong in the reference implementation</h2>
+<ul>
+<li><strong>It certifies suboptimal trees.</strong> When the reference computes a vertex's lower bound (the minimum over its
+splits, in <code>store_children</code> and <code>load_children</code>) it skips every split whose bound exceeds the vertex's
+current <em>scope</em>, the budget handed down by the parent. That lower bound is only valid for that scope, but it is cached and
+never lowered: when a parent later revisits the vertex with a wider budget, the stale bound stays and the search prunes the
+subtree that held the optimum. On tic-tac-toe at λ = 0.02 the reference reports 0.3246 with a zero optimality gap while a tree
+with 0.3183 exists; it does so with every optional bound, look-ahead and cancellation disabled. Removing the two scope-conditional
+skips (patch <code>reference_patches/scope-lowerbound.patch</code>, two lines) makes it report 0.3183, matching pygosdt. pygosdt
+avoids the problem by construction: when a subproblem fails its budget it records a lower bound that is valid unconditionally
+(the minimum over all pruned and solved splits), so revisiting it with a larger budget is always safe.</li>
+<li><strong>Its numeric encoder sorts integer thresholds as strings</strong> ("10" &lt; "2"), so the threshold-adjacency the
+continuous-feature-exchange bound relies on does not hold for integer columns with values above 9.</li>
+<li><strong>Its pairwise feature-exchange bound prunes features for entire subtrees</strong> using dominance established at
+the parent, which does not carry over to descendants; pygosdt applies the provably valid per-node version only.</li>
+<li><strong>It overruns its own time limit</strong> because the clock is checked every 10,000 iterations: with a 600 s cap it ran
+for up to 1,321 s, and its memory use is high enough that it was killed at 6 GB on 12 of 75 pairs.</li>
+<li><strong>It does not build as published on current toolchains</strong> (x86-only compiler flags and SIMD headers, an
+allocator type oneTBB 2021+ rejects); two lines and a direct clang build fix that, see <code>reference_patches/</code>.</li>
+</ul>
+</section>
 
 <section class="prose">
 <h2>Where each implementation ran out of time or memory</h2>

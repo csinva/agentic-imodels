@@ -123,15 +123,34 @@ packed 64-bit words; with `engine="python"` the same counts come from
 **Output** (`model.py`) is the reference's JSON tree schema plus prediction,
 scoring and structure helpers (`leaves()`, `nodes()`, `maximum_depth()`).
 
-### Differences from the reference that affect results
+### Why pygosdt is faster
 
+Both implementations do the same work per subproblem (count the class split of
+every feature).  pygosdt expands far fewer subproblems, because its depth-first
+search starts from a greedy incumbent and only descends into splits that can
+beat it, whereas the reference's best-first message queue expands breadth-wise
+before a complete tree exists to prune against (median 4.3× more expansions on
+the pairs both solved, up to 267× on iris).  Each expansion is also cheaper:
+one vectorised counting call and numpy filtering versus bitmask copies in every
+message and several concurrent hash-map round trips (median 150 µs vs 28 µs per
+expansion on pairs taking the reference over a second).  Memory follows the
+same pattern.  `REPORT.html` has the full account.
+
+### What goes wrong in the reference, and differences that affect results
+
+* **False optimality certificates.**  When the reference computes a vertex's
+  lower bound it skips splits whose bound exceeds the vertex's current scope
+  (the parent's budget), caches the result, and never lowers it when the scope
+  widens later.  On `tic-tac-toe` at λ = 0.02 it reports 0.324593 with a zero
+  gap while pygosdt finds 0.318330 (190 errors, 6 leaves; verified
+  independently, pinned in `tests/test_reference_datasets.py`), and it does so
+  with every optional bound disabled.  Removing the two scope-conditional
+  skips (`reference_patches/scope-lowerbound.patch`) makes the reference
+  report 0.318330 too.  pygosdt records unconditional lower bounds when a
+  subproblem fails its budget, so revisits with a larger budget are safe.
 * The reference's pairwise `feature_exchange` bound prunes features for whole
   subtrees using bounds computed at the parent, which is not exact.  pygosdt
-  only applies the provably valid per-subproblem version.  On
-  `tic-tac-toe` at λ = 0.02 the reference returns objective 0.324593 while
-  pygosdt finds 0.318330 (190 errors, 6 leaves; verified independently and
-  pinned in `tests/test_reference_datasets.py`).  The reference stays at
-  0.324593 even with all of its optional bounds disabled.
+  only applies the provably valid per-subproblem version.
 * The reference sorts integer thresholds as strings (so `"10" < "2"`), which
   breaks the threshold adjacency its continuous-feature-exchange bound relies
   on.  pygosdt sorts numerically.
