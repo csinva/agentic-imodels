@@ -73,6 +73,113 @@ def chip(stop: str) -> str:
     return f'<span class="chip chip-{STOP_CLASS.get(stop, "none")}">{esc(STOP_LABEL.get(stop, stop))}</span>'
 
 
+# ------------------------------------------------------------- baselines
+PAIRS = RESULTS / "pair_results.csv"
+MODELS = [
+    ("gosdt", "reference GOSDT (C++)", "The ICML 2020 code as published, default bounds, one thread."),
+    ("pygosdt_v1", "pygosdt_v1", "The pure-Python re-implementation this report is about."),
+    ("streed", "STreeD", "Separable-tree dynamic programming (van der Linden et al. 2023), cost-complex-accuracy task "
+                        "with cost_complexity = λ, depth cap 20, on the same binarization."),
+    ("gosdt_guesses", "gosdt-guesses (exact)", "The newer GOSDT C++ code base (McTavish et al. 2022) in exact mode: same "
+                                              "binarization, no threshold or label guesses, no depth budget."),
+    ("gosdt_guesses_guided", "gosdt-guesses (guided)", "The same code with the paper's guesses: thresholds from a 40-stump "
+                                                       "gradient-boosted ensemble and its predictions as reference labels. "
+                                                       "This shrinks the search space, so it is a heuristic, not an exact solver."),
+]
+EXACT = {"gosdt", "pygosdt_v1", "streed", "gosdt_guesses"}
+SUITE_CAP = 30.0
+FULL_CAP = 600.0
+
+
+def load_pairs() -> pd.DataFrame:
+    p = pd.read_csv(PAIRS)
+    p["status"] = p["status"].fillna("")
+    p["verdict"] = p["verdict"].fillna("")
+    # the solver's own optimisation time; when a wrapper reports none, the fit wall time
+    p["t"] = np.where(pd.to_numeric(p["seconds"], errors="coerce").fillna(0) > 0,
+                      pd.to_numeric(p["seconds"], errors="coerce"), pd.to_numeric(p["wall"], errors="coerce"))
+    p["t"] = p["t"].fillna(FULL_CAP).clip(upper=FULL_CAP)
+    known = pd.read_csv(ROOT.parent / "src" / "known_optima.csv")
+    p = p.drop(columns=["known_objective", "known_certified"]).merge(
+        known[["dataset", "lam", "objective", "certified"]].rename(
+            columns={"objective": "known_objective", "certified": "known_certified"}),
+        on=["dataset", "lam"], how="left")
+
+    def verdict(r):
+        if pd.isna(r["objective"]):
+            return "no_tree"
+        if pd.isna(r["known_objective"]):
+            return "ok"
+        claimed = r["status"] == "optimal" and r["model"] in EXACT
+        if r["objective"] > r["known_objective"] + 1e-6:
+            return "WRONG" if (claimed and r["known_certified"]) else "worse_than_known"
+        if r["objective"] < r["known_objective"] - 1e-6:
+            return "WRONG" if (claimed and r["known_certified"]) else "better_than_known"
+        return "ok"
+
+    p["verdict"] = p.apply(verdict, axis=1)
+    return p
+
+
+def model_stats(p: pd.DataFrame) -> pd.DataFrame:
+    best = p.dropna(subset=["objective"]).groupby(["dataset", "lam"])["objective"].min().rename("best")
+    q = p.merge(best, on=["dataset", "lam"], how="left")
+    rows = []
+    for name, label, _ in MODELS:
+        d = q[q["model"] == name]
+        if not len(d):
+            continue
+        has = d["objective"].notna()
+        cert = d["status"] == "optimal"
+        rows.append({
+            "model": name, "label": label, "n_pairs": len(d), "trees": int(has.sum()),
+            "certified": int(cert.sum()), "certified_suite": int((cert & (d["t"] <= SUITE_CAP)).sum()),
+            "matched_best": int((has & ((d["objective"] - d["best"]).abs() < 1e-6)).sum()),
+            "worse": int((has & (d["objective"] > d["best"] + 1e-6)).sum()),
+            "wrong": int((d["verdict"] == "WRONG").sum()),
+            "mean_t": float(d["t"].mean()), "median_t": float(d["t"].median()),
+            "time_cap": int(d["status"].isin(["time", "timeout"]).sum()),
+            "memory_cap": int((d["status"] == "memory").sum()),
+            "exact": name in EXACT,
+        })
+    return pd.DataFrame(rows)
+
+
+def per_dataset_models(p: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for ds, d in p.groupby("dataset", sort=False):
+        rec = {"dataset": ds, "n": int(d["n"].iloc[0])}
+        for name, _, _ in MODELS:
+            m = d[d["model"] == name]
+            rec[f"{name}_cert"] = int((m["status"] == "optimal").sum())
+            rec[f"{name}_geo"] = float(np.exp(np.log(m["t"].clip(lower=1e-3)).mean())) if len(m) else np.nan
+        rows.append(rec)
+    df = pd.DataFrame(rows)
+    return df.sort_values("n").reset_index(drop=True)
+
+
+def speed_vs_py(p: pd.DataFrame) -> list:
+    """Geometric mean of (model time / pygosdt_v1 time) over pairs both certified."""
+    py = p[(p["model"] == "pygosdt_v1") & (p["status"] == "optimal")].set_index(["dataset", "lam"])["t"]
+    out = []
+    for name, label, _ in MODELS:
+        if name == "pygosdt_v1":
+            continue
+        m = p[(p["model"] == name) & (p["status"] == "optimal")].set_index(["dataset", "lam"])["t"]
+        both = m.index.intersection(py.index)
+        if len(both) == 0:
+            continue
+        ratio = (m.loc[both].clip(lower=1e-3) / py.loc[both].clip(lower=1e-3))
+        out.append((name, label, float(np.exp(np.log(ratio).mean())), len(both)))
+    return out
+
+
+def disagreements(p: pd.DataFrame) -> pd.DataFrame:
+    """Exact solvers' results that are not the best known objective, and the guided heuristic's."""
+    d = p[p["objective"].notna() & p["verdict"].isin(["WRONG", "worse_than_known"])]
+    return d.sort_values(["dataset", "lam", "model"], ascending=[True, False, True])
+
+
 # ------------------------------------------------------------------- stats
 def load() -> pd.DataFrame:
     df = pd.read_csv(RESULTS / "summary.csv")
@@ -229,6 +336,77 @@ def svg_wins(wins: pd.DataFrame) -> str:
     return "\n".join(out)
 
 
+def svg_speed_vs_py(ratios: list) -> str:
+    rowh, top, left, right, bottom = 30, 16, 190, 110, 36
+    W = 640
+    H = top + rowh * len(ratios) + bottom
+    lo, hi = 0.3, 300
+    lx = lambda v: left + (math.log10(v) - math.log10(lo)) / (math.log10(hi) - math.log10(lo)) * (W - left - right)
+    out = [f'<svg class="chart" viewBox="0 0 {W} {H}" role="img" aria-label="Geometric mean of each baseline\'s time over pygosdt_v1\'s on pairs both certified">']
+    for t in [1, 10, 100]:
+        out.append(f'<line class="grid" x1="{lx(t):.1f}" y1="{top - 6}" x2="{lx(t):.1f}" y2="{H - bottom + 4}"/>')
+        out.append(f'<text class="tick" x="{lx(t):.1f}" y="{H - bottom + 18}" text-anchor="middle">{t}×</text>')
+    out.append(f'<line class="diag" x1="{lx(1):.1f}" y1="{top - 6}" x2="{lx(1):.1f}" y2="{H - bottom + 4}"/>')
+    for i, (name, label, geo, n) in enumerate(ratios):
+        y = top + i * rowh
+        x0, x1 = lx(1), lx(min(max(geo, lo), hi))
+        xa, xb = min(x0, x1), max(x0, x1)
+        cls = "bar-ref" if name == "gosdt" else ("bar-other" if name in EXACT else "bar-heur")
+        out.append(f'<rect class="{cls}" x="{xa:.1f}" y="{y + 5}" width="{max(xb - xa, 1):.1f}" height="{rowh - 10}" rx="3"><title>{esc(label)}: {geo:.1f}× pygosdt_v1 time over {n} pairs</title></rect>')
+        out.append(f'<text class="cat" x="{left - 8}" y="{y + rowh / 2 + 4:.1f}" text-anchor="end">{esc(label)}</text>')
+        out.append(f'<text class="val" x="{xb + 6:.1f}" y="{y + rowh / 2 + 4:.1f}">{geo:.1f}× ({n} pairs)</text>')
+    out.append(f'<text class="axis" x="{(left + W - right) / 2:.1f}" y="{H - 4}" text-anchor="middle">time ÷ pygosdt_v1 time, geometric mean over pairs both certified (log scale)</text>')
+    out.append("</svg>")
+    return "\n".join(out)
+
+
+def baselines_table_html(st: pd.DataFrame) -> str:
+    rows = []
+    for _, r in st.iterrows():
+        cls = ' class="py"' if r["model"] == "pygosdt_v1" else ""
+        sw = {"gosdt": "ref", "pygosdt_v1": "py", "streed": "st", "gosdt_guesses": "gg", "gosdt_guesses_guided": "ggh"}[r["model"]]
+        wrong = str(r["wrong"]) if r["exact"] else "n/a"
+        rows.append(f'<tr{cls}><th scope="row"><span class="swatch {sw}"></span>{esc(r["label"])}</th>'
+                    f'<td>{r["trees"]} of {r["n_pairs"]}</td><td>{r["certified"]}</td><td>{r["certified_suite"]}</td>'
+                    f'<td>{r["matched_best"]}</td><td>{r["worse"]}</td><td>{wrong}</td>'
+                    f'<td>{ftime(r["mean_t"])}</td><td>{ftime(r["median_t"])}</td><td>{r["time_cap"]}</td><td>{r["memory_cap"]}</td></tr>')
+    return ('<table class="headline"><thead><tr><th>solver</th><th>pairs with a tree</th><th>certified optimal<br><span class="sub">600 s cap</span></th>'
+            '<th>certified within 30 s</th><th>best known objective<br><span class="sub">matched</span></th><th>worse than best known</th>'
+            '<th>false certificates</th><th>mean fit time</th><th>median fit time</th><th>stopped at 600 s</th><th>stopped at 6 GB</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>')
+
+
+def per_dataset_models_html(pdm: pd.DataFrame) -> str:
+    head = "".join(f'<th>{esc(label)}<br><span class="sub">certified / geo. mean time</span></th>' for _, label, _ in MODELS)
+    rows = []
+    for _, r in pdm.iterrows():
+        cells = "".join(f'<td>{int(r[f"{n}_cert"])} of 5 · {ftime(r[f"{n}_geo"])}</td>' for n, _, _ in MODELS)
+        rows.append(f'<tr><th scope="row">{esc(r["dataset"])}</th><td>{int(r["n"]):,}</td>{cells}</tr>')
+    return f'<table class="data"><thead><tr><th>dataset</th><th>rows</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+
+
+def disagreements_html(d: pd.DataFrame) -> str:
+    labels = {n: l for n, l, _ in MODELS}
+    rows = []
+    for _, r in d.iterrows():
+        rows.append(f'<tr><th scope="row">{esc(labels[r["model"]])}</th><td>{esc(r["dataset"])}</td><td>{r["lam"]:g}</td>'
+                    f'<td>{fobj(r["objective"])}</td><td>{fobj(r["known_objective"])}{"*" if r["known_certified"] else ""}</td>'
+                    f'<td>{chip(r["status"] if r["status"] != "heuristic" else "")}</td><td>{esc(r["verdict"])}</td></tr>')
+    return ('<table class="data"><thead><tr><th>solver</th><th>dataset</th><th>λ</th><th>objective</th><th>best known</th>'
+            '<th>status</th><th>verdict</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table>")
+
+
+def all_rows_html(p: pd.DataFrame) -> str:
+    labels = {n: l for n, l, _ in MODELS}
+    rows = []
+    for _, r in p.sort_values(["dataset", "lam", "model"], ascending=[True, False, True]).iterrows():
+        rows.append(f'<tr><th scope="row">{esc(r["dataset"])}</th><td>{r["lam"]:g}</td><td>{esc(labels.get(r["model"], r["model"]))}</td>'
+                    f'<td>{fobj(r["objective"])}</td><td>{"" if pd.isna(r["leaves"]) else int(r["leaves"])}</td>'
+                    f'<td>{ftime(r["t"])}</td><td>{chip(r["status"] if r["status"] != "heuristic" else "")}</td><td>{esc(r["verdict"])}</td></tr>')
+    return ('<table class="data"><thead><tr><th>dataset</th><th>λ</th><th>solver</th><th>objective</th><th>leaves</th>'
+            '<th>time</th><th>status</th><th>verdict</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table>")
+
+
 # ------------------------------------------------------------------ tables
 def fit_matrix_html(df: pd.DataFrame) -> str:
     rows = []
@@ -308,6 +486,7 @@ CSS = """
   --bg: #f6f6f3; --surface: #ffffff; --ink: #17191d; --ink-2: #4d525b; --ink-3: #7b8089;
   --rule: #dcdcd6; --rule-soft: #ebebe6;
   --ref: #2a78d6; --py: #eb6834; --py-soft: #fbe6dc; --ref-soft: #dbe8fa;
+  --st: #1baf7a; --gg: #4a3aa7; --ggh: #a8a4b8;
   --ok: #0ca30c; --warn: #b87a00; --crit: #d03b3b;
   --ok-bg: #e5f5e5; --warn-bg: #fdf1d8; --crit-bg: #fae0e0; --none-bg: #ecece8;
   --better-bg: #e5f5e5; --same-bg: #ffffff; --worse-bg: #fae0e0;
@@ -318,6 +497,7 @@ CSS = """
     --bg: #1a1a19; --surface: #232322; --ink: #f2f2ee; --ink-2: #c3c2b7; --ink-3: #8f8e86;
     --rule: #3a3a37; --rule-soft: #2e2e2c;
     --ref: #3987e5; --py: #f0784a; --py-soft: #4a2a1c; --ref-soft: #1c3557;
+    --st: #199e70; --gg: #9085e9; --ggh: #7d7a8c;
     --ok: #3fbf3f; --warn: #e0a640; --crit: #ef6b6b;
     --ok-bg: #1f3a1f; --warn-bg: #3d3115; --crit-bg: #472222; --none-bg: #2c2c2a;
     --better-bg: #1f3a1f; --same-bg: #232322; --worse-bg: #472222;
@@ -328,6 +508,7 @@ CSS = """
   --bg: #1a1a19; --surface: #232322; --ink: #f2f2ee; --ink-2: #c3c2b7; --ink-3: #8f8e86;
   --rule: #3a3a37; --rule-soft: #2e2e2c;
   --ref: #3987e5; --py: #f0784a; --py-soft: #4a2a1c; --ref-soft: #1c3557;
+  --st: #199e70; --gg: #9085e9; --ggh: #7d7a8c;
   --ok: #3fbf3f; --warn: #e0a640; --crit: #ef6b6b;
   --ok-bg: #1f3a1f; --warn-bg: #3d3115; --crit-bg: #472222; --none-bg: #2c2c2a;
   --better-bg: #1f3a1f; --same-bg: #232322; --worse-bg: #472222;
@@ -351,10 +532,14 @@ header { padding-block: 48px 8px; }
 .headline thead th { font-size: 0.8rem; line-height: 1.25; vertical-align: bottom; }
 .headline thead .sub { display: block; font-weight: 400; color: var(--ink-3); font-size: 0.72rem; }
 .headline tbody th { font-family: "IBM Plex Sans", sans-serif; font-size: 1rem; font-weight: 600; }
-.headline td { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 1.05rem; }
+.headline td { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 0.95rem; white-space: nowrap; }
+.headline th, .headline td { padding: 10px 12px; }
 .headline tr.py td { color: var(--py); font-weight: 500; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: 0; }
 .swatch.ref { background: var(--ref); } .swatch.py { background: var(--py); }
+.swatch.st { background: var(--st); } .swatch.gg { background: var(--gg); } .swatch.ggh { background: var(--ggh); }
+.chart .bar-other { fill: var(--st); }
+.chart .bar-heur { fill: var(--ggh); }
 .tablenote { color: var(--ink-2); font-size: 0.9rem; max-width: 80ch; margin-top: 6px; }
 figure { margin: 22px 0; }
 figcaption { color: var(--ink-2); font-size: 0.88rem; margin-top: 8px; max-width: 70ch; }
@@ -407,6 +592,7 @@ code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 
 
 
 def build_html(df: pd.DataFrame, s: dict) -> str:
+    bs = s["baselines"]
     wins = s["wins"].sort_values(["dataset", "lam"], ascending=[True, False])
     win_rows = "".join(
         f"<tr><th scope=\"row\">{esc(r['dataset'])}</th><td>{r['lam']:g}</td>"
@@ -425,19 +611,15 @@ def build_html(df: pd.DataFrame, s: dict) -> str:
   <div class="eyebrow">Benchmark report · optimal sparse decision trees</div>
   <h1>pygosdt against the reference GOSDT</h1>
   <p class="lede">A pure-Python re-implementation of Generalized Optimal Sparse Decision Trees, compared with the
-  reference C++ binary on 15 datasets and 5 regularization strengths: does it find the same trees, and how fast?</p>
-  <div class="scroll headline-wrap"><table class="headline">
-    <thead><tr><th>implementation</th><th>pairs with a tree</th><th>wins<br><span class="sub">strictly better objective</span></th><th>ties<br><span class="sub">identical objective</span></th>
-      <th>certified optimal</th><th>mean fit time</th><th>median fit time</th><th>total fit time</th><th>stopped at 600 s</th><th>stopped at 6 GB</th></tr></thead>
-    <tbody>
-      <tr><th scope="row"><span class="swatch ref"></span>reference C++</th><td>{s['ref_trees']} of {s['pairs']}</td><td>{s['worse']}</td><td>{s['same']}</td><td>{s['ref_optimal']}</td>
-        <td>{ftime(s['ref_mean'])}</td><td>{ftime(s['ref_median'])}</td><td>{ftime(s['ref_total'])}</td><td>{s['ref_time_cap']}</td><td>{s['ref_memory']}</td></tr>
-      <tr class="py"><th scope="row"><span class="swatch py"></span>pygosdt</th><td>{s['py_trees']} of {s['pairs']}</td><td>{s['better']}</td><td>{s['same']}</td><td>{s['py_optimal']}</td>
-        <td>{ftime(s['py_mean'])}</td><td>{ftime(s['py_median'])}</td><td>{ftime(s['py_total'])}</td><td>{s['py_time_cap']}</td><td>{s['py_memory']}</td></tr>
-    </tbody></table></div>
-  <p class="tablenote">Wins, ties and fit times are over the {s['compared']} (dataset, λ) pairs where both implementations returned a tree; fit time is optimisation time
-  (parsing and binarization excluded), capped at 600 s. Neither side was ever strictly worse than the other except where shown under wins. Pair by pair, pygosdt is
-  {s['geo']:.1f}× faster on the geometric mean (median {s['median']:.1f}×).</p>
+  reference C++ binary, STreeD and gosdt-guesses on 15 datasets and 5 regularization strengths: does it find the
+  same trees, and how fast?</p>
+  <div class="scroll headline-wrap">{baselines_table_html(bs)}</div>
+  <p class="tablenote">All five solvers were run on the same 75 (dataset, λ) pairs, the same binarized features and the same 600 s / 6 GB caps,
+  and every returned tree's objective was recomputed independently. "Best known objective" is the best value any solver returned on that pair;
+  a false certificate is an exact solver certifying a value that disagrees with a certified optimum. Fit time is the solver's own optimisation
+  time, with pairs that produced no tree counted at 600 s; the guided gosdt-guesses wrapper reports no solver time, so its child-process wall
+  time (about 1 s of start-up) is shown. Head to head on the {s['compared']} pairs where both returned a tree, pygosdt_v1 is
+  {s['geo']:.1f}× faster than the reference on the geometric mean (median {s['median']:.1f}×) and never worse in objective.</p>
 </header>
 
 <section class="prose">
@@ -453,7 +635,29 @@ optimisation only; CSV parsing and binarization are excluded for both. The refer
 <p class="prose">λ ∈ {{0.1, 0.05, 0.02, 0.01, 0.005}} for every dataset. Missing values were filled with 0 for both implementations.</p>
 
 <section class="prose">
-<h2>Fit: does pygosdt find the same trees?</h2>
+<h2>Five solvers on the same problem</h2>
+<p>Besides the reference and pygosdt_v1, three further baselines were run through the same scorer:</p>
+<ul>
+{"".join(f"<li><strong>{esc(label)}</strong> — {esc(text)}</li>" for _, label, text in MODELS)}
+</ul>
+<p>Four of the five are exact solvers of the same objective, so they must agree whenever both certify. They do: across the
+{s['exact_certified_pairs']} pairs certified by at least two exact solvers, every certified objective agrees, with the single
+exception of the reference's tic-tac-toe certificate discussed below. The guided variant of gosdt-guesses is not exact by
+construction; it returned a worse tree than the best known on {s['guided_worse']} of its 75 pairs.</p>
+</section>
+<figure>{svg_speed_vs_py(s['speed_ratios'])}<figcaption>How much longer each solver takes than pygosdt_v1, as the geometric mean of the time ratio
+over the pairs both certified. The guided heuristic's time is dominated by process start-up and is not comparable.</figcaption></figure>
+<div class="scroll">{per_dataset_models_html(s['per_dataset_models'])}</div>
+<p class="prose">Certified pairs (of 5 λ values) and geometric-mean fit time per dataset; time counts uncertified pairs at the 600 s cap.</p>
+
+<h3>Results that are not the best known objective</h3>
+<p class="prose">Every exact solver's returned tree that is worse than the best known objective, and the guided heuristic's. A time-capped
+incumbent that is worse is expected (verdict <code>worse_than_known</code>); a <em>certified</em> result that is worse is an
+exactness violation (<code>WRONG</code>). Best known values marked * are certified.</p>
+<div class="scroll">{disagreements_html(s['disagreements'])}</div>
+
+<section class="prose">
+<h2>pygosdt_v1 against the reference: does it find the same trees?</h2>
 <p>Yes, or better. In none of the {s['compared']} pairs where both implementations produced a tree was pygosdt's objective worse.
 {s['same']} objectives are identical; in {s['better']} pairs pygosdt's tree is strictly better. Every cell below is one
 (dataset, λ) pair. Grey cells are pairs where the reference was stopped by the memory cap before it could write any model.</p>
@@ -471,7 +675,7 @@ pygosdt certified the optimum in under five minutes, and on sine_1k both timed o
 <figure>{svg_wins(s['wins'])}<figcaption>Objective of the two implementations on the six pairs that differ. Lower is better; both bars start at zero.</figcaption></figure>
 
 <section class="prose">
-<h2>Speed</h2>
+<h2>pygosdt_v1 against the reference: speed</h2>
 <p>Each point is one pair where both implementations returned a tree, placed by the reference's time (across) and pygosdt's
 time (up), on log scales. Points below the dashed line are pairs where pygosdt was faster. Hollow points are pairs where at
 least one side stopped at a cap, so their time is the cap rather than a solve time. pygosdt was faster on {s['py_faster']} pairs;
@@ -562,8 +766,11 @@ and pinned on 14 real (dataset, λ) pairs; 80 tests in total.</li>
 </section>
 
 <h2>All {s['pairs']} pairs</h2>
-<details open><summary>Full results table</summary>
+<details open><summary>pygosdt_v1 against the reference, per pair</summary>
 <div class="scroll">{full_table_html(df)}</div>
+</details>
+<details><summary>Every solver, every pair ({s['all_rows']} rows)</summary>
+<div class="scroll">{all_rows_html(s['pairs_df'])}</div>
 </details>
 </div>
 """
@@ -572,6 +779,17 @@ and pinned on 14 real (dataset, λ) pairs; 80 tests in total.</li>
 def main():
     df = load()
     s = compute(df)
+    p = load_pairs()
+    bs = model_stats(p)
+    s["baselines"] = bs
+    s["per_dataset_models"] = per_dataset_models(p)
+    s["speed_ratios"] = speed_vs_py(p)
+    s["disagreements"] = disagreements(p)
+    s["pairs_df"] = p
+    s["all_rows"] = len(p)
+    s["guided_worse"] = int(bs.loc[bs["model"] == "gosdt_guesses_guided", "worse"].sum())
+    cert = p[(p["status"] == "optimal") & p["model"].isin(EXACT)]
+    s["exact_certified_pairs"] = int((cert.groupby(["dataset", "lam"]).size() >= 2).sum())
     (ROOT / "REPORT.html").write_text(build_html(df, s))
     print(f"wrote {ROOT / 'REPORT.html'}")
     print(f"pairs {s['pairs']} compared {s['compared']} same {s['same']} better {s['better']} worse {s['worse']} geo {s['geo']:.2f} median {s['median']:.2f} "
