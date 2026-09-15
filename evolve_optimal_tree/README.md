@@ -16,6 +16,7 @@ Contents of this directory:
 |---|---|
 | `pygosdt/` | the package (`encoder.py`, `dataset.py`, `optimizer.py`, `fastbits.py`, `model.py`, `gosdt.py`, `cli.py`) |
 | `tests/` | exactness tests against an exhaustive search and regression tests on the reference datasets |
+| `REPORT.html` | benchmark comparison report (headline table, fit matrix, speed charts, stop reasons, full table) |
 | `benchmarks/` | harness comparing pygosdt with the reference binary, result CSVs, summary table and plot |
 | `reference_patches/` | two-line build fix and build script for the reference C++ code on arm64 macOS / oneTBB |
 | `GeneralizedOptimalSparseDecisionTreesReference/` | the reference implementation (untracked; copy it here from the original location) |
@@ -164,7 +165,8 @@ are summarised at the end of this file.
 
 ## Results summary
 
-Full table: `benchmarks/results/summary.md` (also `summary.csv`, the raw
+Report with charts: `REPORT.html` (built by `benchmarks/build_report.py`). Full
+table: `benchmarks/results/summary.md` (also `summary.csv`, the raw
 `benchmark_final.csv`, and `benchmark.png`).  15 datasets from the reference
 repository (77 to 12,381 rows, 13 to 10,001 binary features) × λ ∈ {0.1, 0.05,
 0.02, 0.01, 0.005}, single thread each, 600 s time cap and 6 GB memory cap for

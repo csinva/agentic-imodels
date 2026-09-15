@@ -1,12 +1,13 @@
-"""Render the benchmark comparison report (HTML page + Markdown) from summary.csv.
+"""Render the benchmark comparison report (HTML with inline SVG charts) from summary.csv.
 
 Usage::
 
     uv run python benchmarks/build_report.py
 
-Writes ``benchmarks/results/report.html`` and ``REPORT.md`` (repo root of the
-package).  All charts are inline SVG drawn from the data, so the page has no
-runtime dependencies.
+Writes ``REPORT.html`` at the package root.  All charts are inline SVG drawn
+from the data, so the page has no runtime dependencies; it is a body fragment
+(no ``<html>``/``<head>``) so it can be published as an Artifact as-is and also
+opens directly in a browser.
 """
 
 from __future__ import annotations
@@ -114,6 +115,10 @@ def compute(df: pd.DataFrame) -> dict:
         "py_time_cap": int((df["py_stop"] == "time").sum()),
         "py_memory": int((df["py_stop"] == "memory").sum()),
         "py_optimal": int((df["py_stop"] == "optimal").sum()),
+        "ref_trees": int(df["ref_objective"].notna().sum()), "py_trees": int(df["py_objective"].notna().sum()),
+        "ref_mean": float(both["ref_time"].mean()), "ref_median": float(both["ref_time"].median()),
+        "py_mean": float(both["py_time"].mean()), "py_median": float(both["py_time"].median()),
+        "ref_total": float(both["ref_time"].sum()), "py_total": float(both["py_time"].sum()),
         "wins": wins, "per": per, "both": both,
     }
 
@@ -327,12 +332,16 @@ a { color: var(--ref); }
 header { padding-block: 48px 8px; }
 .eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px; font-weight: 500; }
 .lede { font-size: 1.12rem; color: var(--ink-2); max-width: 64ch; margin-top: 14px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 28px 0 8px; }
-.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; }
-.tile .num { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 1.9rem; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.tile .num.py { color: var(--py); }
-.tile .lab { color: var(--ink-2); font-size: 0.86rem; margin-top: 6px; }
-.tile .sub { color: var(--ink-3); font-size: 0.78rem; }
+.headline-wrap { margin: 28px 0 10px; }
+.headline th, .headline td { padding: 12px 14px; }
+.headline thead th { font-size: 0.8rem; line-height: 1.25; vertical-align: bottom; }
+.headline thead .sub { display: block; font-weight: 400; color: var(--ink-3); font-size: 0.72rem; }
+.headline tbody th { font-family: "IBM Plex Sans", sans-serif; font-size: 1rem; font-weight: 600; }
+.headline td { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 1.05rem; }
+.headline tr.py td { color: var(--py); font-weight: 500; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: 0; }
+.swatch.ref { background: var(--ref); } .swatch.py { background: var(--py); }
+.tablenote { color: var(--ink-2); font-size: 0.9rem; max-width: 80ch; margin-top: 6px; }
 figure { margin: 22px 0; }
 figcaption { color: var(--ink-2); font-size: 0.88rem; margin-top: 8px; max-width: 70ch; }
 .chart { width: 100%; height: auto; max-width: 100%; display: block; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; }
@@ -403,12 +412,18 @@ def build_html(df: pd.DataFrame, s: dict) -> str:
   <h1>pygosdt against the reference GOSDT</h1>
   <p class="lede">A pure-Python re-implementation of Generalized Optimal Sparse Decision Trees, compared with the
   reference C++ binary on 15 datasets and 5 regularization strengths: does it find the same trees, and how fast?</p>
-  <div class="tiles">
-    <div class="tile"><div class="num">{s['compared']}</div><div class="lab">pairs where both returned a tree</div><div class="sub">of {s['pairs']} dataset × λ pairs</div></div>
-    <div class="tile"><div class="num">{s['same']}</div><div class="lab">identical objective</div><div class="sub">to 6 decimals</div></div>
-    <div class="tile"><div class="num py">{s['better']}</div><div class="lab">pygosdt strictly better</div><div class="sub">and {s['worse']} strictly worse</div></div>
-    <div class="tile"><div class="num py">{s['geo']:.1f}×</div><div class="lab">faster, geometric mean</div><div class="sub">median {s['median']:.1f}×, optimisation time</div></div>
-  </div>
+  <div class="scroll headline-wrap"><table class="headline">
+    <thead><tr><th>implementation</th><th>pairs with a tree</th><th>wins<br><span class="sub">strictly better objective</span></th><th>ties<br><span class="sub">identical objective</span></th>
+      <th>certified optimal</th><th>mean fit time</th><th>median fit time</th><th>total fit time</th><th>stopped at 600 s</th><th>stopped at 6 GB</th></tr></thead>
+    <tbody>
+      <tr><th scope="row"><span class="swatch ref"></span>reference C++</th><td>{s['ref_trees']} of {s['pairs']}</td><td>{s['worse']}</td><td>{s['same']}</td><td>{s['ref_optimal']}</td>
+        <td>{ftime(s['ref_mean'])}</td><td>{ftime(s['ref_median'])}</td><td>{ftime(s['ref_total'])}</td><td>{s['ref_time_cap']}</td><td>{s['ref_memory']}</td></tr>
+      <tr class="py"><th scope="row"><span class="swatch py"></span>pygosdt</th><td>{s['py_trees']} of {s['pairs']}</td><td>{s['better']}</td><td>{s['same']}</td><td>{s['py_optimal']}</td>
+        <td>{ftime(s['py_mean'])}</td><td>{ftime(s['py_median'])}</td><td>{ftime(s['py_total'])}</td><td>{s['py_time_cap']}</td><td>{s['py_memory']}</td></tr>
+    </tbody></table></div>
+  <p class="tablenote">Wins, ties and fit times are over the {s['compared']} (dataset, λ) pairs where both implementations returned a tree; fit time is optimisation time
+  (parsing and binarization excluded), capped at 600 s. Neither side was ever strictly worse than the other except where shown under wins. Pair by pair, pygosdt is
+  {s['geo']:.1f}× faster on the geometric mean (median {s['median']:.1f}×).</p>
 </header>
 
 <section class="prose">
@@ -494,74 +509,11 @@ and pinned on 14 real (dataset, λ) pairs; 80 tests in total.</li>
 """
 
 
-# --------------------------------------------------------------- Markdown
-def build_md(df: pd.DataFrame, s: dict) -> str:
-    per = s["per"]
-    lines = ["# pygosdt against the reference GOSDT: benchmark report", ""]
-    lines += [f"**{s['compared']}** (dataset, λ) pairs where both implementations returned a tree, out of {s['pairs']}: "
-              f"**{s['same']}** identical objectives, **{s['better']}** strictly better for pygosdt, **{s['worse']}** worse. "
-              f"pygosdt is **{s['geo']:.1f}× faster** (geometric mean of reference time ÷ pygosdt time; median {s['median']:.1f}×).", ""]
-    lines += ["Setup: same CSV for both, single thread, sequential on an idle Apple M5 (16 GB), 600 s time cap and 6 GB memory cap for both, "
-              "objectives recomputed independently from the returned trees, times exclude parsing and binarization. "
-              "λ ∈ {0.1, 0.05, 0.02, 0.01, 0.005}. The interactive version of this report is `benchmarks/results/report.html`; "
-              "the plot is `benchmarks/results/benchmark.png`.", ""]
-    lines += ["## Fit: objective per (dataset, λ)", "", "| dataset | " + " | ".join(f"λ={l:g}" for l in LAMS) + " |", "|---|" + "---|" * len(LAMS)]
-    for name, d in df.groupby("dataset", sort=False):
-        cells = []
-        for lam in LAMS:
-            r = d[d["lam"] == lam].iloc[0]
-            if pd.isna(r["ref_objective"]):
-                cells.append(f"no C++ tree ({STOP_LABEL[r['ref_stop']]}); py {fobj(r['py_objective'])}")
-            elif r["objective_diff"] < -1e-6:
-                cells.append(f"**py better** {fobj(r['py_objective'])} vs {fobj(r['ref_objective'])}")
-            elif r["objective_diff"] > 1e-6:
-                cells.append(f"**py worse** {fobj(r['py_objective'])} vs {fobj(r['ref_objective'])}")
-            else:
-                cells.append(f"same {fobj(r['py_objective'])}")
-        lines.append(f"| {name} | " + " | ".join(cells) + " |")
-    lines += ["", "### The six pairs where the trees differ", "",
-              "| dataset | λ | C++ objective | C++ errors/leaves | C++ status | pygosdt objective | pygosdt errors/leaves | pygosdt status |", "|---|---|---|---|---|---|---|---|"]
-    for _, r in s["wins"].sort_values(["dataset", "lam"], ascending=[True, False]).iterrows():
-        lines.append(f"| {r['dataset']} | {r['lam']:g} | {fobj(r['ref_objective'])} | {int(r['ref_errors'])}/{int(r['ref_leaves'])} | {STOP_LABEL[r['ref_stop']]} ({ftime(r['ref_time'])}) "
-                     f"| {fobj(r['py_objective'])} | {int(r['py_errors'])}/{int(r['py_leaves'])} | {STOP_LABEL[r['py_stop']]} ({ftime(r['py_time'])}) |")
-    lines += ["", "tic-tac-toe at λ=0.02 is a genuine reference error: it claims optimality at 0.3246 while a 6-leaf tree with objective 0.3183 exists. "
-              "The other five are reference timeouts returning an incumbent (on sine_1k both timed out, pygosdt's incumbent ahead).", ""]
-    lines += ["## Speed per dataset", "", "| dataset | rows | source feats | binary feats | pairs with both trees | identical | py better | py worse | C++ optimal | py optimal | C++ total time | py total time | C++ ÷ py time (geo. mean) |",
-              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    for _, r in per.iterrows():
-        geo = f"{r['geo']:,.1f}×" if not math.isnan(r["geo"]) else "–"
-        lines.append(f"| {r['dataset']} | {r['n']:,} | {r['p']} | {r['binary']:,} | {r['compared']} | {r['same']} | {r['better']} | {r['worse']} | {r['ref_optimal']} | {r['py_optimal']} | {ftime(r['ref_total'])} | {ftime(r['py_total'])} | {geo} |")
-    lines += ["", f"pygosdt was faster on {s['py_faster']} pairs; the {s['ref_faster'] + s['ref_zero']} pairs where the reference was faster are trivial cases it finishes in 0–2 ms.", ""]
-    lines += ["## Stop reasons (reference / pygosdt)", "", "| dataset | " + " | ".join(f"λ={l:g}" for l in LAMS) + " |", "|---|" + "---|" * len(LAMS)]
-    for name, d in df.groupby("dataset", sort=False):
-        cells = []
-        for lam in LAMS:
-            r = d[d["lam"] == lam].iloc[0]
-            cells.append(f"{STOP_LABEL[r['ref_stop']]} {ftime(r['ref_time']) if r['ref_stop'] != 'memory' else ftime(r['ref_wall'])} / {STOP_LABEL[r['py_stop']]} {ftime(r['py_time'])}")
-        lines.append(f"| {name} | " + " | ".join(cells) + " |")
-    lines += ["", f"Reference: {s['ref_optimal']} certified optimal, {s['ref_time_cap']} time cap, {s['ref_memory']} memory cap. "
-              f"pygosdt: {s['py_optimal']} certified optimal, {s['py_time_cap']} time cap, {s['py_memory']} memory cap (incumbent plus certified lower bound returned).", ""]
-    lines += ["## Full table", "", "| dataset | λ | C++ objective | py objective | diff | C++ leaves | py leaves | C++ time | py time | C++ nodes | py nodes | C++ stop | py stop |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    for _, r in df.iterrows():
-        diff = "" if pd.isna(r["objective_diff"]) else (f"{r['objective_diff']:+.4f}" if abs(r["objective_diff"]) > 1e-6 else "0")
-        nodes = "" if pd.isna(r["ref_size"]) or r["ref_size"] < 0 else f"{int(r['ref_size']):,}"
-        lines.append(f"| {r['dataset']} | {r['lam']:g} | {fobj(r['ref_objective'])} | {fobj(r['py_objective'])} | {diff} | "
-                     f"{'' if pd.isna(r['ref_leaves']) else int(r['ref_leaves'])} | {int(r['py_leaves'])} | {ftime(r['ref_time'])} | {ftime(r['py_time'])} | "
-                     f"{nodes} | {int(r['py_size']):,} | {STOP_LABEL[r['ref_stop']]} | {STOP_LABEL[r['py_stop']]} |")
-    lines += ["", "## Method notes", "",
-              "- pygosdt: memoised depth-first branch-and-bound with the reference's bounds, Python big-int bitsets, optional numba kernel (identical trees, 1.1–2× faster on wide numeric data).",
-              "- Exactness: exhaustive-DP tests on 50 random problems plus 14 pinned real pairs (80 tests).",
-              "- The reference's non-exact pairwise feature-exchange bound is not replicated; missing values filled with 0 for both.",
-              "- Reproduce: `uv run python benchmarks/run_benchmark.py`, `benchmarks/summarize.py`, `benchmarks/build_report.py`.", ""]
-    return "\n".join(lines)
-
-
 def main():
     df = load()
     s = compute(df)
-    (RESULTS / "report.html").write_text(build_html(df, s))
-    (ROOT / "REPORT.md").write_text(build_md(df, s))
-    print(f"wrote {RESULTS / 'report.html'} and {ROOT / 'REPORT.md'}")
+    (ROOT / "REPORT.html").write_text(build_html(df, s))
+    print(f"wrote {ROOT / 'REPORT.html'}")
     print(f"pairs {s['pairs']} compared {s['compared']} same {s['same']} better {s['better']} worse {s['worse']} geo {s['geo']:.2f} median {s['median']:.2f} "
           f"py_faster {s['py_faster']} ref_faster {s['ref_faster']} ref_zero {s['ref_zero']}")
 

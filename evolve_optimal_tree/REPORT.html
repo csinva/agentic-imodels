@@ -45,12 +45,16 @@ a { color: var(--ref); }
 header { padding-block: 48px 8px; }
 .eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px; font-weight: 500; }
 .lede { font-size: 1.12rem; color: var(--ink-2); max-width: 64ch; margin-top: 14px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 28px 0 8px; }
-.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; }
-.tile .num { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 1.9rem; font-weight: 500; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.tile .num.py { color: var(--py); }
-.tile .lab { color: var(--ink-2); font-size: 0.86rem; margin-top: 6px; }
-.tile .sub { color: var(--ink-3); font-size: 0.78rem; }
+.headline-wrap { margin: 28px 0 10px; }
+.headline th, .headline td { padding: 12px 14px; }
+.headline thead th { font-size: 0.8rem; line-height: 1.25; vertical-align: bottom; }
+.headline thead .sub { display: block; font-weight: 400; color: var(--ink-3); font-size: 0.72rem; }
+.headline tbody th { font-family: "IBM Plex Sans", sans-serif; font-size: 1rem; font-weight: 600; }
+.headline td { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 1.05rem; }
+.headline tr.py td { color: var(--py); font-weight: 500; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: 0; }
+.swatch.ref { background: var(--ref); } .swatch.py { background: var(--py); }
+.tablenote { color: var(--ink-2); font-size: 0.9rem; max-width: 80ch; margin-top: 6px; }
 figure { margin: 22px 0; }
 figcaption { color: var(--ink-2); font-size: 0.88rem; margin-top: 8px; max-width: 70ch; }
 .chart { width: 100%; height: auto; max-width: 100%; display: block; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; }
@@ -105,12 +109,18 @@ code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 
   <h1>pygosdt against the reference GOSDT</h1>
   <p class="lede">A pure-Python re-implementation of Generalized Optimal Sparse Decision Trees, compared with the
   reference C++ binary on 15 datasets and 5 regularization strengths: does it find the same trees, and how fast?</p>
-  <div class="tiles">
-    <div class="tile"><div class="num">63</div><div class="lab">pairs where both returned a tree</div><div class="sub">of 75 dataset × λ pairs</div></div>
-    <div class="tile"><div class="num">57</div><div class="lab">identical objective</div><div class="sub">to 6 decimals</div></div>
-    <div class="tile"><div class="num py">6</div><div class="lab">pygosdt strictly better</div><div class="sub">and 0 strictly worse</div></div>
-    <div class="tile"><div class="num py">13.2×</div><div class="lab">faster, geometric mean</div><div class="sub">median 9.0×, optimisation time</div></div>
-  </div>
+  <div class="scroll headline-wrap"><table class="headline">
+    <thead><tr><th>implementation</th><th>pairs with a tree</th><th>wins<br><span class="sub">strictly better objective</span></th><th>ties<br><span class="sub">identical objective</span></th>
+      <th>certified optimal</th><th>mean fit time</th><th>median fit time</th><th>total fit time</th><th>stopped at 600 s</th><th>stopped at 6 GB</th></tr></thead>
+    <tbody>
+      <tr><th scope="row"><span class="swatch ref"></span>reference C++</th><td>63 of 75</td><td>0</td><td>57</td><td>51</td>
+        <td>2.5 min</td><td>410 ms</td><td>156.5 min</td><td>12</td><td>12</td></tr>
+      <tr class="py"><th scope="row"><span class="swatch py"></span>pygosdt</th><td>75 of 75</td><td>6</td><td>57</td><td>58</td>
+        <td>1.0 min</td><td>14 ms</td><td>63.4 min</td><td>13</td><td>4</td></tr>
+    </tbody></table></div>
+  <p class="tablenote">Wins, ties and fit times are over the 63 (dataset, λ) pairs where both implementations returned a tree; fit time is optimisation time
+  (parsing and binarization excluded), capped at 600 s. Neither side was ever strictly worse than the other except where shown under wins. Pair by pair, pygosdt is
+  13.2× faster on the geometric mean (median 9.0×).</p>
 </header>
 
 <section class="prose">
