@@ -27,7 +27,18 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["pygosdt_v1"]
 
+[tool.uv.workspace]
+members = [
+    "baselines/pystreed",
+]
+
+[tool.uv.sources]
+pystreed = { workspace = true }
+
 [dependency-groups]
+baselines = [
+    "pystreed",
+]
 dev = [
     "pytest>=8.0",
     "matplotlib>=3.8",

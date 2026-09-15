@@ -11,4 +11,7 @@ baselines/benchmarks/results/work/
 !baselines/benchmarks/results/
 !results/
 .DS_Store
-runs/
+baselines/pystreed/data/
+baselines/pystreed/build/
+baselines/pystreed/**/*.so
+baselines/pystreed/*.egg-info/

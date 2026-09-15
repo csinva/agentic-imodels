@@ -2,8 +2,10 @@
 Evaluate the fixed baselines on the development suite and seed the leaderboard.
 
 Baselines:
-  gosdt        the reference C++ implementation (skipped if gosdt/build/gosdt is not built)
+  gosdt        the reference C++ implementation (skipped if baselines/gosdt/build/gosdt is not built)
   pygosdt_v1   the pure-Python re-implementation in pygosdt_v1/
+  streed       STreeD (baselines/pystreed, cost-complex-accuracy on the same binarization;
+               needs `uv sync --group baselines` unless the cached rows are used)
 
 Usage: uv run run_baselines.py [--rerun] [--skip-reference] [--run-model]
 
@@ -33,6 +35,11 @@ import reference_solver  # noqa: E402
 
 from pygosdt_v1 import GOSDTClassifier  # noqa: E402
 
+def make_streed(lam, tl):
+    import streed_solver  # imported lazily: needs the ``baselines`` dependency group
+    return streed_solver.STreeD(lam, tl)
+
+
 BASELINES = {
     "gosdt": (
         lambda lam, tl: reference_solver.ReferenceGOSDT(lam, tl, memory_limit=MEMORY_LIMIT),
@@ -41,6 +48,10 @@ BASELINES = {
     "pygosdt_v1": (
         lambda lam, tl: GOSDTClassifier(regularization=lam, time_limit=tl, memory_limit=MEMORY_LIMIT),
         "pygosdt_v1 package: memoised depth-first branch-and-bound with the reference bounds, numba kernel",
+    ),
+    "streed": (
+        make_streed,
+        "STreeD (van der Linden et al.) cost-complex-accuracy DP on the same binarization, max depth 20",
     ),
 }
 

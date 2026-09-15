@@ -1,7 +1,8 @@
 """Full benchmark of the baselines against each other, scored exactly like the loop.
 
-Runs ``gosdt`` (the reference C++ binary) and ``pygosdt_v1`` through
-``src/evaluate.evaluate_solver`` on the development suite plus ``sine_10k``,
+Runs ``gosdt`` (the reference C++ binary), ``pygosdt_v1`` and ``streed``
+(STreeD, ``baselines/pystreed``) through ``src/evaluate.evaluate_solver`` on
+the development suite plus ``sine_10k``,
 with a 600 s cap per pair, and writes one row per model × dataset × λ to
 ``results/pair_results.csv``.  ``summarize.py`` and ``build_report.py`` turn
 that file into the summary table and ``baselines/REPORT.html``;
@@ -9,7 +10,7 @@ that file into the summary table and ``baselines/REPORT.html``;
 
 Usage (from ``evolve_optimal_tree``)::
 
-    uv run baselines/benchmarks/run_benchmark.py [--models gosdt,pygosdt_v1]
+    uv run baselines/benchmarks/run_benchmark.py [--models gosdt,pygosdt_v1,streed]
         [--datasets a,b] [--lams 0.1,0.05] [--time-limit 600] [--resume]
 
 The full grid takes several hours because the reference hits the cap on many
@@ -40,9 +41,15 @@ PAIRS_CSV = os.path.join(RESULTS, "pair_results.csv")
 FULL_TIME_LIMIT = 600.0
 EXTRA_DATASETS = [("sine_10k", DATA / "sine" / "ten_thousand.csv")]
 
+def make_streed(lam, tl):
+    import streed_solver  # needs the ``baselines`` dependency group
+    return streed_solver.STreeD(lam, tl)
+
+
 MODELS = {
     "gosdt": lambda lam, tl: reference_solver.ReferenceGOSDT(lam, tl, memory_limit=MEMORY_LIMIT),
     "pygosdt_v1": lambda lam, tl: GOSDTClassifier(regularization=lam, time_limit=tl, memory_limit=MEMORY_LIMIT),
+    "streed": make_streed,
 }
 
 
@@ -65,7 +72,7 @@ def append_row(row: dict):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models", default="gosdt,pygosdt_v1")
+    ap.add_argument("--models", default="gosdt,pygosdt_v1,streed")
     ap.add_argument("--datasets", default="", help="subset of the benchmark datasets (default: all)")
     ap.add_argument("--lams", default="", help="subset of the λ grid (default: all)")
     ap.add_argument("--time-limit", type=float, default=FULL_TIME_LIMIT)
