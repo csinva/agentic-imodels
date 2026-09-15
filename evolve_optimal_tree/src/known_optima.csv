@@ -34,15 +34,15 @@ gaussian_1k,0.05,0.275,True,gosdt
 gaussian_1k,0.02,0.185,True,pygosdt_v1
 gaussian_1k,0.01,0.155,True,pygosdt_v1
 gaussian_1k,0.005,0.14,True,pygosdt_v1
-fico_1k,0.1,0.491,True,gosdt
+fico_1k,0.1,0.491,True,pygosdt_v1
 fico_1k,0.05,0.391,False,gosdt
 fico_1k,0.02,0.331,False,pygosdt_v1
 fico_1k,0.01,0.304,False,gosdt_guesses_guided
 fico_1k,0.005,0.284,False,gosdt_guesses_guided
-sine_1k,0.1,0.595,True,gosdt
+sine_1k,0.1,0.595,True,pygosdt_v1
 sine_1k,0.05,0.545,False,pygosdt_v1
 sine_1k,0.02,0.494,False,gosdt
-sine_1k,0.01,0.467,False,gosdt_guesses_guided
+sine_1k,0.01,0.443,False,streed
 sine_1k,0.005,0.4,False,pygosdt_v1
 car_evaluation,0.1,0.399769,True,gosdt
 car_evaluation,0.05,0.294676,True,gosdt
@@ -70,7 +70,7 @@ fico_binary,0.02,0.344044,True,gosdt
 fico_binary,0.01,0.324044,True,gosdt
 fico_binary,0.005,0.308651,True,gosdt
 compas_processed,0.1,0.411364,True,gosdt
-compas_processed,0.05,0.361364,False,gosdt
+compas_processed,0.05,0.361364,True,streed
 compas_processed,0.02,0.32786,False,pygosdt_v1
 compas_processed,0.01,0.30786,False,pygosdt_v1
 compas_processed,0.005,0.29786,False,pygosdt_v1
