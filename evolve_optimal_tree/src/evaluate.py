@@ -232,6 +232,12 @@ def rows_from_benchmark(model_name: str, time_limit=None) -> list[dict] | None:
             objective = r[f"{prefix}_objective"]
             seconds = r[f"{prefix}_time"]
             stop = str(r[f"{prefix}_stop"]) if not pd.isna(r[f"{prefix}_stop"]) else ""
+            # elapsed time at which the benchmark run stopped (wall time for a killed reference)
+            elapsed = seconds if not pd.isna(seconds) else r.get(f"{prefix}_wall", float("nan"))
+            if stop == "memory" and (pd.isna(elapsed) or float(elapsed) > time_limit):
+                stop = "time"  # under the suite's cap the run would have hit the clock first
+            if stop == "timeout":
+                stop = "time"
             if pd.isna(objective):
                 row.update(objective=float("nan"), errors="", leaves="", seconds=time_limit,
                            status=stop or "crash", verdict="no_tree")
