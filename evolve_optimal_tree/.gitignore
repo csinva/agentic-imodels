@@ -10,3 +10,4 @@ run*.log
 benchmarks/results/work/
 !benchmarks/results/
 !results/
+.DS_Store
