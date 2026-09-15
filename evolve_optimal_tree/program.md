@@ -47,7 +47,8 @@ For quick checks while developing use a subset (not recorded):
   new provable bounds, the bitset engine, the numba kernels, memoisation and memory layout,
   the binarization, feature ordering heuristics, incumbent construction, parallelism within
   the process.
-- Update `MODEL_NAME` (must be unique within this run) and `DESCRIPTION` at the top of the file.
+- Update `MODEL_NAME` (must be unique within this run) and `DESCRIPTION` at the top of the file;
+  leave `EXACT = True` (a variant that cannot certify optimality is not a valid attempt).
 - Save snapshots of `optimal_tree.py` under `optimal_tree_lib/` after each attempt.
 
 **What you CANNOT do:**
@@ -97,16 +98,18 @@ total_seconds: 540.2s
 It also updates `results/overall_results.csv`, which has the following format:
 
 ```
-commit,n_solved,geo_mean_time,n_wrong,status,model_name,description
+commit,n_solved,geo_mean_time,n_wrong,exact,status,model_name,description
 ```
 
 1. git commit hash of the repository at the time of the run (informational)
 2. n_solved — from the script output
 3. geo_mean_time — from the script output
 4. n_wrong — from the script output; empty for crashes
-5. status: `keep`, `discard`, or `crash` (baseline rows have status `baseline`)
-6. shorthand unique name of the solver attempt (`MODEL_NAME` in `optimal_tree.py`)
-7. brief text description of what this attempt tried (`DESCRIPTION` in `optimal_tree.py`)
+5. exact: `exact` if the method certifies optimality, `approximate` for a heuristic
+   (`EXACT` in `optimal_tree.py`; every solver in this loop must stay `exact`)
+6. status: `keep`, `discard`, or `crash` (baseline rows have status `baseline`)
+7. shorthand unique name of the solver attempt (`MODEL_NAME` in `optimal_tree.py`)
+8. brief text description of what this attempt tried (`DESCRIPTION` in `optimal_tree.py`)
 
 Always log to this file after each experiment. `results/pair_results.csv` receives the
 per-pair objectives, times and verdicts.

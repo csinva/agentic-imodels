@@ -44,6 +44,8 @@ the suite in `src/suite.py` (14 datasets × λ ∈ {0.1, 0.05, 0.02, 0.01, 0.005
 - **`n_solved`** — pairs certified optimal within the cap (higher is better, max 70).
 - **`geo_mean_time`** — geometric mean of optimisation seconds, unsolved pairs counted at the
   cap (lower is better).
+- **`exact`** — `exact` for methods that certify optimality, `approximate` for heuristics
+  (declared by the method, e.g. `gosdt_guesses_guided`); not a measurement.
 
 Every returned tree's objective is recomputed independently from the tree and the raw data, so
 a solver cannot score by misreporting.

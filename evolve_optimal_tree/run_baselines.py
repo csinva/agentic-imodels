@@ -50,6 +50,9 @@ def make_gosdt_guesses_guided(lam, tl):
     return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=True)
 
 
+# whether each baseline is an exact method (certifies optimality) or a heuristic
+EXACT = {"gosdt": True, "pygosdt_v1": True, "streed": True, "gosdt_guesses": True, "gosdt_guesses_guided": False}
+
 BASELINES = {
     "gosdt": (
         lambda lam, tl: reference_solver.ReferenceGOSDT(lam, tl, memory_limit=MEMORY_LIMIT),
@@ -99,7 +102,7 @@ if __name__ == "__main__":
                 continue
             print("\n" + "=" * 60 + f"\n  {name}\n" + "=" * 60)
             summary = evaluate_solver(make, name)
-        record(name, description, summary, commit="baseline", status="baseline")
+        record(name, description, summary, commit="baseline", status="baseline", exact=EXACT.get(name, True))
         print_summary(name, summary)
     print(f"\nTotal time: {time.time() - t0:.1f}s")
 

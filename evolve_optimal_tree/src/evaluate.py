@@ -32,7 +32,7 @@ import pandas as pd
 from suite import (DATASETS, LAMBDAS, MEMORY_LIMIT, RESULTS_DIR, TIME_LIMIT, load_dataset,
                    load_known_optima)
 
-OVERALL_CSV_COLS = ["commit", "n_solved", "geo_mean_time", "n_wrong", "status", "model_name", "description"]
+OVERALL_CSV_COLS = ["commit", "n_solved", "geo_mean_time", "n_wrong", "exact", "status", "model_name", "description"]
 PAIR_CSV_COLS = ["model", "dataset", "n", "p", "lam", "objective", "errors", "leaves", "seconds", "wall",
                  "status", "size", "iterations", "binary_features", "lb", "ub",
                  "known_objective", "known_certified", "verdict"]
@@ -212,13 +212,17 @@ def upsert_pair_results(rows, results_dir=RESULTS_DIR):
 
 
 def record(model_name: str, description: str, s: dict, commit: str, status: str = "",
-           results_dir: str = RESULTS_DIR):
+           results_dir: str = RESULTS_DIR, exact: bool = True):
+    """``exact`` declares whether the method certifies optimality (``exact``) or is a
+    heuristic that only returns a tree (``approximate``); it is the method's design, not
+    a measurement."""
     upsert_pair_results(s["rows"], results_dir)
     upsert_overall_results([{
         "commit": commit,
         "n_solved": s["n_solved"],
         "geo_mean_time": f"{s['geo_mean_time']:.3f}",
         "n_wrong": s["n_wrong"],
+        "exact": "exact" if exact else "approximate",
         "status": status,
         "model_name": model_name,
         "description": description,
