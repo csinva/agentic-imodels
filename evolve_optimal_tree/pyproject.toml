@@ -30,14 +30,17 @@ packages = ["pygosdt_v1"]
 [tool.uv.workspace]
 members = [
     "baselines/pystreed",
+    "baselines/gosdt_guesses",
 ]
 
 [tool.uv.sources]
 pystreed = { workspace = true }
+gosdt = { workspace = true }
 
 [dependency-groups]
 baselines = [
     "pystreed",
+    "gosdt",
 ]
 dev = [
     "pytest>=8.0",

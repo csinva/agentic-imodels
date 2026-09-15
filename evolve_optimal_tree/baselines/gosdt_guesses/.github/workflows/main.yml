@@ -1,0 +1,77 @@
+name: GOSDT CI
+
+# We want to only trigger this job when manually triggered
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  BuildWheels:
+    name: Build wheels on ${{ matrix.config.name }} 
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-13 is an intel runner, macos-14 is apple silicon
+        config: 
+          - { os: macos-13, version: 13, name: "MacOS 14 (ARM M1)" }
+          - { os: macos-14, version: 14, name: "MacOS 13 (x86_64)" }
+          - { os: ubuntu-latest, version: manylinux, name: "manylinux (x86_64)" }
+          - { os: windows-latest, version: windows, name: "Windows (x86_64)"}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build wheels (MacOS)
+        if: startsWith(matrix.config.os, 'macos')
+        uses: pypa/cibuildwheel@v2.19.1
+        env:
+            MACOSX_DEPLOYMENT_TARGET: ${{ matrix.config.version }}
+
+      - name: Build wheel (manylinux)
+        if: startsWith(matrix.config.os, 'ubuntu')
+        uses: pypa/cibuildwheel@v2.19.1
+
+      # We set up vcpkg and install the dependencies for the project. This is so that we can cache 
+      # the vcpkg installation and the installed dependencies. This should speed up the build process
+      # by avoiding building tbb and gmp from source every time.
+      - name: Export GitHub Actions cache environment variables
+        if: startsWith(matrix.config.os, 'windows')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+        env:
+          VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+
+      - name: Build wheel (Windows)
+        if: startsWith(matrix.config.os, 'windows')
+        uses: pypa/cibuildwheel@v2.19.1
+
+      - uses: actions/upload-artifact@v4 
+        with:
+          name: cibw-wheels-${{ matrix.config.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+  
+  MakeSDist:
+    name: Make source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build SDist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: dist/*.tar.gz        
+

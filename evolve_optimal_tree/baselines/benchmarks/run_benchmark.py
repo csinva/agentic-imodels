@@ -46,10 +46,22 @@ def make_streed(lam, tl):
     return streed_solver.STreeD(lam, tl)
 
 
+def make_gosdt_guesses(lam, tl):
+    import guesses_solver  # needs the ``baselines`` dependency group
+    return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=False)
+
+
+def make_gosdt_guesses_guided(lam, tl):
+    import guesses_solver
+    return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=True)
+
+
 MODELS = {
     "gosdt": lambda lam, tl: reference_solver.ReferenceGOSDT(lam, tl, memory_limit=MEMORY_LIMIT),
     "pygosdt_v1": lambda lam, tl: GOSDTClassifier(regularization=lam, time_limit=tl, memory_limit=MEMORY_LIMIT),
     "streed": make_streed,
+    "gosdt_guesses": make_gosdt_guesses,
+    "gosdt_guesses_guided": make_gosdt_guesses_guided,
 }
 
 
@@ -72,7 +84,7 @@ def append_row(row: dict):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models", default="gosdt,pygosdt_v1,streed")
+    ap.add_argument("--models", default="gosdt,pygosdt_v1,streed,gosdt_guesses,gosdt_guesses_guided")
     ap.add_argument("--datasets", default="", help="subset of the benchmark datasets (default: all)")
     ap.add_argument("--lams", default="", help="subset of the λ grid (default: all)")
     ap.add_argument("--time-limit", type=float, default=FULL_TIME_LIMIT)

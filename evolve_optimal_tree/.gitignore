@@ -15,3 +15,5 @@ baselines/pystreed/data/
 baselines/pystreed/build/
 baselines/pystreed/**/*.so
 baselines/pystreed/*.egg-info/
+baselines/gosdt_guesses/pyproject-build/
+baselines/gosdt_guesses/**/__pycache__/

@@ -16,6 +16,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "gosdt",
     "pygosdt-v1",
     "pystreed",
 ]
@@ -534,6 +535,42 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/4b/95/122fc172006db747f4968e08c710f52a94f55eb007173b859b3f80b5b810/fonttools-4.65.0-cp315-cp315t-win_amd64.whl", hash = "sha256:d9484b7ee1b49b6b8a0231c849f3983723dec29e3a7366d9b1b02f4036f71944", size = 2513945, upload-time = "2026-09-10T15:35:49.895Z" },
     { url = "https://files.pythonhosted.org/packages/e6/35/f894ceb867118c0261d0f69a9bd516b045a3754238f76c88a49513ac7a83/fonttools-4.65.0-py3-none-any.whl", hash = "sha256:3060b8c1fc2329fa20265b7c138614143ea7c1624e26c5c180c76aeb74deae6f", size = 1196441, upload-time = "2026-09-10T15:35:52.347Z" },
 ]
+
+[[package]]
+name = "gosdt"
+version = "1.0.0"
+source = { editable = "baselines/gosdt_guesses" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scikit-learn", version = "1.9.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.24.3" },
+    { name = "pandas", specifier = ">=2.0.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=6" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=3" },
+    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=3" },
+    { name = "scikit-learn", specifier = ">=1.2.2" },
+]
+provides-extras = ["test", "dev"]
 
 [[package]]
 name = "iniconfig"
@@ -1779,6 +1816,7 @@ dev = [
 
 [package.dev-dependencies]
 baselines = [
+    { name = "gosdt" },
     { name = "pystreed" },
 ]
 dev = [
@@ -1799,7 +1837,10 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-baselines = [{ name = "pystreed", editable = "baselines/pystreed" }]
+baselines = [
+    { name = "gosdt", editable = "baselines/gosdt_guesses" },
+    { name = "pystreed", editable = "baselines/pystreed" },
+]
 dev = [
     { name = "matplotlib", specifier = ">=3.8" },
     { name = "pytest", specifier = ">=8.0" },

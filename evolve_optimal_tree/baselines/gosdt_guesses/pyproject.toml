@@ -1,0 +1,129 @@
+[build-system]
+requires = ["pybind11", "scikit-build-core"]
+build-backend = "scikit_build_core.build"
+
+
+[project]
+name = "gosdt"
+authors = [
+  { name = "Ilias Karimalis", email = "iliaskar@students.cs.ubc.ca" },
+]
+description = "Implementation of General Optimal Sparse Decision Tree"
+readme = "README.md"
+license.file = "LICENSE"
+requires-python = ">=3.9"
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: BSD License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
+]
+version = "1.0.0"  # static: this copy has no git metadata
+dependencies = [
+  "numpy>=1.24.3",
+  "scikit-learn>=1.2.2",
+  "pandas>=2.0.1"
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest >=6",
+  "pytest-cov >=3",
+]
+dev = [
+  "pytest >=6",
+  "pytest-cov >=3",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/ubc-systopia/gosdt-guesses"
+"Bug Tracker" = "https://github.com/ubc-systopia/gosdt-guesses/issues"
+Discussions = "https://github.com/ubc-systopia/gosdt-guesses/discussions"
+Changelog = "https://github.com/ubc-systopia/gosdt-guesses/releases"
+
+
+[tool.scikit-build]
+minimum-version = "0.4"
+build-dir = "pyproject-build/{wheel_tag}"
+sdist.include = ["src/gosdt/_version.py"]
+
+
+
+[tool.cibuildwheel]
+# Skip building pypy, musllinux and 32 bit wheels
+skip = ["pp*", "*-musllinux_*", "*-win32", "*-manylinux_i686"]
+# Install the extra dependencies needed for testing
+test-requires = "pytest>=6"
+# This is the set of tests that will be run for each build
+test-command = [
+  "pytest {package}/tests",
+  "python {package}/examples/compas.py",
+]
+
+
+[tool.cibuildwheel.macos]
+# Install prerequisites for building the MacOS wheels
+before-all = "brew install gmp tbb"
+# The following was needed locally, but is instantiated automatically by the Github Actions CI
+# environment = { MACOSX_DEPLOYMENT_TARGET = "14.0" }
+
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+# Install prerequisites for building the Linux wheels in Centos 7
+before-all = [
+
+  # Centos 7 is end of life, so mirrorlist.centos.org doesn't exist anymore,
+  # the solution to this issue is described in this serverfault response:
+  #
+  # https://serverfault.com/a/1161847
+  "sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo",
+  "sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo",
+  "sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo",
+
+
+  "yum install -y zip",
+  "yum install -y cmake",
+  "yum install -y ninja-build",
+  "yum install -y pkgconfig",
+  "yum install -y patchelf",
+  "yum install -y wget",
+  
+  # Compile tbb from source
+  "git clone --depth 1 https://github.com/oneapi-src/oneTBB.git",
+  "cd oneTBB",
+  "mkdir build && cd build",
+  "cmake -DTBB_TEST=OFF -GNinja ..",
+  "cmake --build .",
+  "cmake --install .",
+
+  # Compile gmp from source
+  "wget -v -d https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz",
+  "tar -xf gmp-6.3.0.tar.xz",
+  "cd gmp-6.3.0",
+  "./configure",
+  "make -j$(nproc)",
+  "make install",
+]
+
+[tool.cibuildwheel.windows]
+# Install prerequisites for building the Windows wheels
+before-all = [
+  "pip install delvewheel",
+  "choco install -y ninja",
+  "choco install -y pkgconfiglite",
+  "vcpkg install tbb:x64-windows",
+  "vcpkg install gmp:x64-windows",
+  "echo %VCPKG_INSTALLATION_ROOT%",
+]
+repair-wheel-command = "delvewheel repair --no-mangle-all --add-path %VCPKG_INSTALLATION_ROOT%/installed\\x64-windows\\bin -w {dest_dir} {wheel}" 

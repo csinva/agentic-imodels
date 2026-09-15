@@ -40,6 +40,16 @@ def make_streed(lam, tl):
     return streed_solver.STreeD(lam, tl)
 
 
+def make_gosdt_guesses(lam, tl):
+    import guesses_solver  # the C++ core is imported in a child process; needs the ``baselines`` group
+    return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=False)
+
+
+def make_gosdt_guesses_guided(lam, tl):
+    import guesses_solver
+    return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=True)
+
+
 BASELINES = {
     "gosdt": (
         lambda lam, tl: reference_solver.ReferenceGOSDT(lam, tl, memory_limit=MEMORY_LIMIT),
@@ -52,6 +62,14 @@ BASELINES = {
     "streed": (
         make_streed,
         "STreeD (van der Linden et al.) cost-complex-accuracy DP on the same binarization, max depth 20",
+    ),
+    "gosdt_guesses": (
+        make_gosdt_guesses,
+        "gosdt-guesses (McTavish et al. 2022) C++ core in exact mode: same binarization, no reference labels, no depth budget",
+    ),
+    "gosdt_guesses_guided": (
+        make_gosdt_guesses_guided,
+        "gosdt-guesses with the paper's guesses: GBDT threshold guessing (40 stumps) and reference-label lower bounds, no depth budget; not exact",
     ),
 }
 
