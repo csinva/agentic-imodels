@@ -112,6 +112,13 @@ To redo the full benchmark (hours; the reference hits its cap on many pairs):
 `uv run baselines/benchmarks/run_benchmark.py [--resume]`, then
 `uv run baselines/benchmarks/summarize.py` and `uv run baselines/benchmarks/build_report.py`.
 
+Timing variability: `uv run baselines/benchmarks/run_repeats.py --models gosdt --repeats 2` re-runs a
+baseline on the suite and `--summary` writes `baselines/benchmarks/results/repeats_summary.csv`. Over
+three runs of the reference GOSDT (the cached benchmark row plus two repeats) it certified 46, 47 and 48
+of 70 pairs within 30 s (mean 47.0 ± 1.0), with geometric-mean time 0.473, 0.515 and 0.523 s
+(mean 0.504 ± 0.027 s) and its false tic-tac-toe certificate in every run; the pairs that flip are the
+ones whose solve time sits at the 30 s cap.
+
 ## The starting solver (pygosdt_v1)
 
 `pygosdt_v1` re-implements GOSDT with numpy, pandas, scikit-learn and numba only: binary columns,

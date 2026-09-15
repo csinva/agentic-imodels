@@ -1,0 +1,8 @@
+model,repeat,n_solved,geo_mean_time,n_wrong,total_time
+gosdt,0,46.0,0.4733,1.0,782.4
+gosdt,1,47.0,0.515,1.0,782.4
+gosdt,2,48.0,0.5228,1.0,781.2
+gosdt,mean,47.0,0.5037,1.0,782.0
+gosdt,std,1.0,0.0266,0.0,0.7
+pygosdt_v1,0,56.0,0.0994,0.0,496.2
+streed,0,51.0,0.3596,0.0,667.7
