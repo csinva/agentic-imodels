@@ -33,8 +33,8 @@ The folder has three files that matter:
 Three metrics are tracked in `results/overall_results.csv`, computed by `src/evaluate.py` on
 the suite in `src/suite.py` (14 datasets × λ ∈ {0.1, 0.05, 0.02, 0.01, 0.005}, 30 s cap per pair):
 
-- **`n_wrong`** — pairs whose tree is worse than a certified known optimum
-  (`src/known_optima.csv`), or where the solver issues a false certificate. Must be 0.
+- **`n_wrong`** — pairs where the solver certifies a tree that disagrees with a certified
+  known optimum (`src/known_optima.csv`), or crashes. Must be 0.
 - **`n_solved`** — pairs certified optimal within the cap (higher is better, max 70).
 - **`geo_mean_time`** — geometric mean of optimisation seconds, unsolved pairs counted at the
   cap (lower is better).

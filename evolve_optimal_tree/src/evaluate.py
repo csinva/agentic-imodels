@@ -8,8 +8,9 @@ recomputes the objective of the returned tree independently from the tree and
 the raw data, checks it against the best known objective, and returns the
 three leaderboard metrics:
 
-* ``n_wrong``       pairs whose objective is worse than a *certified* known
-                    optimum (must be 0: the solver is not exact);
+* ``n_wrong``       pairs where a *certified* result disagrees with a certified
+                    known optimum, or the solver crashed (must be 0: the solver
+                    is not exact);
 * ``n_solved``      pairs certified optimal within the time cap (higher is better);
 * ``geo_mean_time`` geometric mean over pairs of the optimisation time, with
                     unsolved pairs counted at the cap (lower is better).
@@ -64,6 +65,24 @@ def evaluate_tree(node: dict, frame: pd.DataFrame):
 
 
 # ---------------------------------------------------------------- scoring
+def verdict_for(objective: float, claimed_optimal: bool, k_obj: float, k_cert: bool) -> str:
+    """Compare a returned objective with the best known one.
+
+    ``WRONG`` (an exactness violation) is reserved for *certified* results that
+    disagree with a certified known optimum in either direction: a solver that
+    certifies a worse tree has an unsound bound, one that certifies a better
+    value than a certified optimum has a false certificate.  An uncertified
+    incumbent (time cap) is never wrong, only ``worse_than_known``.
+    """
+    if math.isnan(k_obj):
+        return "ok"
+    if objective > k_obj + TOL:
+        return "WRONG" if (claimed_optimal and k_cert) else "worse_than_known"
+    if objective < k_obj - TOL:
+        return "WRONG" if (claimed_optimal and k_cert) else "better_than_known"
+    return "ok"
+
+
 def evaluate_solver(make_model, model_name: str, datasets=None, lambdas=None, time_limit=None,
                     verbose=True) -> dict:
     """Fit ``make_model`` on the suite and return metrics plus per-pair rows."""
@@ -90,17 +109,7 @@ def evaluate_solver(make_model, model_name: str, datasets=None, lambdas=None, ti
                 optimal = bool(getattr(model, "optimal_", False))
                 row.update(objective=objective, errors=errors, leaves=leaves,
                            seconds=min(seconds, time_limit), status="optimal" if optimal else "time")
-                if not math.isnan(k_obj) and objective > k_obj + TOL and k_cert:
-                    verdict = "WRONG"
-                elif not math.isnan(k_obj) and objective > k_obj + TOL:
-                    verdict = "worse_than_incumbent"
-                elif not math.isnan(k_obj) and objective < k_obj - TOL:
-                    verdict = "better_than_known"
-                else:
-                    verdict = "ok"
-                if optimal and not math.isnan(k_obj) and objective < k_obj - TOL and k_cert:
-                    verdict = "WRONG"  # a certificate below a certified optimum is a false certificate
-                row["verdict"] = verdict
+                row["verdict"] = verdict_for(objective, optimal, k_obj, k_cert)
             except Exception:  # noqa: BLE001 - a crashing solver must not abort the whole suite
                 traceback.print_exc()
                 row.update(objective=float("nan"), errors="", leaves="", seconds=time_limit,
@@ -126,7 +135,11 @@ def print_summary(model_name: str, s: dict):
     print(f"model:          {model_name}")
     print(f"n_solved:       {s['n_solved']}/{s['n_pairs']} certified optimal within {TIME_LIMIT:g}s")
     print(f"geo_mean_time:  {s['geo_mean_time']:.3f}s")
-    print(f"n_wrong:        {s['n_wrong']}  (objective worse than a certified optimum, or a false certificate; must be 0)")
+    print(f"n_wrong:        {s['n_wrong']}  (certified result disagreeing with a certified optimum, or a crash; must be 0)")
+    worse = [r for r in s["rows"] if r["verdict"] == "worse_than_known"]
+    if worse:
+        print(f"uncertified incumbent worse than best known on {len(worse)} pairs: " +
+              ", ".join(f"{r['dataset']} λ={r['lam']}" for r in worse))
     better = [r for r in s["rows"] if r["verdict"] == "better_than_known"]
     if better:
         print(f"better than best known on {len(better)} pairs: " +
@@ -181,3 +194,58 @@ def record(model_name: str, description: str, s: dict, commit: str, status: str 
         "model_name": model_name,
         "description": description,
     }])
+
+
+# --------------------------------------------------- cached baseline rows
+BENCHMARK_SUMMARY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                 "benchmarks", "results", "summary.csv")
+BENCHMARK_COLUMNS = {"gosdt": "ref", "pygosdt_v1": "py"}
+
+
+def rows_from_benchmark(model_name: str, time_limit=None) -> list[dict] | None:
+    """Per-pair rows for a baseline taken from the full benchmark in ``benchmarks/results``.
+
+    The benchmark ran with a 600 s cap; a pair counts as solved here only if it was
+    certified within the suite's cap, and its time is capped at the suite's cap, so
+    the rows are exactly what a run of the suite would have produced (times differ
+    only by machine noise).  Returns None if the benchmark summary is missing.
+    """
+    if not os.path.exists(BENCHMARK_SUMMARY):
+        return None
+    time_limit = TIME_LIMIT if time_limit is None else time_limit
+    prefix = BENCHMARK_COLUMNS[model_name]
+    table = pd.read_csv(BENCHMARK_SUMMARY)
+    known = load_known_optima()
+    rows = []
+    for name, _ in DATASETS:
+        n = None
+        for lam in LAMBDAS:
+            hit = table[(table["dataset"] == name) & (table["lam"] == lam)]
+            if not len(hit):
+                return None
+            r = hit.iloc[0]
+            if n is None:
+                n = int(r["n"])
+            k_obj, k_cert = known.get((name, lam), (float("nan"), False))
+            row = {"model": model_name, "dataset": name, "lam": lam, "known_objective": k_obj,
+                   "known_certified": k_cert}
+            objective = r[f"{prefix}_objective"]
+            seconds = r[f"{prefix}_time"]
+            stop = str(r[f"{prefix}_stop"]) if not pd.isna(r[f"{prefix}_stop"]) else ""
+            if pd.isna(objective):
+                row.update(objective=float("nan"), errors="", leaves="", seconds=time_limit,
+                           status=stop or "crash", verdict="no_tree")
+            else:
+                solved = stop == "optimal" and float(seconds) <= time_limit
+                if solved:
+                    status = "optimal"
+                elif stop == "memory":
+                    status = "memory"
+                else:
+                    status = "time"
+                seconds = time_limit if pd.isna(seconds) else min(float(seconds), time_limit)
+                row.update(objective=float(objective), errors=int(r[f"{prefix}_errors"]),
+                           leaves=int(r[f"{prefix}_leaves"]), seconds=seconds, status=status)
+                row["verdict"] = verdict_for(float(objective), stop == "optimal", k_obj, k_cert)
+            rows.append(row)
+    return rows

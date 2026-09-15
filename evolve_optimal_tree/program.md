@@ -59,8 +59,9 @@ For quick checks while developing use a subset (not recorded):
 
 Optimize the metrics in `results/overall_results.csv`:
 
-- **`n_wrong`** — pairs where the returned tree is worse than a certified known optimum,
-  or where the solver certifies a value below one (a false certificate). **Must be 0.**
+- **`n_wrong`** — pairs where the solver *certifies* a tree that disagrees with a certified
+  known optimum (worse: an unsound bound; better: a false certificate), or crashes.
+  An uncertified incumbent returned at the time cap is never counted as wrong. **Must be 0.**
   Any run with `n_wrong > 0` is a discard, whatever the other metrics say.
 - **`n_solved`** — pairs certified optimal within the 30 s cap (higher is better, max 70).
 - **`geo_mean_time`** — geometric mean of optimisation seconds over the 70 pairs,
@@ -84,7 +85,7 @@ Once the script finishes it prints a summary like this:
 model:          pygosdt_v1_flat
 n_solved:       56/70 certified optimal within 30s
 geo_mean_time:  0.412s
-n_wrong:        0  (objective worse than a certified optimum, or a false certificate; must be 0)
+n_wrong:        0  (certified result disagreeing with a certified optimum, or a crash; must be 0)
 total_seconds: 540.2s
 ```
 
