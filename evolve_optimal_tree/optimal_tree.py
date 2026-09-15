@@ -9,10 +9,12 @@ over all decision trees on the binarized features (the GOSDT objective), and an
 evaluation loop that scores it on the fixed development suite in ``src/`` and
 records the result in ``results/overall_results.csv``.
 
-Usage: uv run optimal_tree.py [--datasets a,b] [--lams 0.1,0.05] [--time-limit 30]
+Usage (from inside a run folder, see setup_run.py):
+    uv run optimal_tree.py [--datasets a,b] [--lams 0.1,0.05] [--time-limit 30]
 
-This file is the ONLY file the agent edits.  Everything below the "SOLVER"
-banner is fair game; the evaluation loop at the bottom must stay as is.
+Results are written to results/ next to this file.  This file is the ONLY file
+the agent edits.  Everything below the "SOLVER" banner is fair game; the
+evaluation loop at the bottom must stay as is.
 The starting point is pygosdt_v1 (see pygosdt_v1/ and REPORT.html) flattened
 into one file: a memoised depth-first branch-and-bound over capture-set
 bitsets with the reference GOSDT bounds and a numba counting kernel.
@@ -1408,8 +1410,9 @@ if __name__ == "__main__":
     except Exception:
         git_hash = ""
     full_suite = datasets is None and lambdas is None and args.time_limit == TIME_LIMIT
+    results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
     if full_suite and not args.no_record:
-        record(MODEL_NAME, DESCRIPTION, summary, git_hash)
+        record(MODEL_NAME, DESCRIPTION, summary, git_hash, results_dir=results_dir)
     elif not args.no_record:
         print("(partial suite or non-default cap: results not recorded)")
     print_summary(MODEL_NAME, summary)

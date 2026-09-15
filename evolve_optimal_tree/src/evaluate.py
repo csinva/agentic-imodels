@@ -183,8 +183,9 @@ def upsert_pair_results(rows, results_dir=RESULTS_DIR):
     print(f"Per-pair results saved → {path}")
 
 
-def record(model_name: str, description: str, s: dict, commit: str, status: str = ""):
-    upsert_pair_results(s["rows"])
+def record(model_name: str, description: str, s: dict, commit: str, status: str = "",
+           results_dir: str = RESULTS_DIR):
+    upsert_pair_results(s["rows"], results_dir)
     upsert_overall_results([{
         "commit": commit,
         "n_solved": s["n_solved"],
@@ -193,7 +194,7 @@ def record(model_name: str, description: str, s: dict, commit: str, status: str 
         "status": status,
         "model_name": model_name,
         "description": description,
-    }])
+    }], results_dir)
 
 
 # --------------------------------------------------- cached baseline rows

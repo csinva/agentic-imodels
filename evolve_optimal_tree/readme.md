@@ -3,8 +3,9 @@
 Autonomous AI research on an *exact* solver for optimal sparse decision trees.
 
 The idea: give an AI agent a working solver and a fixed benchmark and let it experiment
-autonomously. It modifies `optimal_tree.py`, runs the suite, checks that every returned tree is
-still optimal and whether more pairs were certified faster, keeps or discards, and repeats.
+autonomously. Each run gets its own folder under `runs/<tag>/` (no branches, no commits); there
+the agent modifies `optimal_tree.py`, runs the suite, checks that every certified tree is still
+optimal and whether more pairs were certified faster, keeps or discards, and repeats.
 
 The objective solved is the GOSDT one (Lin et al., ICML 2020):
 
@@ -16,15 +17,18 @@ pair and is 13× faster on geometric mean (`REPORT.html`).
 
 ## How it works
 
-The folder has three files that matter:
+The folder has four files that matter:
 
-- **`run_baselines.py`** — evaluates the fixed baselines (`gosdt`, the reference C++ binary,
-  and `pygosdt_v1`) on the development suite and writes `results/overall_results.csv`.
-  **Not modified by the agent.**
-- **`optimal_tree.py`** — the single file the agent edits. Defines `OptimalTreeClassifier`
-  (scikit-learn compatible; initially pygosdt_v1 flattened into one file) and an evaluation
-  loop that runs the same suite and updates `results/overall_results.csv`.
-  **This file is edited and iterated on by the agent.**
+- **`run_baselines.py`** — seeds `results/overall_results.csv` with the fixed baselines
+  (`gosdt`, the reference C++ binary, and `pygosdt_v1`), from the cached 600 s benchmark by
+  default. **Not modified by the agent.**
+- **`setup_run.py`** — creates an isolated run folder `runs/<tag>/` with a local copy of
+  `optimal_tree.py`, a copy of the baseline leaderboard, a symlink to `src/`, and an empty
+  snapshot folder. The agent works only inside that folder.
+- **`optimal_tree.py`** — the single file the agent edits (its copy in the run folder). Defines
+  `OptimalTreeClassifier` (scikit-learn compatible; initially pygosdt_v1 flattened into one
+  file) and an evaluation loop that runs the suite and updates the run's
+  `results/overall_results.csv`. **This file is edited and iterated on by the agent.**
 - **`program.md`** — instructions for the agent. Point your agent here and let it go.
   **This file is edited and iterated on by the human.**
 
@@ -57,11 +61,13 @@ uv sync
 brew install tbb boost gmp
 gosdt_patches/apply.sh gosdt
 
-# 3. Run baseline evaluation (~45 min with the reference binary, ~10 min without)
-uv run run_baselines.py            # add --skip-reference to skip the C++ baseline
+# 3. Seed the baseline leaderboard (instant, from the cached benchmark; --rerun to recompute)
+uv run run_baselines.py
 
-# 4. Manually run a single experiment
-uv run optimal_tree.py             # full suite, recorded
+# 4. Create a run folder and run a single experiment inside it
+uv run setup_run.py sep15-run1
+cd runs/sep15-run1
+uv run optimal_tree.py             # full suite (~10 min), recorded in results/
 uv run optimal_tree.py --datasets iris,tic-tac-toe --lams 0.02   # quick, not recorded
 
 # 5. Tests: exhaustive-search exactness checks for pygosdt_v1 and the flat file
@@ -70,7 +76,7 @@ uv run pytest
 
 ## Running the agent
 
-Spin up Claude Code (or any LLM agent) in this folder and prompt:
+Spin up Claude Code (or any LLM agent) in this folder (`evolve_optimal_tree/`) and prompt:
 
 ```
 Read and follow the instructions in `program.md`.
@@ -79,13 +85,14 @@ Read and follow the instructions in `program.md`.
 ## Project structure
 
 ```
-run_baselines.py     — baseline evaluation on the fixed suite (do not modify)
-optimal_tree.py      — solver definition + evaluation loop (agent modifies this)
+run_baselines.py     — seeds the baseline leaderboard (do not modify)
+setup_run.py         — creates runs/<tag>/ for one autoresearch session
+optimal_tree.py      — solver definition + evaluation loop (agent modifies its copy in runs/<tag>/)
 program.md           — agent instructions
 src/                 — fixed suite (suite.py), scoring (evaluate.py), known optima,
                        reference-binary wrapper (reference_solver.py)
-results/             — overall_results.csv (leaderboard), pair_results.csv
-optimal_tree_lib/    — success/ and failure/ snapshots of every attempt
+results/             — baseline overall_results.csv (leaderboard) and pair_results.csv
+runs/<tag>/          — one folder per session: optimal_tree.py, results/, optimal_tree_lib/ snapshots
 pygosdt_v1/          — the v1 package the loop starts from (importable: pygosdt_v1.GOSDTClassifier)
 tests/               — exactness tests (exhaustive DP on random problems, pinned real pairs)
 benchmarks/          — full 600 s benchmark of pygosdt_v1 vs the reference, results, summary, report builder
@@ -116,7 +123,8 @@ two-line bug that makes it certify suboptimal trees), is in `REPORT.html`.
 
 ## Design choices
 
-- **Single file to modify.** The agent only touches `optimal_tree.py`. Diffs are small and reviewable.
+- **Single file to modify, in an isolated folder.** The agent only touches its run's
+  `optimal_tree.py`; no branches or commits, and every attempt is snapshotted in the run folder.
 - **Exactness is a gate, not a metric.** `n_wrong` must stay 0; speed and coverage are what improve.
 - **Fixed suite and cap.** Same 70 pairs, same 30 s cap, objectives recomputed independently, so
   every row of the leaderboard is comparable.
