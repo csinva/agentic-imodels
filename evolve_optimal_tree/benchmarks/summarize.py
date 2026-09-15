@@ -30,7 +30,7 @@ def load_all(results: Path) -> pd.DataFrame:
         for _, row in df.iterrows():
             key = (row["dataset"], float(row["lam"]))
             meta[key] = {"dataset": row["dataset"], "n": int(row["n"]), "p": int(row["p"]), "lam": float(row["lam"])}
-            if "ref_objective" in row and not pd.isna(row.get("ref_objective", np.nan)):
+            if "ref_wall" in row and not pd.isna(row.get("ref_wall", np.nan)):
                 ref_rows[key] = row[[c for c in df.columns if c.startswith("ref_")]]
             if "py_objective" in row and not pd.isna(row.get("py_objective", np.nan)):
                 py_rows[key] = row[[c for c in df.columns if c.startswith("py_")]]
@@ -61,13 +61,18 @@ def fmt(v, digits=6):
 
 
 def to_markdown(df: pd.DataFrame) -> str:
+    df = df.copy()
+    if "ref_killed" in df:
+        df["ref_stop"] = np.where(df["ref_killed"].fillna("") != "", df["ref_killed"].fillna(""),
+                                  np.where(df["ref_gap"].fillna(0) > 0, "time", "optimal"))
+        df.loc[df["ref_time"].isna() & (df["ref_stop"] == "optimal"), "ref_stop"] = ""
     cols = ["dataset", "n", "lam", "ref_binary_features", "ref_objective", "py_objective", "objective_diff",
-            "ref_time", "py_time", "speedup_py_vs_cpp", "ref_size", "py_size", "ref_gap", "py_optimal"]
+            "ref_time", "py_time", "speedup_py_vs_cpp", "ref_size", "py_size", "ref_stop", "py_stop_reason"]
     cols = [c for c in cols if c in df.columns]
     head = {"ref_binary_features": "binary feats", "ref_objective": "C++ objective", "py_objective": "py objective",
             "objective_diff": "py - C++", "ref_time": "C++ time (s)", "py_time": "py time (s)",
             "speedup_py_vs_cpp": "C++ time / py time", "ref_size": "C++ graph", "py_size": "py graph",
-            "ref_gap": "C++ gap", "py_optimal": "py optimal"}
+            "ref_stop": "C++ stop", "py_stop_reason": "py stop"}
     lines = ["| " + " | ".join(head.get(c, c) for c in cols) + " |", "|" + "---|" * len(cols)]
     for _, r in df.iterrows():
         cells = []

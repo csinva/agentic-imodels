@@ -164,4 +164,47 @@ are summarised at the end of this file.
 
 ## Results summary
 
-_(filled in from `benchmarks/results/summary.md` once the benchmark grid completes)_
+Full table: `benchmarks/results/summary.md` (also `summary.csv`, the raw
+`benchmark_final.csv`, and `benchmark.png`).  15 datasets from the reference
+repository (77 to 12,381 rows, 13 to 10,001 binary features) × λ ∈ {0.1, 0.05,
+0.02, 0.01, 0.005}, single thread each, 600 s time cap and 6 GB memory cap for
+both implementations, run sequentially on an otherwise idle machine.
+
+**Fit.** In every one of the 63 pairs where both implementations returned a
+tree, pygosdt's objective was equal (57 pairs) or strictly lower (6 pairs);
+it was never worse.  Where pygosdt certified optimality, the reference either
+found the same objective or a worse one (it returns an incumbent when it hits
+its time limit).  The 6 wins:
+
+| dataset | λ | reference objective (status) | pygosdt objective (status) |
+|---|---|---|---|
+| tic-tac-toe | 0.02 | 0.324593 (claimed optimal) | 0.318330 (optimal) |
+| iris | 0.005 | 0.045 (timed out, gap 0.025) | 0.038333 (optimal, 0.6 s) |
+| gaussian_1k | 0.02 | 0.317 (timed out, gap 0.257) | 0.185 (optimal, 19 s) |
+| gaussian_1k | 0.01 | 0.307 (timed out) | 0.155 (optimal, 84 s) |
+| gaussian_1k | 0.005 | 0.302 (timed out) | 0.140 (optimal, 271 s) |
+| sine_1k | 0.005 | 0.462 (timed out) | 0.400 (timed out) |
+
+**Speed** (optimisation time only, both sides).  Over the 63 comparable pairs
+the geometric mean of `C++ time / pygosdt time` is 13.2 (median 9.0).  pygosdt
+was faster on 50 pairs; the 12 pairs where the reference was faster are all
+trivial cases where its millisecond-resolution timer reports 0–2 ms and pygosdt
+needs 0.1–2.7 ms.  pygosdt's depth-first search with a strong incumbent visits
+far fewer subproblems than the reference's best-first message passing
+(e.g. iris λ=0.01: 3,812 vs 215,881 graph nodes, 0.14 s vs 151 s), which more
+than compensates for the interpreter overhead per node.
+
+**Limits reached.** The reference hit the 600 s cap on 12 pairs (it checks
+the clock only every 10,000 iterations, so it overran the cap by up to 500 s)
+and the 6 GB memory cap on 12 (all five sine_10k cases in about a minute,
+tic-tac-toe λ=0.005 in 23 s, four compas_processed cases, fico_1k λ=0.02,
+sine_1k λ=0.05); its per-node bitmask copies are memory hungry.  pygosdt hit
+the time cap on 13 pairs (fico_1k, sine_1k and sine_10k at small λ) and the memory cap on 4
+(compas_processed at λ ≤ 0.05, about 2.8M memoised subproblems of 12,381-bit
+keys each); in all of them it returns the incumbent with `optimal_ = False`
+and a certified lower bound.  On those pairs both implementations agree
+wherever the reference produced a tree at all.
+
+**Engines.** `engine="numba"` (default) and `engine="python"` give identical
+trees; numba is 1.1–2× faster on the wide numeric datasets (gaussian_1k
+λ=0.05: 0.41 s vs 0.94 s) and makes little difference on narrow binary ones.

@@ -28,7 +28,8 @@ Bounds implemented (all are exact, so the returned tree is provably optimal):
 
 from __future__ import annotations
 
-import sys
+import os
+import subprocess
 import time
 
 import numpy as np
@@ -44,13 +45,23 @@ class TimeLimitReached(Exception):
 
 
 def _rss_bytes() -> int:
-    """Resident set size of this process in bytes (0 if unavailable)."""
+    """Current resident set size of this process in bytes (0 if unavailable).
+
+    ``resource.getrusage`` only reports the lifetime peak, which would keep
+    tripping the guard after one large search, so the live value is read from
+    ``/proc`` on Linux and from ``ps`` elsewhere.
+    """
     try:
-        import resource
-        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    except (ImportError, OSError):
+        with open("/proc/self/statm") as fh:
+            return int(fh.read().split()[1]) * os.sysconf("SC_PAGE_SIZE")
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        out = subprocess.run(["ps", "-o", "rss=", "-p", str(os.getpid())],
+                             capture_output=True, text=True, timeout=5)
+        return int(out.stdout.strip() or 0) * 1024
+    except (OSError, ValueError, subprocess.SubprocessError):
         return 0
-    return int(rss) if sys.platform == "darwin" else int(rss) * 1024
 
 
 class Node:
