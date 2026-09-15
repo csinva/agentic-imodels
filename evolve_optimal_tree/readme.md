@@ -128,6 +128,24 @@ model.objective_, model.n_leaves_, model.optimal_, model.time_
 Why it is faster than the reference, and what the reference gets wrong (including a verified
 two-line bug that makes it certify suboptimal trees), is in `baselines/REPORT.html`.
 
+## Baselines at a glance
+
+`results/overall_results.csv` after `uv run run_baselines.py` (70 suite pairs, 30 s cap, from the
+600 s benchmark in `baselines/benchmarks/results/pair_results.csv`):
+
+| baseline | certified within 30 s | geo. mean time | exactness violations | note |
+|---|---|---|---|---|
+| gosdt (ICML 2020 C++) | 46 | 0.47 s | 1 | false certificate on tic-tac-toe λ=0.02; 12 memory kills at 6 GB on the full grid |
+| gosdt_guesses, exact mode | 46 | 0.51 s | 0 | same search space as gosdt; no faster where both finish (ratio 0.99); 28 memory kills at 6 GB, including iris λ=0.05 |
+| gosdt_guesses_guided | 0 (heuristic) | 0.001 s | 0 | GBDT threshold + lower-bound guesses; matches the optimum on 42 of 70 pairs, worse on 28, found better uncertified incumbents on 3 hard pairs |
+| pygosdt_v1 | 56 | 0.10 s | 0 | the loop's starting point |
+
+gosdt-guesses in exact mode therefore is not a meaningfully better reference than the original
+GOSDT on this suite (it fixes the false-certificate bug but its message queue exhausts memory
+sooner), so `pygosdt_v1`/`optimal_tree.py` stay based on the GOSDT search. The guesses paper's
+ideas (a reference model's thresholds and labels to shrink the search) are heuristic by design
+and are not admissible bounds for an exact solver.
+
 ## Design choices
 
 - **Single file to modify, in an isolated folder.** The agent only touches its run's

@@ -150,6 +150,10 @@ continue. Run until manually stopped. Definitely do not stop after less than 20 
 - Read the GOSDT paper (https://arxiv.org/abs/2006.08690), the OSDT paper
   (https://arxiv.org/abs/1904.12847) the MurTree paper (https://arxiv.org/abs/2007.12652)
   the SPLIT-ICML paper (https://arxiv.org/abs/2502.15988), and the ensemble starts paper (https://ojs.aaai.org/index.php/AAAI/article/view/21194) for further bounds and search ideas, 
+- Warm starts from a reference ensemble (gosdt-guesses, `baselines/gosdt_guesses`): a boosted
+  ensemble's thresholds and labels give a good *incumbent* tree quickly, which is admissible
+  (it only tightens the upper bound). Its reference-label *lower* bounds and threshold pruning
+  are not admissible: they made the guided baseline worse than the optimum on 28 of 70 pairs.
 - Do not simply reduce the search space heuristically: the solver must remain exact.
 - Keep in mind that your solution should work for datasets beyond the ones you are optimizing for, so don't make overly esoteric solutions
 

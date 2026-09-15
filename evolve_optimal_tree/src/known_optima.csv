@@ -37,12 +37,12 @@ gaussian_1k,0.005,0.14,True,pygosdt_v1
 fico_1k,0.1,0.491,True,gosdt
 fico_1k,0.05,0.391,False,gosdt
 fico_1k,0.02,0.331,False,pygosdt_v1
-fico_1k,0.01,0.311,False,gosdt
-fico_1k,0.005,0.301,False,pygosdt_v1
+fico_1k,0.01,0.304,False,gosdt_guesses_guided
+fico_1k,0.005,0.284,False,gosdt_guesses_guided
 sine_1k,0.1,0.595,True,gosdt
 sine_1k,0.05,0.545,False,pygosdt_v1
 sine_1k,0.02,0.494,False,gosdt
-sine_1k,0.01,0.474,False,gosdt
+sine_1k,0.01,0.467,False,gosdt_guesses_guided
 sine_1k,0.005,0.4,False,pygosdt_v1
 car_evaluation,0.1,0.399769,True,gosdt
 car_evaluation,0.05,0.294676,True,gosdt
@@ -62,8 +62,8 @@ compas_binned,0.005,0.355969,True,gosdt
 sine_10k,0.1,0.5996,False,pygosdt_v1
 sine_10k,0.05,0.5496,False,pygosdt_v1
 sine_10k,0.02,0.5181,False,pygosdt_v1
-sine_10k,0.01,0.4981,False,pygosdt_v1
-sine_10k,0.005,0.4881,False,pygosdt_v1
+sine_10k,0.01,0.4968,False,gosdt_guesses_guided
+sine_10k,0.005,0.4768,False,gosdt_guesses_guided
 fico_binary,0.1,0.504044,True,gosdt
 fico_binary,0.05,0.404044,True,gosdt
 fico_binary,0.02,0.344044,True,gosdt

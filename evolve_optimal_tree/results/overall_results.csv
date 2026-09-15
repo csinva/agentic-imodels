@@ -1,3 +1,5 @@
 commit,n_solved,geo_mean_time,n_wrong,status,model_name,description
 baseline,46,0.473,1,baseline,gosdt,"reference C++ GOSDT (ICML 2020 code, default bounds, single thread)"
 baseline,56,0.099,0,baseline,pygosdt_v1,"pygosdt_v1 package: memoised depth-first branch-and-bound with the reference bounds, numba kernel"
+baseline,46,0.506,0,baseline,gosdt_guesses,"gosdt-guesses (McTavish et al. 2022) C++ core in exact mode: same binarization, no reference labels, no depth budget"
+baseline,0,0.001,0,baseline,gosdt_guesses_guided,"gosdt-guesses with the paper's guesses: GBDT threshold guessing (40 stumps) and reference-label lower bounds, no depth budget; not exact"

@@ -89,6 +89,10 @@ if __name__ == "__main__":
         if cached is not None:
             print(f"{name}: using cached rows from baselines/benchmarks/results/pair_results.csv")
             summary = summarize(cached)
+        elif not args.rerun:
+            print(f"skipping {name}: no complete cached rows in baselines/benchmarks/results/pair_results.csv "
+                  f"(run `uv run baselines/benchmarks/run_benchmark.py --models {name} --resume`, or pass --rerun)")
+            continue
         else:
             if name == "gosdt" and (args.skip_reference or not reference_solver.available()):
                 print(f"skipping {name}: reference binary not built (see baselines/gosdt_patches/apply.sh)")

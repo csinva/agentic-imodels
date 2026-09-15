@@ -36,6 +36,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from evaluate import NoModel
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
@@ -154,7 +156,7 @@ class GuessesGOSDT:
             self.wall_ = time.perf_counter() - t0
             stderr = proc.stderr.read() if proc.stderr else ""
             if killed:
-                raise RuntimeError(f"gosdt-guesses stopped at the {killed} cap without a model")
+                raise NoModel(killed, f"gosdt-guesses stopped at the {killed} cap without a model")
             if proc.returncode != 0 or not out.exists():
                 raise RuntimeError(f"gosdt-guesses child failed: {stderr[-800:]}")
             res = json.loads(out.read_text())

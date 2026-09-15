@@ -39,6 +39,16 @@ PAIR_CSV_COLS = ["model", "dataset", "n", "p", "lam", "objective", "errors", "le
 TOL = 1e-6
 
 
+class NoModel(RuntimeError):
+    """Raised by a solver wrapper when the solver was stopped at a cap before it
+    produced any tree.  ``status`` is ``"time"`` or ``"memory"``; the pair is
+    recorded with that status and verdict ``no_tree`` rather than as a crash."""
+
+    def __init__(self, status: str, message: str = ""):
+        super().__init__(message or f"stopped at the {status} cap without a model")
+        self.status = status
+
+
 # ------------------------------------------------------------- objective
 def evaluate_tree(node: dict, frame: pd.DataFrame):
     """Independent (errors, leaves) of a JSON tree on a frame whose last column is the label."""
@@ -123,6 +133,9 @@ def evaluate_solver(make_model, model_name: str, datasets=None, lambdas=None, ti
                            binary_features=getattr(model, "n_binary_features_", ""),
                            lb=getattr(model, "lowerbound_", ""), ub=getattr(model, "upperbound_", ""))
                 row["verdict"] = verdict_for(objective, optimal, k_obj, k_cert)
+            except NoModel as exc:
+                row.update(objective=float("nan"), errors="", leaves="", seconds=time_limit,
+                           wall=round(time.perf_counter() - t0, 3), status=exc.status, verdict="no_tree")
             except Exception:  # noqa: BLE001 - a crashing solver must not abort the whole suite
                 traceback.print_exc()
                 row.update(objective=float("nan"), errors="", leaves="", seconds=time_limit,

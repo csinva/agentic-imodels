@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from evaluate import NoModel
 from suite import ROOT
 
 BINARY = ROOT / "baselines" / "gosdt" / "build" / "gosdt"
@@ -87,6 +88,9 @@ class ReferenceGOSDT:
             m = re.search(r"Objective Boundary: \[([0-9.eE+-]+), ([0-9.eE+-]+)\]", out)
             self.lowerbound_, self.upperbound_ = (float(m.group(1)), float(m.group(2))) if m else ("", "")
             if not model_path.exists():
+                if killed:
+                    raise NoModel("time" if killed == "timeout" else killed,
+                                  f"reference stopped at the {killed} cap without a model")
                 raise RuntimeError(f"reference produced no model ({self.stop_reason_})")
             models = json.loads(model_path.read_text())
             if not models:
