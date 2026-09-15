@@ -49,6 +49,15 @@ def load_all(results: Path) -> pd.DataFrame:
     if "ref_objective" in df and "py_objective" in df:
         df["objective_diff"] = df["py_objective"] - df["ref_objective"]
         df["speedup_py_vs_cpp"] = df["ref_time"] / df["py_time"]
+    # normalised stop reasons: optimal | time | memory | timeout (killed by harness)
+    if "ref_wall" in df:
+        killed = df["ref_killed"].fillna("") if "ref_killed" in df else pd.Series("", index=df.index)
+        gap = df["ref_gap"].fillna(0) if "ref_gap" in df else pd.Series(0.0, index=df.index)
+        df["ref_stop"] = np.where(killed != "", killed, np.where(gap > 0, "time", "optimal"))
+        df.loc[df["ref_wall"].isna(), "ref_stop"] = ""
+    if "py_optimal" in df:
+        reason = df["py_stop_reason"].fillna("") if "py_stop_reason" in df else pd.Series("", index=df.index)
+        df["py_stop"] = np.where(reason != "", reason, np.where(df["py_optimal"] == True, "optimal", "time"))
     return df
 
 
@@ -61,18 +70,13 @@ def fmt(v, digits=6):
 
 
 def to_markdown(df: pd.DataFrame) -> str:
-    df = df.copy()
-    if "ref_killed" in df:
-        df["ref_stop"] = np.where(df["ref_killed"].fillna("") != "", df["ref_killed"].fillna(""),
-                                  np.where(df["ref_gap"].fillna(0) > 0, "time", "optimal"))
-        df.loc[df["ref_time"].isna() & (df["ref_stop"] == "optimal"), "ref_stop"] = ""
     cols = ["dataset", "n", "lam", "ref_binary_features", "ref_objective", "py_objective", "objective_diff",
-            "ref_time", "py_time", "speedup_py_vs_cpp", "ref_size", "py_size", "ref_stop", "py_stop_reason"]
+            "ref_time", "py_time", "speedup_py_vs_cpp", "ref_size", "py_size", "ref_stop", "py_stop"]
     cols = [c for c in cols if c in df.columns]
     head = {"ref_binary_features": "binary feats", "ref_objective": "C++ objective", "py_objective": "py objective",
             "objective_diff": "py - C++", "ref_time": "C++ time (s)", "py_time": "py time (s)",
             "speedup_py_vs_cpp": "C++ time / py time", "ref_size": "C++ graph", "py_size": "py graph",
-            "ref_stop": "C++ stop", "py_stop_reason": "py stop"}
+            "ref_stop": "C++ stop", "py_stop": "py stop"}
     lines = ["| " + " | ".join(head.get(c, c) for c in cols) + " |", "|" + "---|" * len(cols)]
     for _, r in df.iterrows():
         cells = []
