@@ -17,7 +17,7 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 RESULTS_DIR = str(ROOT / "results")
-DATA = ROOT / "gosdt" / "experiments" / "datasets"
+DATA = ROOT / "baselines" / "gosdt" / "experiments" / "datasets"
 
 # (name, csv path).  The last column of every CSV is the label.
 DATASETS = [

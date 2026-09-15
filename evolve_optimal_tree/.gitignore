@@ -5,9 +5,10 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
-gosdt/
+baselines/gosdt/
 run*.log
-benchmarks/results/work/
-!benchmarks/results/
+baselines/benchmarks/results/work/
+!baselines/benchmarks/results/
 !results/
 .DS_Store
+runs/

@@ -14,7 +14,7 @@ from pygosdt_v1 import GOSDTClassifier
 from test_bruteforce import exhaustive_optimum
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "gosdt" / "experiments" / "datasets"
+DATA = ROOT / "baselines" / "gosdt" / "experiments" / "datasets"
 
 
 def load_flat():

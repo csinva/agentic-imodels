@@ -33,7 +33,8 @@ from suite import (DATASETS, LAMBDAS, MEMORY_LIMIT, RESULTS_DIR, TIME_LIMIT, loa
                    load_known_optima)
 
 OVERALL_CSV_COLS = ["commit", "n_solved", "geo_mean_time", "n_wrong", "status", "model_name", "description"]
-PAIR_CSV_COLS = ["model", "dataset", "lam", "objective", "errors", "leaves", "seconds", "status",
+PAIR_CSV_COLS = ["model", "dataset", "n", "p", "lam", "objective", "errors", "leaves", "seconds", "wall",
+                 "status", "size", "iterations", "binary_features", "lb", "ub",
                  "known_objective", "known_certified", "verdict"]
 TOL = 1e-6
 
@@ -84,41 +85,55 @@ def verdict_for(objective: float, claimed_optimal: bool, k_obj: float, k_cert: b
 
 
 def evaluate_solver(make_model, model_name: str, datasets=None, lambdas=None, time_limit=None,
-                    verbose=True) -> dict:
-    """Fit ``make_model`` on the suite and return metrics plus per-pair rows."""
+                    verbose=True, skip=None, on_row=None) -> dict:
+    """Fit ``make_model`` on the suite and return metrics plus per-pair rows.
+
+    ``skip`` is an optional set of ``(dataset, lam)`` pairs to leave out (used to
+    resume a long benchmark); ``on_row`` is called with each finished row.
+    """
     datasets = datasets or [d for d, _ in DATASETS]
     lambdas = lambdas or LAMBDAS
     time_limit = TIME_LIMIT if time_limit is None else time_limit
     known = load_known_optima()
     rows = []
     for name in datasets:
+        todo = [lam for lam in lambdas if not (skip and (name, lam) in skip)]
+        if not todo:
+            continue
         frame = load_dataset(name)
         X, y = frame.iloc[:, :-1], frame.iloc[:, -1]
-        n = frame.shape[0]
-        for lam in lambdas:
+        n, p = frame.shape[0], frame.shape[1] - 1
+        for lam in todo:
             k_obj, k_cert = known.get((name, lam), (float("nan"), False))
-            row = {"model": model_name, "dataset": name, "lam": lam, "known_objective": k_obj,
-                   "known_certified": k_cert}
+            row = {"model": model_name, "dataset": name, "n": n, "p": p, "lam": lam,
+                   "known_objective": k_obj, "known_certified": k_cert}
             t0 = time.perf_counter()
             try:
                 model = make_model(lam, time_limit)
                 model.fit(X, y)
-                seconds = float(getattr(model, "time_", time.perf_counter() - t0))
+                wall = time.perf_counter() - t0
+                seconds = float(getattr(model, "time_", wall))
                 errors, leaves = evaluate_tree(model.tree_, frame)
                 objective = errors / n + lam * leaves
                 optimal = bool(getattr(model, "optimal_", False))
+                status = "optimal" if optimal else str(getattr(model, "stop_reason_", "time") or "time")
                 row.update(objective=objective, errors=errors, leaves=leaves,
-                           seconds=min(seconds, time_limit), status="optimal" if optimal else "time")
+                           seconds=min(seconds, time_limit), wall=round(wall, 3), status=status,
+                           size=getattr(model, "size_", ""), iterations=getattr(model, "iterations_", ""),
+                           binary_features=getattr(model, "n_binary_features_", ""),
+                           lb=getattr(model, "lowerbound_", ""), ub=getattr(model, "upperbound_", ""))
                 row["verdict"] = verdict_for(objective, optimal, k_obj, k_cert)
             except Exception:  # noqa: BLE001 - a crashing solver must not abort the whole suite
                 traceback.print_exc()
                 row.update(objective=float("nan"), errors="", leaves="", seconds=time_limit,
-                           status="crash", verdict="WRONG")
+                           wall=round(time.perf_counter() - t0, 3), status="crash", verdict="WRONG")
             rows.append(row)
             if verbose:
                 print(f"  {name:17s} λ={lam:<6} {row['status']:7s} obj={row['objective']:.6f} "
                       f"t={row['seconds']:6.2f}s known={k_obj:.6f}{'*' if k_cert else ''} {row['verdict']}",
                       flush=True)
+            if on_row is not None:
+                on_row(row)
     return summarize(rows)
 
 
@@ -198,61 +213,51 @@ def record(model_name: str, description: str, s: dict, commit: str, status: str 
 
 
 # --------------------------------------------------- cached baseline rows
-BENCHMARK_SUMMARY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                                 "benchmarks", "results", "summary.csv")
-BENCHMARK_COLUMNS = {"gosdt": "ref", "pygosdt_v1": "py"}
+BENCHMARK_PAIRS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "baselines", "benchmarks", "results", "pair_results.csv")
 
 
 def rows_from_benchmark(model_name: str, time_limit=None) -> list[dict] | None:
-    """Per-pair rows for a baseline taken from the full benchmark in ``benchmarks/results``.
+    """Per-pair rows for a baseline taken from the full benchmark in ``baselines/benchmarks/results``.
 
     The benchmark ran with a 600 s cap; a pair counts as solved here only if it was
-    certified within the suite's cap, and its time is capped at the suite's cap, so
-    the rows are exactly what a run of the suite would have produced (times differ
-    only by machine noise).  Returns None if the benchmark summary is missing.
+    certified within the suite's cap, its time is capped at the suite's cap, and a
+    memory stop that happened after the cap becomes a time stop, so the rows are
+    exactly what a run of the suite would have produced (times differ only by
+    machine noise).  Returns None if the benchmark file or any pair is missing.
     """
-    if not os.path.exists(BENCHMARK_SUMMARY):
+    if not os.path.exists(BENCHMARK_PAIRS):
         return None
     time_limit = TIME_LIMIT if time_limit is None else time_limit
-    prefix = BENCHMARK_COLUMNS[model_name]
-    table = pd.read_csv(BENCHMARK_SUMMARY)
+    table = pd.read_csv(BENCHMARK_PAIRS)
+    table = table[table["model"] == model_name]
     known = load_known_optima()
     rows = []
     for name, _ in DATASETS:
-        n = None
         for lam in LAMBDAS:
             hit = table[(table["dataset"] == name) & (table["lam"] == lam)]
             if not len(hit):
                 return None
             r = hit.iloc[0]
-            if n is None:
-                n = int(r["n"])
             k_obj, k_cert = known.get((name, lam), (float("nan"), False))
-            row = {"model": model_name, "dataset": name, "lam": lam, "known_objective": k_obj,
-                   "known_certified": k_cert}
-            objective = r[f"{prefix}_objective"]
-            seconds = r[f"{prefix}_time"]
-            stop = str(r[f"{prefix}_stop"]) if not pd.isna(r[f"{prefix}_stop"]) else ""
-            # elapsed time at which the benchmark run stopped (wall time for a killed reference)
-            elapsed = seconds if not pd.isna(seconds) else r.get(f"{prefix}_wall", float("nan"))
-            if stop == "memory" and (pd.isna(elapsed) or float(elapsed) > time_limit):
-                stop = "time"  # under the suite's cap the run would have hit the clock first
-            if stop == "timeout":
-                stop = "time"
-            if pd.isna(objective):
-                row.update(objective=float("nan"), errors="", leaves="", seconds=time_limit,
-                           status=stop or "crash", verdict="no_tree")
+            row = {"model": model_name, "dataset": name, "n": r["n"], "p": r["p"], "lam": lam,
+                   "known_objective": k_obj, "known_certified": k_cert,
+                   "size": r.get("size", ""), "iterations": r.get("iterations", ""),
+                   "binary_features": r.get("binary_features", "")}
+            status = str(r["status"]) if not pd.isna(r["status"]) else "crash"
+            seconds = r["seconds"]
+            elapsed = seconds if not pd.isna(seconds) else r.get("wall", float("nan"))
+            if status == "memory" and (pd.isna(elapsed) or float(elapsed) > time_limit):
+                status = "time"  # under the suite's cap the run would have hit the clock first
+            if status == "optimal" and float(seconds) > time_limit:
+                status = "time"
+            capped = time_limit if pd.isna(seconds) else min(float(seconds), time_limit)
+            if pd.isna(r["objective"]):
+                row.update(objective=float("nan"), errors="", leaves="", seconds=capped, wall=capped,
+                           status=status, verdict="no_tree")
             else:
-                solved = stop == "optimal" and float(seconds) <= time_limit
-                if solved:
-                    status = "optimal"
-                elif stop == "memory":
-                    status = "memory"
-                else:
-                    status = "time"
-                seconds = time_limit if pd.isna(seconds) else min(float(seconds), time_limit)
-                row.update(objective=float(objective), errors=int(r[f"{prefix}_errors"]),
-                           leaves=int(r[f"{prefix}_leaves"]), seconds=seconds, status=status)
-                row["verdict"] = verdict_for(float(objective), stop == "optimal", k_obj, k_cert)
+                row.update(objective=float(r["objective"]), errors=int(r["errors"]), leaves=int(r["leaves"]),
+                           seconds=capped, wall=capped, status=status,
+                           verdict=verdict_for(float(r["objective"]), str(r["status"]) == "optimal", k_obj, k_cert))
             rows.append(row)
     return rows

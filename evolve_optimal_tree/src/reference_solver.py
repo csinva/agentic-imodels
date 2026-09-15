@@ -1,8 +1,9 @@
 """Wrapper that runs the reference C++ GOSDT binary with the solver interface used
 by ``evaluate.evaluate_solver`` (``fit``, ``tree_``, ``optimal_``, ``time_``).
 
-Used only by ``run_baselines.py``.  Requires ``gosdt/build/gosdt`` (see
-``gosdt_patches/apply.sh``).  Do not modify.
+Used by ``run_baselines.py --rerun`` and ``baselines/benchmarks/run_benchmark.py``.
+Requires ``baselines/gosdt/build/gosdt`` (see ``baselines/gosdt_patches/apply.sh``).
+Do not modify.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import pandas as pd
 
 from suite import ROOT
 
-BINARY = ROOT / "gosdt" / "build" / "gosdt"
+BINARY = ROOT / "baselines" / "gosdt" / "build" / "gosdt"
 
 
 def available() -> bool:
@@ -75,6 +76,16 @@ class ReferenceGOSDT:
             gap = float(m.group(1)) if m else float("nan")
             self.optimal_ = (killed == "" and gap == 0.0)
             self.stop_reason_ = killed or ("optimal" if self.optimal_ else "time")
+            if self.stop_reason_ == "timeout":
+                self.stop_reason_ = "time"
+            m = re.search(r"Size of Graph: (\d+)", out)
+            self.size_ = int(m.group(1)) if m else ""
+            m = re.search(r"Number of Iterations: (\d+)", out)
+            self.iterations_ = int(m.group(1)) if m else ""
+            m = re.search(r"Binary Dataset Dimension: (\d+) x (\d+)", out)
+            self.n_binary_features_ = int(m.group(2)) if m else ""
+            m = re.search(r"Objective Boundary: \[([0-9.eE+-]+), ([0-9.eE+-]+)\]", out)
+            self.lowerbound_, self.upperbound_ = (float(m.group(1)), float(m.group(2))) if m else ("", "")
             if not model_path.exists():
                 raise RuntimeError(f"reference produced no model ({self.stop_reason_})")
             models = json.loads(model_path.read_text())

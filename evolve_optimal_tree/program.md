@@ -23,7 +23,7 @@ editable file under `evolve_optimal_tree/runs/<tag>/`.
    `cd runs/<tag>`. Do not read any of the other folders in `runs/`, only your own.
 4. **Read the in-scope files**: `optimal_tree.py`, `src/suite.py`, `src/evaluate.py`,
    `results/overall_results.csv` (the two baseline rows) and `results/pair_results.csv`
-   (which pairs the baselines fail to certify within the cap). `../../REPORT.html`
+   (which pairs the baselines fail to certify within the cap). `../../baselines/REPORT.html`
    explains how the starting solver compares with the reference and why.
 
 No git branch, no commits: every change is local to the run folder.
@@ -148,9 +148,10 @@ continue. Run until manually stopped. Definitely do not stop after less than 20 
 - Search order: best-first within a node, breadth on the first level, or a hybrid.
 - Cheaper memo keys (hash of the packed capture set) to cut memory on 12,000-row datasets.
 - Read the GOSDT paper (https://arxiv.org/abs/2006.08690), the OSDT paper
-  (https://arxiv.org/abs/1904.12847) and the MurTree paper (https://arxiv.org/abs/2007.12652)
-  for further bounds and search ideas.
+  (https://arxiv.org/abs/1904.12847) the MurTree paper (https://arxiv.org/abs/2007.12652)
+  the SPLIT-ICML paper (https://arxiv.org/abs/2502.15988), and the ensemble starts paper (https://ojs.aaai.org/index.php/AAAI/article/view/21194) for further bounds and search ideas, 
 - Do not simply reduce the search space heuristically: the solver must remain exact.
+- Keep in mind that your solution should work for datasets beyond the ones you are optimizing for, so don't make overly esoteric solutions
 
 Keep the solver in one file, dependency-free beyond numpy/pandas/scikit-learn/numba, and
 make sure every bound you add is provably valid. BE CREATIVE!

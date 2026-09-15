@@ -522,7 +522,7 @@ current <em>scope</em>, the budget handed down by the parent. That lower bound i
 never lowered: when a parent later revisits the vertex with a wider budget, the stale bound stays and the search prunes the
 subtree that held the optimum. On tic-tac-toe at λ = 0.02 the reference reports 0.3246 with a zero optimality gap while a tree
 with 0.3183 exists; it does so with every optional bound, look-ahead and cancellation disabled. Removing the two scope-conditional
-skips (patch <code>gosdt_patches/scope-lowerbound.patch</code>, two lines) makes it report 0.3183, matching pygosdt. pygosdt
+skips (patch <code>baselines/gosdt_patches/scope-lowerbound.patch</code>, two lines) makes it report 0.3183, matching pygosdt. pygosdt
 avoids the problem by construction: when a subproblem fails its budget it records a lower bound that is valid unconditionally
 (the minimum over all pruned and solved splits), so revisiting it with a larger budget is always safe.</li>
 <li><strong>Its numeric encoder sorts integer thresholds as strings</strong> ("10" &lt; "2"), so the threshold-adjacency the
@@ -532,7 +532,7 @@ the parent, which does not carry over to descendants; pygosdt applies the provab
 <li><strong>It overruns its own time limit</strong> because the clock is checked every 10,000 iterations: with a 600 s cap it ran
 for up to 1,321 s, and its memory use is high enough that it was killed at 6 GB on 12 of 75 pairs.</li>
 <li><strong>It does not build as published on current toolchains</strong> (x86-only compiler flags and SIMD headers, an
-allocator type oneTBB 2021+ rejects); two lines and a direct clang build fix that, see <code>gosdt_patches/</code>.</li>
+allocator type oneTBB 2021+ rejects); two lines and a direct clang build fix that, see <code>baselines/gosdt_patches/</code>.</li>
 </ul>
 </section>
 
@@ -557,7 +557,7 @@ numba kernel for the per-node counts. Both engines give identical trees; numba i
 and pinned on 14 real (dataset, λ) pairs; 80 tests in total.</li>
 <li>The reference's non-exact pairwise feature-exchange bound is deliberately not replicated.</li>
 <li>Missing numeric values never satisfy a split in pygosdt; the reference parses them as 0. The benchmark fills them with 0 for both.</li>
-<li>Reproduce with <code>uv run python benchmarks/run_benchmark.py</code>, then <code>summarize.py</code> and <code>build_report.py</code>.</li>
+<li>Reproduce with <code>uv run baselines/benchmarks/run_benchmark.py</code>, then <code>summarize.py</code> and <code>build_report.py</code> in <code>baselines/benchmarks/</code>.</li>
 </ul>
 </section>
 

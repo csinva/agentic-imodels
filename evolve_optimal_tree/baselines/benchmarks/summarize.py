@@ -1,12 +1,10 @@
-"""Merge benchmark CSVs into one table, a markdown report and a plot.
+"""Turn ``results/pair_results.csv`` (written by ``run_benchmark.py``) into the
+wide summary table (``summary.csv``/``summary.md``) and the plot used by
+``build_report.py``.
 
-Reference columns (``ref_*``) and Python columns (``py_*``) are taken from the
-most recently modified CSV that contains them for each (dataset, lam) pair, so
-the Python side can be re-run alone after optimisations.
+Usage (from ``evolve_optimal_tree``)::
 
-Usage::
-
-    uv run python benchmarks/summarize.py [--results benchmarks/results]
+    uv run baselines/benchmarks/summarize.py
 """
 
 from __future__ import annotations
@@ -20,44 +18,39 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 
 
+WIDE_FIELDS = ["objective", "errors", "leaves", "seconds", "wall", "status", "size", "iterations",
+               "binary_features", "lb", "ub"]
+
+
 def load_all(results: Path) -> pd.DataFrame:
-    files = sorted(results.glob("benchmark*.csv"), key=lambda p: p.stat().st_mtime)
-    ref_rows: dict[tuple, pd.Series] = {}
-    py_rows: dict[tuple, pd.Series] = {}
-    meta: dict[tuple, dict] = {}
-    for f in files:
-        df = pd.read_csv(f)
-        for _, row in df.iterrows():
-            key = (row["dataset"], float(row["lam"]))
-            meta[key] = {"dataset": row["dataset"], "n": int(row["n"]), "p": int(row["p"]), "lam": float(row["lam"])}
-            if "ref_wall" in row and not pd.isna(row.get("ref_wall", np.nan)):
-                ref_rows[key] = row[[c for c in df.columns if c.startswith("ref_")]]
-            if "py_objective" in row and not pd.isna(row.get("py_objective", np.nan)):
-                py_rows[key] = row[[c for c in df.columns if c.startswith("py_")]]
-    out = []
-    for key, m in meta.items():
-        rec = dict(m)
-        if key in ref_rows:
-            rec.update(ref_rows[key].to_dict())
-        if key in py_rows:
-            rec.update(py_rows[key].to_dict())
-        out.append(rec)
-    df = pd.DataFrame(out)
+    """Pivot ``pair_results.csv`` (one row per model × dataset × λ) into one row per
+    (dataset, λ) with ``ref_*`` columns for ``gosdt`` and ``py_*`` for ``pygosdt_v1``."""
+    pairs = pd.read_csv(results / "pair_results.csv")
+    prefix = {"gosdt": "ref", "pygosdt_v1": "py"}
+    out = {}
+    for _, r in pairs.iterrows():
+        if r["model"] not in prefix:
+            continue
+        key = (r["dataset"], float(r["lam"]))
+        rec = out.setdefault(key, {"dataset": r["dataset"], "n": int(r["n"]), "p": int(r["p"]), "lam": float(r["lam"])})
+        pre = prefix[r["model"]]
+        for f in WIDE_FIELDS:
+            rec[f"{pre}_{f}"] = r.get(f, np.nan)
+        rec[f"{pre}_time"] = r.get("seconds", np.nan)
+        rec[f"{pre}_stop"] = r["status"] if not pd.isna(r["status"]) else ""
+    df = pd.DataFrame(list(out.values()))
+    for c in ["ref_objective", "py_objective", "ref_time", "py_time", "ref_size", "py_size",
+              "ref_binary_features", "py_binary_features", "ref_wall", "py_wall"]:
+        if c not in df:
+            df[c] = np.nan
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["ref_stop"] = df["ref_stop"].fillna("")
+    df["py_stop"] = df["py_stop"].fillna("")
     order = {d: i for i, d in enumerate(dict.fromkeys(df.sort_values("n")["dataset"]))}
     df["_o"] = df["dataset"].map(order)
     df = df.sort_values(["_o", "lam"], ascending=[True, False]).drop(columns="_o").reset_index(drop=True)
-    if "ref_objective" in df and "py_objective" in df:
-        df["objective_diff"] = df["py_objective"] - df["ref_objective"]
-        df["speedup_py_vs_cpp"] = df["ref_time"] / df["py_time"]
-    # normalised stop reasons: optimal | time | memory | timeout (killed by harness)
-    if "ref_wall" in df:
-        killed = df["ref_killed"].fillna("") if "ref_killed" in df else pd.Series("", index=df.index)
-        gap = df["ref_gap"].fillna(0) if "ref_gap" in df else pd.Series(0.0, index=df.index)
-        df["ref_stop"] = np.where(killed != "", killed, np.where(gap > 0, "time", "optimal"))
-        df.loc[df["ref_wall"].isna(), "ref_stop"] = ""
-    if "py_optimal" in df:
-        reason = df["py_stop_reason"].fillna("") if "py_stop_reason" in df else pd.Series("", index=df.index)
-        df["py_stop"] = np.where(reason != "", reason, np.where(df["py_optimal"] == True, "optimal", "time"))
+    df["objective_diff"] = df["py_objective"] - df["ref_objective"]
+    df["speedup_py_vs_cpp"] = df["ref_time"] / df["py_time"]
     return df
 
 

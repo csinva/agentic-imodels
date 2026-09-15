@@ -13,7 +13,7 @@ The objective solved is the GOSDT one (Lin et al., ICML 2020):
 
 over all decision trees on the binarized features. The starting solver is `pygosdt_v1`, a
 pure-Python re-implementation that matches or beats the reference C++ code on every benchmark
-pair and is 13× faster on geometric mean (`REPORT.html`).
+pair and is 13× faster on geometric mean (`baselines/REPORT.html`).
 
 ## How it works
 
@@ -51,7 +51,7 @@ a solver cannot score by misreporting.
 **Requirements:** Python 3.10+, [uv](https://docs.astral.sh/uv/). The reference datasets live in
 the reference repository, which is untracked here: copy
 [GeneralizedOptimalSparseDecisionTrees](https://github.com/Jimmy-Lin/GeneralizedOptimalSparseDecisionTrees)
-to `gosdt/` (its `experiments/datasets/` is what the suite reads).
+to `baselines/gosdt/` (its `experiments/datasets/` is what the suite reads).
 
 ```bash
 # 1. Install dependencies
@@ -59,7 +59,7 @@ uv sync
 
 # 2. (Optional) build the reference C++ binary so it appears as a baseline
 brew install tbb boost gmp
-gosdt_patches/apply.sh gosdt
+baselines/gosdt_patches/apply.sh baselines/gosdt
 
 # 3. Seed the baseline leaderboard (instant, from the cached benchmark; --rerun to recompute)
 uv run run_baselines.py
@@ -95,12 +95,14 @@ results/             — baseline overall_results.csv (leaderboard) and pair_res
 runs/<tag>/          — one folder per session: optimal_tree.py, results/, optimal_tree_lib/ snapshots
 pygosdt_v1/          — the v1 package the loop starts from (importable: pygosdt_v1.GOSDTClassifier)
 tests/               — exactness tests (exhaustive DP on random problems, pinned real pairs)
-benchmarks/          — full 600 s benchmark of pygosdt_v1 vs the reference, results, summary, report builder
-REPORT.html          — the comparison report (fit, speed, why, and what the reference gets wrong)
-gosdt_patches/       — build fix + build script for the reference on arm64/oneTBB, and the
-                       optional two-line correctness patch for its false optimality certificates
-gosdt/               — the reference implementation (untracked)
+baselines/           — gosdt/ (the reference implementation, untracked), gosdt_patches/, benchmarks/ (full 600 s
+                       benchmark of pygosdt_v1 vs the reference through the same scorer, results, report builder)
+baselines/REPORT.html — the comparison report (fit, speed, why, and what the reference gets wrong)
 ```
+
+To redo the full benchmark (hours; the reference hits its cap on many pairs):
+`uv run baselines/benchmarks/run_benchmark.py [--resume]`, then
+`uv run baselines/benchmarks/summarize.py` and `uv run baselines/benchmarks/build_report.py`.
 
 ## The starting solver (pygosdt_v1)
 
@@ -119,7 +121,7 @@ model.objective_, model.n_leaves_, model.optimal_, model.time_
 ```
 
 Why it is faster than the reference, and what the reference gets wrong (including a verified
-two-line bug that makes it certify suboptimal trees), is in `REPORT.html`.
+two-line bug that makes it certify suboptimal trees), is in `baselines/REPORT.html`.
 
 ## Design choices
 

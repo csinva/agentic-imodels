@@ -34,5 +34,5 @@ The benchmark in `benchmarks/results` was run with the *unpatched* algorithm
 the corrected variant:
 
 ```
-cd gosdt && patch -p1 < ../gosdt_patches/scope-lowerbound.patch && ./build.sh
+cd baselines/gosdt && patch -p1 < ../gosdt_patches/scope-lowerbound.patch && ./build.sh
 ```

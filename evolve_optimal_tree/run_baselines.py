@@ -8,7 +8,7 @@ Baselines:
 Usage: uv run run_baselines.py [--rerun] [--skip-reference] [--run-model]
 
 By default the baseline rows are taken from the full 600 s benchmark already in
-benchmarks/results/summary.csv (times capped at the suite's cap, pairs counted as
+baselines/benchmarks/results/pair_results.csv (times capped at the suite's cap, pairs counted as
 solved only if certified within it), which takes a second.  --rerun evaluates
 both baselines on the suite instead (~45 min with the reference binary).
 
@@ -58,11 +58,11 @@ if __name__ == "__main__":
     for name, (make, description) in BASELINES.items():
         cached = None if args.rerun else rows_from_benchmark(name)
         if cached is not None:
-            print(f"{name}: using cached rows from benchmarks/results/summary.csv")
+            print(f"{name}: using cached rows from baselines/benchmarks/results/pair_results.csv")
             summary = summarize(cached)
         else:
             if name == "gosdt" and (args.skip_reference or not reference_solver.available()):
-                print(f"skipping {name}: reference binary not built (see gosdt_patches/apply.sh)")
+                print(f"skipping {name}: reference binary not built (see baselines/gosdt_patches/apply.sh)")
                 continue
             print("\n" + "=" * 60 + f"\n  {name}\n" + "=" * 60)
             summary = evaluate_solver(make, name)
