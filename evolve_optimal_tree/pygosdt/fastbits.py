@@ -10,17 +10,9 @@ from __future__ import annotations
 
 import numpy as np
 
-try:
-    import numba
-    from numba import njit
-    HAVE_NUMBA = True
-except ImportError:  # pragma: no cover - exercised only without numba
-    HAVE_NUMBA = False
+from numba import njit
 
-    def njit(*args, **kwargs):
-        def deco(fn):
-            return fn
-        return deco if not (args and callable(args[0])) else args[0]
+HAVE_NUMBA = True  # numba is a declared dependency; engine="python" remains selectable
 
 
 @njit(cache=True, nogil=True)
@@ -76,8 +68,6 @@ def int_to_words(value: int, W: int) -> np.ndarray:
 
 def warm_up():
     """Trigger JIT compilation (cached on disk afterwards)."""
-    if not HAVE_NUMBA:
-        return
     F = np.zeros((2, 1), dtype=np.uint64)
     masks = np.zeros((1, 1), dtype=np.uint64)
     child_counts(F, masks, np.zeros((2, 1), dtype=np.uint64))
