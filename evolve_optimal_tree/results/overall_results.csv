@@ -1,5 +1,5 @@
 commit,n_solved,geo_mean_time,n_wrong,exact,status,model_name,description
-baseline,46,0.473,1,exact,baseline,gosdt,"reference C++ GOSDT (ICML 2020 code, default bounds, single thread)"
+baseline,46,0.473,1,approximate,baseline,gosdt,"reference C++ GOSDT (ICML 2020 code, default bounds, single thread) [NOT EXACT: scope-conditional lower bounds are cached unconditionally, verified false certificate on tic-tac-toe lambda=0.02 (baselines/gosdt_patches/scope-lowerbound.patch)]"
 baseline,56,0.099,0,exact,baseline,pygosdt_v1,"pygosdt_v1 package: memoised depth-first branch-and-bound with the reference bounds, numba kernel"
 baseline,51,0.360,0,exact,baseline,streed,"STreeD (van der Linden et al.) cost-complex-accuracy DP on the same binarization, max depth 20"
 baseline,46,0.506,0,exact,baseline,gosdt_guesses,"gosdt-guesses (McTavish et al. 2022) C++ core in exact mode: same binarization, no reference labels, no depth budget"

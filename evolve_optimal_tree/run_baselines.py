@@ -51,12 +51,13 @@ def make_gosdt_guesses_guided(lam, tl):
 
 
 # whether each baseline is an exact method (certifies optimality) or a heuristic
-EXACT = {"gosdt": True, "pygosdt_v1": True, "streed": True, "gosdt_guesses": True, "gosdt_guesses_guided": False}
+EXACT = {"gosdt": False,  # issues a false optimality certificate (tic-tac-toe λ=0.02)
+          "pygosdt_v1": True, "streed": True, "gosdt_guesses": True, "gosdt_guesses_guided": False}
 
 BASELINES = {
     "gosdt": (
         lambda lam, tl: reference_solver.ReferenceGOSDT(lam, tl, memory_limit=MEMORY_LIMIT),
-        "reference C++ GOSDT (ICML 2020 code, default bounds, single thread)",
+        "reference C++ GOSDT (ICML 2020 code, default bounds, single thread) [NOT EXACT: scope-conditional lower bounds are cached unconditionally, verified false certificate on tic-tac-toe lambda=0.02 (baselines/gosdt_patches/scope-lowerbound.patch)]",
     ),
     "pygosdt_v1": (
         lambda lam, tl: GOSDTClassifier(regularization=lam, time_limit=tl, memory_limit=MEMORY_LIMIT),
