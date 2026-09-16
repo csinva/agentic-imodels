@@ -13,7 +13,16 @@ three leaderboard metrics:
                     is not exact);
 * ``n_solved``      pairs certified optimal within the time cap (higher is better);
 * ``geo_mean_time`` geometric mean over pairs of the optimisation time, with
-                    unsolved pairs counted at the cap (lower is better).
+                    unsolved pairs counted at the cap (lower is better);
+* ``mean_objective`` mean over pairs of the training criterion (misclassification
+                    rate + λ · leaves) of the returned tree; a pair without a tree
+                    is scored with the single-leaf majority-class tree, which any
+                    method could return (lower is better);
+* ``mean_regret``   mean over pairs of that criterion minus the best known objective
+                    of the pair (``src/known_optima.csv``); 0 for an exact solver that
+                    certifies every pair, positive for approximate methods (lower is
+                    better).  With ``geo_mean_time`` it places a method on the
+                    criterion-versus-time Pareto curve.
 
 Do not modify.
 """
@@ -32,7 +41,8 @@ import pandas as pd
 from suite import (DATASETS, LAMBDAS, MEMORY_LIMIT, RESULTS_DIR, TIME_LIMIT, load_dataset,
                    load_known_optima)
 
-OVERALL_CSV_COLS = ["commit", "n_solved", "geo_mean_time", "n_wrong", "exact", "multicore", "status", "model_name", "description"]
+OVERALL_CSV_COLS = ["commit", "n_solved", "geo_mean_time", "n_wrong", "mean_objective", "mean_regret", "exact", "multicore",
+                    "status", "model_name", "description"]
 PAIR_CSV_COLS = ["model", "dataset", "n", "p", "lam", "objective", "errors", "leaves", "seconds", "wall",
                  "status", "size", "iterations", "binary_features", "lb", "ub",
                  "known_objective", "known_certified", "verdict"]
@@ -150,12 +160,45 @@ def evaluate_solver(make_model, model_name: str, datasets=None, lambdas=None, ti
     return summarize(rows)
 
 
+_TRIVIAL_ERROR: dict[str, float] = {}
+
+
+def trivial_objective(dataset: str, lam: float) -> float:
+    """Criterion of the single-leaf majority-class tree on a data set: the score of a
+    pair for which a method returned no tree (any method could return that leaf)."""
+    if dataset not in _TRIVIAL_ERROR:
+        labels = load_dataset(dataset).iloc[:, -1].to_numpy()
+        _, counts = np.unique(labels.astype(str), return_counts=True)
+        _TRIVIAL_ERROR[dataset] = 1.0 - counts.max() / labels.shape[0]
+    return _TRIVIAL_ERROR[dataset] + float(lam)
+
+
+def criterion_summary(rows) -> tuple[float, float]:
+    """(mean_objective, mean_regret) over rows; see the module docstring."""
+    objectives, regrets = [], []
+    for r in rows:
+        obj = r.get("objective", float("nan"))
+        obj = float(obj) if obj not in ("", None) else float("nan")
+        if math.isnan(obj):
+            obj = trivial_objective(r["dataset"], float(r["lam"]))
+        objectives.append(obj)
+        known = r.get("known_objective", float("nan"))
+        known = float(known) if known not in ("", None) else float("nan")
+        if not math.isnan(known):
+            regrets.append(obj - known)
+    mean_obj = float(np.mean(objectives)) if objectives else float("nan")
+    mean_reg = float(np.mean(regrets)) if regrets else float("nan")
+    return mean_obj, mean_reg
+
+
 def summarize(rows) -> dict:
     n_wrong = sum(r["verdict"] == "WRONG" for r in rows)
     n_solved = sum(r["status"] == "optimal" for r in rows)
     times = [max(float(r["seconds"]), 1e-3) for r in rows]
     geo = float(math.exp(np.mean(np.log(times)))) if times else float("nan")
-    return {"n_wrong": n_wrong, "n_solved": n_solved, "n_pairs": len(rows), "geo_mean_time": geo, "rows": rows}
+    mean_obj, mean_reg = criterion_summary(rows)
+    return {"n_wrong": n_wrong, "n_solved": n_solved, "n_pairs": len(rows), "geo_mean_time": geo,
+            "mean_objective": mean_obj, "mean_regret": mean_reg, "rows": rows}
 
 
 def print_summary(model_name: str, s: dict):
@@ -164,6 +207,9 @@ def print_summary(model_name: str, s: dict):
     print(f"n_solved:       {s['n_solved']}/{s['n_pairs']} certified optimal within {TIME_LIMIT:g}s")
     print(f"geo_mean_time:  {s['geo_mean_time']:.3f}s")
     print(f"n_wrong:        {s['n_wrong']}  (certified result disagreeing with a certified optimum, or a crash; must be 0)")
+    print(f"mean_objective: {s.get('mean_objective', float('nan')):.4f}  (training criterion of the returned tree, "
+          f"single-leaf tree where none)")
+    print(f"mean_regret:    {s.get('mean_regret', float('nan')):.4f}  (criterion minus the best known objective)")
     worse = [r for r in s["rows"] if r["verdict"] == "worse_than_known"]
     if worse:
         print(f"uncertified incumbent worse than best known on {len(worse)} pairs: " +
@@ -190,9 +236,11 @@ def upsert_overall_results(rows, results_dir=RESULTS_DIR):
         r.setdefault("multicore", "false")
         if not r.get("multicore"):
             r["multicore"] = "false"
+        for col in ("mean_objective", "mean_regret"):
+            r.setdefault(col, "")
     all_rows = existing + [{k: r.get(k, "") for k in OVERALL_CSV_COLS} for r in rows]
     with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=OVERALL_CSV_COLS)
+        writer = csv.DictWriter(f, fieldnames=OVERALL_CSV_COLS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(all_rows)
     print(f"Overall results saved → {path}")
@@ -226,6 +274,8 @@ def record(model_name: str, description: str, s: dict, commit: str, status: str 
         "n_solved": s["n_solved"],
         "geo_mean_time": f"{s['geo_mean_time']:.3f}",
         "n_wrong": s["n_wrong"],
+        "mean_objective": f"{s.get('mean_objective', float('nan')):.4f}",
+        "mean_regret": f"{s.get('mean_regret', float('nan')):.4f}",
         "exact": "exact" if exact else "approximate",
         "multicore": "true" if multicore else "false",
         "status": status,

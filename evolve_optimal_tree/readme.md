@@ -37,7 +37,7 @@ The folder has four files that matter:
 
 ## Metrics
 
-Three metrics are tracked in `results/overall_results.csv`, computed by `src/evaluate.py` on
+The metrics tracked in `results/overall_results.csv`, computed by `src/evaluate.py` on
 the suite in `src/suite.py` (14 datasets × λ ∈ {0.1, 0.05, 0.02, 0.01, 0.005}, 30 s cap per pair):
 
 - **`n_wrong`** — pairs where the solver certifies a tree that disagrees with a certified
@@ -45,6 +45,14 @@ the suite in `src/suite.py` (14 datasets × λ ∈ {0.1, 0.05, 0.02, 0.01, 0.005
 - **`n_solved`** — pairs certified optimal within the cap (higher is better, max 70).
 - **`geo_mean_time`** — geometric mean of optimisation seconds, unsolved pairs counted at the
   cap (lower is better).
+- **`mean_objective`** — mean over the 70 pairs of the training criterion
+  (misclassification rate + λ · leaves) of the returned tree; a pair without a tree is scored
+  with the single-leaf majority-class tree, which any method could return (lower is better).
+- **`mean_regret`** — mean over pairs of that criterion minus the best known objective of the
+  pair (`src/known_optima.csv`): 0 for an exact solver that certifies every pair, positive for
+  approximate methods (lower is better). Together with `geo_mean_time` it places a method on
+  the criterion-versus-time Pareto curve; `backfill_criterion.py` recomputes both columns for
+  an existing leaderboard from its per-pair rows.
 - **`exact`** — `exact` for methods that certify optimality, `approximate` for heuristics
   (declared by the method, e.g. `gosdt_guesses_guided`); not a measurement.
 - **`multicore`** — `true` for methods that use more than one core (8 workers in this loop:
