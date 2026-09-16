@@ -45,6 +45,8 @@ from suite import TIME_LIMIT  # noqa: E402
 
 MODEL_NAME = "pygosdt_v1_flat"
 EXACT = True  # this solver certifies optimality; set False for a heuristic variant
+# whether the solver uses more than one core (recorded in the multicore column)
+MULTICORE = False
 DESCRIPTION = ("pygosdt_v1 flattened into one file: memoised depth-first branch-and-bound over "
                "big-int capture sets with equivalent-points, leaf-support, look-ahead, "
                "similar-support and threshold-exchange bounds; numba popcount kernel")
@@ -1413,7 +1415,7 @@ if __name__ == "__main__":
     full_suite = datasets is None and lambdas is None and args.time_limit == TIME_LIMIT
     results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
     if full_suite and not args.no_record:
-        record(MODEL_NAME, DESCRIPTION, summary, git_hash, results_dir=results_dir, exact=EXACT)
+        record(MODEL_NAME, DESCRIPTION, summary, git_hash, results_dir=results_dir, exact=EXACT, multicore=MULTICORE)
     elif not args.no_record:
         print("(partial suite or non-default cap: results not recorded)")
     print_summary(MODEL_NAME, summary)

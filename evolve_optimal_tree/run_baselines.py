@@ -52,7 +52,12 @@ def make_gosdt_guesses_guided(lam, tl):
 
 # whether each baseline is an exact method (certifies optimality) or a heuristic
 EXACT = {"gosdt": False,  # issues a false optimality certificate (tic-tac-toe λ=0.02)
-          "pygosdt_v1": True, "streed": True, "gosdt_guesses": True, "gosdt_guesses_guided": False}
+          "pygosdt_v1": True, "streed": True, "gosdt_guesses": True, "gosdt_guesses_guided": False,
+          "gosdt_mc8": False, "gosdt_guesses_mc8": True}
+# whether each baseline uses more than one core (STreeD has no thread option; the reference
+# GOSDT and gosdt-guesses take ``worker_limit``)
+MULTICORE = {"gosdt_mc8": True, "gosdt_guesses_mc8": True}
+WORKERS = 8
 
 BASELINES = {
     "gosdt": (
@@ -75,7 +80,20 @@ BASELINES = {
         make_gosdt_guesses_guided,
         "gosdt-guesses with the paper's guesses: GBDT threshold guessing (40 stumps) and reference-label lower bounds, no depth budget; not exact",
     ),
+    "gosdt_mc8": (
+        lambda lam, tl: reference_solver.ReferenceGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, workers=WORKERS),
+        "reference C++ GOSDT with worker_limit=8 (8 TBB worker threads), otherwise as gosdt [NOT EXACT: same false certificate]",
+    ),
+    "gosdt_guesses_mc8": (
+        lambda lam, tl: make_gosdt_guesses_mc(lam, tl),
+        "gosdt-guesses C++ core in exact mode with worker_limit=8, otherwise as gosdt_guesses",
+    ),
 }
+
+
+def make_gosdt_guesses_mc(lam, tl):
+    import guesses_solver
+    return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=False, workers=WORKERS)
 
 
 if __name__ == "__main__":
@@ -84,11 +102,15 @@ if __name__ == "__main__":
                         help="evaluate the baselines on the suite instead of using the cached benchmark")
     parser.add_argument("--skip-reference", action="store_true")
     parser.add_argument("--run-model", action="store_true", help="also run optimal_tree.py afterwards")
+    parser.add_argument("--only", default="", help="comma-separated baseline names to (re)run; the others are left as they are")
     args = parser.parse_args()
+    only = [v for v in args.only.split(",") if v]
 
     t0 = time.time()
     os.makedirs(RESULTS_DIR, exist_ok=True)
     for name, (make, description) in BASELINES.items():
+        if only and name not in only:
+            continue
         cached = None if args.rerun else rows_from_benchmark(name)
         if cached is not None:
             print(f"{name}: using cached rows from baselines/benchmarks/results/pair_results.csv")
@@ -103,7 +125,8 @@ if __name__ == "__main__":
                 continue
             print("\n" + "=" * 60 + f"\n  {name}\n" + "=" * 60)
             summary = evaluate_solver(make, name)
-        record(name, description, summary, commit="baseline", status="baseline", exact=EXACT.get(name, True))
+        record(name, description, summary, commit="baseline", status="baseline", exact=EXACT.get(name, True),
+               multicore=MULTICORE.get(name, False))
         print_summary(name, summary)
     print(f"\nTotal time: {time.time() - t0:.1f}s")
 

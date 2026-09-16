@@ -46,6 +46,9 @@ the suite in `src/suite.py` (14 datasets × λ ∈ {0.1, 0.05, 0.02, 0.01, 0.005
   cap (lower is better).
 - **`exact`** — `exact` for methods that certify optimality, `approximate` for heuristics
   (declared by the method, e.g. `gosdt_guesses_guided`); not a measurement.
+- **`multicore`** — `true` for methods that use more than one core (8 workers in this loop:
+  `gosdt_mc8` is the reference with `worker_limit=8`, and solver versions with
+  `MULTICORE = True`), `false` otherwise; declared by the method, not a measurement.
 
 Every returned tree's objective is recomputed independently from the tree and the raw data, so
 a solver cannot score by misreporting.

@@ -38,10 +38,12 @@ def _rss_bytes(pid: int) -> int:
 class ReferenceGOSDT:
     """Run ``gosdt`` on a DataFrame ``X`` with labels ``y`` (written as the last CSV column)."""
 
-    def __init__(self, regularization: float, time_limit: float, memory_limit: int = 6 * (1 << 30)):
+    def __init__(self, regularization: float, time_limit: float, memory_limit: int = 6 * (1 << 30),
+                 workers: int = 1):
         self.regularization = regularization
         self.time_limit = time_limit
         self.memory_limit = memory_limit
+        self.workers = workers
 
     def fit(self, X: pd.DataFrame, y):
         frame = X.copy()
@@ -52,7 +54,7 @@ class ReferenceGOSDT:
             model_path = Path(tmp) / "model.json"
             cfg = Path(tmp) / "cfg.json"
             cfg.write_text(json.dumps({
-                "regularization": self.regularization, "verbose": True, "worker_limit": 1,
+                "regularization": self.regularization, "verbose": True, "worker_limit": int(self.workers),
                 "model_limit": 1, "time_limit": int(self.time_limit), "model": str(model_path)}))
             with open(csv, "rb") as fh, open(Path(tmp) / "out.txt", "w+") as out_fh:
                 t0 = time.perf_counter()

@@ -95,7 +95,8 @@ def _fit_child(payload: dict) -> dict:
         rules = [rules[j] for j in picked]
         Xb = Xg.to_numpy(dtype=bool)
     clf = GOSDTClassifier(regularization=payload["regularization"], time_limit=int(payload["time_limit"]),
-                          allow_small_reg=True, similar_support=payload["similar_support"], verbose=False)
+                          allow_small_reg=True, similar_support=payload["similar_support"], verbose=False,
+                          worker_limit=int(payload.get("workers", 1)))
     clf.fit(Xb, y, y_ref=y_ref)
     r = clf.get_result()
     model = json.loads(r["models_string"])[0]
@@ -127,18 +128,19 @@ def _decode(node, rules, negate, classes, target_name, lam):
 
 class GuessesGOSDT:
     def __init__(self, regularization: float, time_limit: float, memory_limit: int = 6 * (1 << 30),
-                 guesses: bool = False, similar_support: bool = False):
+                 guesses: bool = False, similar_support: bool = False, workers: int = 1):
         self.regularization = regularization
         self.time_limit = time_limit
         self.memory_limit = memory_limit
         self.guesses = guesses
         self.similar_support = similar_support
+        self.workers = workers
 
     def fit(self, X: pd.DataFrame, y):
         payload = {"X": X.to_numpy().tolist(), "columns": [str(c) for c in X.columns],
                    "y": np.asarray(y).tolist(), "regularization": self.regularization,
                    "time_limit": self.time_limit, "guesses": self.guesses,
-                   "similar_support": self.similar_support,
+                   "similar_support": self.similar_support, "workers": int(self.workers),
                    "target_name": str(getattr(y, "name", "class") or "class")}
         with tempfile.TemporaryDirectory() as tmp:
             inp, out = Path(tmp) / "in.pkl", Path(tmp) / "out.json"

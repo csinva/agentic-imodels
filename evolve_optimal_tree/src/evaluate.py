@@ -32,7 +32,7 @@ import pandas as pd
 from suite import (DATASETS, LAMBDAS, MEMORY_LIMIT, RESULTS_DIR, TIME_LIMIT, load_dataset,
                    load_known_optima)
 
-OVERALL_CSV_COLS = ["commit", "n_solved", "geo_mean_time", "n_wrong", "exact", "status", "model_name", "description"]
+OVERALL_CSV_COLS = ["commit", "n_solved", "geo_mean_time", "n_wrong", "exact", "multicore", "status", "model_name", "description"]
 PAIR_CSV_COLS = ["model", "dataset", "n", "p", "lam", "objective", "errors", "leaves", "seconds", "wall",
                  "status", "size", "iterations", "binary_features", "lb", "ub",
                  "known_objective", "known_certified", "verdict"]
@@ -186,6 +186,10 @@ def upsert_overall_results(rows, results_dir=RESULTS_DIR):
             for row in csv.DictReader(f):
                 if (row.get("model_name"), row.get("description", "")) not in new_keys:
                     existing.append(row)
+    for r in existing:
+        r.setdefault("multicore", "false")
+        if not r.get("multicore"):
+            r["multicore"] = "false"
     all_rows = existing + [{k: r.get(k, "") for k in OVERALL_CSV_COLS} for r in rows]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=OVERALL_CSV_COLS)
@@ -212,10 +216,10 @@ def upsert_pair_results(rows, results_dir=RESULTS_DIR):
 
 
 def record(model_name: str, description: str, s: dict, commit: str, status: str = "",
-           results_dir: str = RESULTS_DIR, exact: bool = True):
+           results_dir: str = RESULTS_DIR, exact: bool = True, multicore: bool = False):
     """``exact`` declares whether the method certifies optimality (``exact``) or is a
-    heuristic that only returns a tree (``approximate``); it is the method's design, not
-    a measurement."""
+    heuristic that only returns a tree (``approximate``); ``multicore`` whether it uses more
+    than one core (``true``/``false``).  Both are the method's design, not measurements."""
     upsert_pair_results(s["rows"], results_dir)
     upsert_overall_results([{
         "commit": commit,
@@ -223,6 +227,7 @@ def record(model_name: str, description: str, s: dict, commit: str, status: str 
         "geo_mean_time": f"{s['geo_mean_time']:.3f}",
         "n_wrong": s["n_wrong"],
         "exact": "exact" if exact else "approximate",
+        "multicore": "true" if multicore else "false",
         "status": status,
         "model_name": model_name,
         "description": description,
