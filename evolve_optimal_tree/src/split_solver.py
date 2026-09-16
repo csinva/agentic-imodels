@@ -120,6 +120,9 @@ class Split:
             stderr = proc.stderr.read() if proc.stderr else ""
             if killed:
                 raise NoModel(killed, f"SPLIT stopped at the {killed} cap without a model")
+            if proc.returncode < 0 and not out.exists():
+                # killed by a signal (the OS out-of-memory killer acts faster than the poll)
+                raise NoModel("memory", f"SPLIT child killed by signal {-proc.returncode}")
             if proc.returncode != 0 or not out.exists():
                 raise RuntimeError(f"SPLIT child failed: {stderr[-800:]}")
             res = json.loads(out.read_text())
