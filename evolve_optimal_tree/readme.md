@@ -23,7 +23,8 @@ The folder has four files that matter:
   (`gosdt`, the reference C++ binary; `pygosdt_v1`; `streed`, the STreeD dynamic-programming
   solver; `gosdt_guesses`, the newer gosdt-guesses C++ core in exact mode; and
   `gosdt_guesses_guided`, the same with the paper's threshold and lower-bound guesses, which is
-  fast but not exact), from the cached 600 s benchmark by default. **Not modified by the agent.**
+  fast but not exact; and `split`, SPLIT (Babbar et al. 2025), a lookahead heuristic with a depth
+  budget, binary targets only), from the cached 600 s benchmark by default. **Not modified by the agent.**
 - **`setup_run.py`** — creates an isolated run folder `runs/<tag>/` with a local copy of
   `optimal_tree.py`, a copy of the baseline leaderboard, a symlink to `src/`, and an empty
   snapshot folder. The agent works only inside that folder.
@@ -64,10 +65,10 @@ to `baselines/gosdt/` (its `experiments/datasets/` is what the suite reads).
 # 1. Install dependencies
 uv sync
 
-# 2. (Optional, only to re-run baselines) build the reference C++ binary, STreeD and gosdt-guesses
+# 2. (Optional, only to re-run baselines) build the reference C++ binary, STreeD, gosdt-guesses and SPLIT
 brew install tbb boost gmp cmake ninja pkg-config
 baselines/gosdt_patches/apply.sh baselines/gosdt
-uv sync --group baselines        # builds baselines/pystreed and baselines/gosdt_guesses (pybind11, C++)
+uv sync --group baselines        # builds baselines/pystreed, baselines/gosdt_guesses and baselines/split (pybind11, C++)
 
 # 3. Seed the baseline leaderboard (instant, from the cached benchmark; --rerun to recompute)
 uv run run_baselines.py
@@ -98,7 +99,7 @@ setup_run.py         — creates runs/<tag>/ for one autoresearch session
 optimal_tree.py      — solver definition + evaluation loop (agent modifies its copy in runs/<tag>/)
 program.md           — agent instructions
 src/                 — fixed suite (suite.py), scoring (evaluate.py), known optima,
-                       baseline wrappers (reference_solver.py, streed_solver.py, guesses_solver.py)
+                       baseline wrappers (reference_solver.py, streed_solver.py, guesses_solver.py, split_solver.py)
 results/             — baseline overall_results.csv (leaderboard) and pair_results.csv
 runs/<tag>/          — one folder per session: optimal_tree.py, results/, optimal_tree_lib/ snapshots
 
@@ -106,7 +107,7 @@ tests/               — exactness tests (exhaustive DP on random problems, pinn
 baselines/           — pygosdt_v1/ (the v1 package the loop starts from; importable as pygosdt_v1),
                        gosdt/ (the reference implementation, untracked), gosdt_patches/, pystreed/ (STreeD,
                        git metadata removed), gosdt_guesses/ (gosdt-guesses, git metadata removed, static
-                       version), benchmarks/ (full 600 s benchmark of every baseline through the same scorer,
+                       version), split/ (SPLIT-ICML, git metadata removed, static version), benchmarks/ (full 600 s benchmark of every baseline through the same scorer,
                        results, report builder)
 baselines/REPORT.html — the comparison report (fit, speed, why, and what the reference gets wrong)
 ```

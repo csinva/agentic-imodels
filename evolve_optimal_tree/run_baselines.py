@@ -45,6 +45,11 @@ def make_gosdt_guesses(lam, tl):
     return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=False)
 
 
+def make_split(lam, tl):
+    import split_solver  # needs the ``baselines`` dependency group
+    return split_solver.Split(lam, tl)
+
+
 def make_gosdt_guesses_guided(lam, tl):
     import guesses_solver
     return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=True)
@@ -53,7 +58,8 @@ def make_gosdt_guesses_guided(lam, tl):
 # whether each baseline is an exact method (certifies optimality) or a heuristic
 EXACT = {"gosdt": False,  # issues a false optimality certificate (tic-tac-toe λ=0.02)
           "pygosdt_v1": True, "streed": True, "gosdt_guesses": True, "gosdt_guesses_guided": False,
-          "gosdt_mc8": False, "gosdt_guesses_mc8": True}
+          "gosdt_mc8": False, "gosdt_guesses_mc8": True,
+          "split": False}  # SPLIT is a lookahead heuristic with a depth budget
 # whether each baseline uses more than one core (STreeD has no thread option; the reference
 # GOSDT and gosdt-guesses take ``worker_limit``)
 MULTICORE = {"gosdt_mc8": True, "gosdt_guesses_mc8": True}
@@ -75,6 +81,11 @@ BASELINES = {
     "gosdt_guesses": (
         make_gosdt_guesses,
         "gosdt-guesses (McTavish et al. 2022) C++ core in exact mode: same binarization, no reference labels, no depth budget",
+    ),
+    "split": (
+        make_split,
+        "SPLIT (Babbar et al. 2025): lookahead-2 prefix + optimal GOSDT leaf completion, depth budget 5, "
+        "same binarization; heuristic",
     ),
     "gosdt_guesses_guided": (
         make_gosdt_guesses_guided,

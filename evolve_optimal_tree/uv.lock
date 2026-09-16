@@ -19,6 +19,7 @@ members = [
     "gosdt",
     "pygosdt-v1",
     "pystreed",
+    "split",
 ]
 
 [[package]]
@@ -1681,6 +1682,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pathspec"
+version = "0.12.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ca/bc/f35b8446f4531a7cb215605d100cd88b7ac6f44ab3fc94870c120ab3adbf/pathspec-0.12.1.tar.gz", hash = "sha256:a482d51503a1ab33b1c67a6c3813a26953dbdc71c31dacaef9a838c4e29f5712", size = 51043, upload-time = "2023-12-10T22:30:45Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cc/20/ff623b09d963f88bfde16306a54e12ee5ea43e9b597108672ff3a408aad6/pathspec-0.12.1-py3-none-any.whl", hash = "sha256:a0d503e138a4c123b27490a4f7beda6a01c6f288df0e4a8b79c7eb0dc7b4cc08", size = 31191, upload-time = "2023-12-10T22:30:43.14Z" },
+]
+
+[[package]]
 name = "pillow"
 version = "12.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1818,6 +1828,7 @@ dev = [
 baselines = [
     { name = "gosdt" },
     { name = "pystreed" },
+    { name = "split" },
 ]
 dev = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1840,6 +1851,7 @@ provides-extras = ["dev"]
 baselines = [
     { name = "gosdt", editable = "baselines/gosdt_guesses" },
     { name = "pystreed", editable = "baselines/pystreed" },
+    { name = "split", editable = "baselines/split/split" },
 ]
 dev = [
     { name = "matplotlib", specifier = ">=3.8" },
@@ -2429,6 +2441,44 @@ sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
 ]
+
+[[package]]
+name = "split"
+version = "0.1.0"
+source = { editable = "baselines/split/split" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pathspec" },
+    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scikit-learn", version = "1.9.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.24.3" },
+    { name = "pandas", specifier = ">=2.0.1" },
+    { name = "pathspec", specifier = "==0.12.1" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=6" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=3" },
+    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=3" },
+    { name = "scikit-learn", specifier = ">=1.2.2" },
+]
+provides-extras = ["test", "dev"]
 
 [[package]]
 name = "threadpoolctl"

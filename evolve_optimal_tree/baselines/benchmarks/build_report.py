@@ -85,6 +85,9 @@ MODELS = [
     ("gosdt_guesses_guided", "gosdt-guesses (guided)", "The same code with the paper's guesses: thresholds from a 40-stump "
                                                        "gradient-boosted ensemble and its predictions as reference labels. "
                                                        "This shrinks the search space, so it is a heuristic, not an exact solver."),
+    ("split", "SPLIT", "Babbar et al. 2025: a lookahead-2 prefix optimised with greedy subtree estimates, then each prefix leaf "
+                       "completed by an optimal GOSDT subtree under a depth budget of 5, on the same binarization. A heuristic; "
+                       "binary targets only (iris is unsupported)."),
 ]
 EXACT = {"gosdt", "pygosdt_v1", "streed", "gosdt_guesses"}
 SUITE_CAP = 30.0
@@ -364,7 +367,7 @@ def baselines_table_html(st: pd.DataFrame) -> str:
     rows = []
     for _, r in st.iterrows():
         cls = ' class="py"' if r["model"] == "pygosdt_v1" else ""
-        sw = {"gosdt": "ref", "pygosdt_v1": "py", "streed": "st", "gosdt_guesses": "gg", "gosdt_guesses_guided": "ggh"}[r["model"]]
+        sw = {"gosdt": "ref", "pygosdt_v1": "py", "streed": "st", "gosdt_guesses": "gg", "gosdt_guesses_guided": "ggh", "split": "sp"}[r["model"]]
         wrong = str(r["wrong"]) if r["exact"] else "n/a"
         rows.append(f'<tr{cls}><th scope="row"><span class="swatch {sw}"></span>{esc(r["label"])}</th>'
                     f'<td>{r["trees"]} of {r["n_pairs"]}</td><td>{r["certified"]}</td><td>{r["certified_suite"]}</td>'
@@ -486,7 +489,7 @@ CSS = """
   --bg: #f6f6f3; --surface: #ffffff; --ink: #17191d; --ink-2: #4d525b; --ink-3: #7b8089;
   --rule: #dcdcd6; --rule-soft: #ebebe6;
   --ref: #2a78d6; --py: #eb6834; --py-soft: #fbe6dc; --ref-soft: #dbe8fa;
-  --st: #1baf7a; --gg: #4a3aa7; --ggh: #a8a4b8;
+  --st: #1baf7a; --gg: #4a3aa7; --ggh: #a8a4b8; --sp: #eda100;
   --ok: #0ca30c; --warn: #b87a00; --crit: #d03b3b;
   --ok-bg: #e5f5e5; --warn-bg: #fdf1d8; --crit-bg: #fae0e0; --none-bg: #ecece8;
   --better-bg: #e5f5e5; --same-bg: #ffffff; --worse-bg: #fae0e0;
@@ -497,7 +500,7 @@ CSS = """
     --bg: #1a1a19; --surface: #232322; --ink: #f2f2ee; --ink-2: #c3c2b7; --ink-3: #8f8e86;
     --rule: #3a3a37; --rule-soft: #2e2e2c;
     --ref: #3987e5; --py: #f0784a; --py-soft: #4a2a1c; --ref-soft: #1c3557;
-    --st: #199e70; --gg: #9085e9; --ggh: #7d7a8c;
+    --st: #199e70; --gg: #9085e9; --ggh: #7d7a8c; --sp: #c98500; --sp: #c98500;
     --ok: #3fbf3f; --warn: #e0a640; --crit: #ef6b6b;
     --ok-bg: #1f3a1f; --warn-bg: #3d3115; --crit-bg: #472222; --none-bg: #2c2c2a;
     --better-bg: #1f3a1f; --same-bg: #232322; --worse-bg: #472222;
@@ -508,7 +511,7 @@ CSS = """
   --bg: #1a1a19; --surface: #232322; --ink: #f2f2ee; --ink-2: #c3c2b7; --ink-3: #8f8e86;
   --rule: #3a3a37; --rule-soft: #2e2e2c;
   --ref: #3987e5; --py: #f0784a; --py-soft: #4a2a1c; --ref-soft: #1c3557;
-  --st: #199e70; --gg: #9085e9; --ggh: #7d7a8c;
+  --st: #199e70; --gg: #9085e9; --ggh: #7d7a8c; --sp: #c98500;
   --ok: #3fbf3f; --warn: #e0a640; --crit: #ef6b6b;
   --ok-bg: #1f3a1f; --warn-bg: #3d3115; --crit-bg: #472222; --none-bg: #2c2c2a;
   --better-bg: #1f3a1f; --same-bg: #232322; --worse-bg: #472222;
@@ -537,7 +540,7 @@ header { padding-block: 48px 8px; }
 .headline tr.py td { color: var(--py); font-weight: 500; }
 .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: 0; }
 .swatch.ref { background: var(--ref); } .swatch.py { background: var(--py); }
-.swatch.st { background: var(--st); } .swatch.gg { background: var(--gg); } .swatch.ggh { background: var(--ggh); }
+.swatch.st { background: var(--st); } .swatch.gg { background: var(--gg); } .swatch.ggh { background: var(--ggh); } .swatch.sp { background: var(--sp); }
 .chart .bar-other { fill: var(--st); }
 .chart .bar-heur { fill: var(--ggh); }
 .tablenote { color: var(--ink-2); font-size: 0.9rem; max-width: 80ch; margin-top: 6px; }
@@ -635,15 +638,16 @@ optimisation only; CSV parsing and binarization are excluded for both. The refer
 <p class="prose">λ ∈ {{0.1, 0.05, 0.02, 0.01, 0.005}} for every dataset. Missing values were filled with 0 for both implementations.</p>
 
 <section class="prose">
-<h2>Five solvers on the same problem</h2>
-<p>Besides the reference and pygosdt_v1, three further baselines were run through the same scorer:</p>
+<h2>Six solvers on the same problem</h2>
+<p>Besides the reference and pygosdt_v1, four further baselines were run through the same scorer:</p>
 <ul>
 {"".join(f"<li><strong>{esc(label)}</strong> — {esc(text)}</li>" for _, label, text in MODELS)}
 </ul>
 <p>Four of the five are exact solvers of the same objective, so they must agree whenever both certify. They do: across the
 {s['exact_certified_pairs']} pairs certified by at least two exact solvers, every certified objective agrees, with the single
 exception of the reference's tic-tac-toe certificate discussed below. The guided variant of gosdt-guesses is not exact by
-construction; it returned a worse tree than the best known on {s['guided_worse']} of its 75 pairs.</p>
+construction; it returned a worse tree than the best known on {s['guided_worse']} of its 75 pairs. SPLIT is a heuristic too,
+with a depth budget of 5; its gap to the best known objective is shown in the table below.</p>
 </section>
 <figure>{svg_speed_vs_py(s['speed_ratios'])}<figcaption>How much longer each solver takes than pygosdt_v1, as the geometric mean of the time ratio
 over the pairs both certified. The guided heuristic's time is dominated by process start-up and is not comparable.</figcaption></figure>

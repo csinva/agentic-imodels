@@ -51,6 +51,12 @@ def factories():
         return streed_solver.STreeD(lam, tl)
 
     out["streed"] = make_streed
+
+    def make_split(lam, tl):
+        import split_solver
+        return split_solver.Split(lam, tl)
+
+    out["split"] = make_split
     return out
 
 
@@ -74,7 +80,7 @@ def append_row(row: dict, repeat: int):
 def write_summary():
     reps = pd.read_csv(REPEATS_CSV) if os.path.exists(REPEATS_CSV) else pd.DataFrame(columns=COLS)
     out = []
-    for model in sorted(set(reps["model"]) | {"gosdt", "pygosdt_v1", "streed"}):
+    for model in sorted(set(reps["model"]) | {"gosdt", "pygosdt_v1", "streed", "split"}):
         runs = []
         cached = rows_from_benchmark(model)
         if cached is not None:

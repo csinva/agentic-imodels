@@ -51,6 +51,11 @@ def make_gosdt_guesses(lam, tl):
     return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=False)
 
 
+def make_split(lam, tl):
+    import split_solver  # needs the ``baselines`` dependency group
+    return split_solver.Split(lam, tl)
+
+
 def make_gosdt_guesses_guided(lam, tl):
     import guesses_solver
     return guesses_solver.GuessesGOSDT(lam, tl, memory_limit=MEMORY_LIMIT, guesses=True)
@@ -62,6 +67,7 @@ MODELS = {
     "streed": make_streed,
     "gosdt_guesses": make_gosdt_guesses,
     "gosdt_guesses_guided": make_gosdt_guesses_guided,
+    "split": make_split,
 }
 
 

@@ -1,0 +1,133 @@
+# SPLIT-ICML
+Official code for the ICML 2025 Oral paper: **"Near Optimal Decision Trees in a SPLIT Second"**.
+
+[Check out the paper here](https://arxiv.org/pdf/2502.15988)
+
+**IMPORTANT: If you are a researcher or practitioner looking for a modern decision tree method or baseline, we would recommend you use this package: https://github.com/zakk-h/LicketySPLIT (with corresponding pip package `pip install licketysplit`)**. This package implements the LicketySPLIT method from this paper with some wonderful subsequent modifications from our colleague Zakk Heile. That version of the package runs _substantially faster_ and includes many frequently requested features, such as multiclass predictions and regression. This SPLIT repository is a historical, beta-version codebase, kept to preserve the version presented at ICML 2025, that is not actively maintained. We have expanded the method that is most promising (LicketySPLIT) to that new repository.
+
+Note that this code is in beta. This code is here for data science practitioners, researchers, and students interested in trying our method and/or replicating our paper results. If you encounter problems, please feel free to leave a github issue.
+
+This is an open source project; contributions are welcome! 
+
+**Acknowledgements**: 
+1. SPLIT and LicketySPLIT are built from a modified version of the GOSDT codebase: https://github.com/ubc-systopia/gosdt-guesses/tree/main
+2. RESPLIT are built from a modified version of the TreeFARMS codebase: https://github.com/ubc-systopia/treeFarms
+   
+**Citation**:
+
+If you use this code in your work, please cite it as below:
+```bibtex
+@inproceedings{
+   babbar2025nearoptimal,
+   title={Near-Optimal Decision Trees in a {SPLIT} Second},
+   author={Varun Babbar and Hayden McTavish and Cynthia Rudin and Margo Seltzer},
+   booktitle={Forty-second International Conference on Machine Learning},
+   year={2025},
+   url={https://openreview.net/forum?id=ACyyBrUioy}
+}
+```
+
+# Installation Instructions and Quickstart
+
+## Prerequisites (before installing SPLIT / RESPLIT)
+
+SPLIT and RESPLIT have C++ extensions that depend on TBB, CMake, Ninja, pkg-config, GMP, and a C++ compiler.
+
+- **Using Conda (recommended on clusters with linux 64):**  
+  Install build tools and libraries via Conda, then the compilers:
+  ```bash
+  conda install -c conda-forge gcc_linux-64 gxx_linux-64 cmake ninja tbb tbb-devel pkg-config gmp
+  ```
+
+- **Using the system (e.g. Ubuntu/Debian with sudo-apt or Colab):**  
+  Install the development packages before `pip install`:
+  ```bash
+  sudo apt-get install -y libtbb-dev cmake ninja-build pkg-config libgmp-dev
+  ```
+
+After these prerequisites are satisfied, proceed with the install steps below.
+
+---
+
+This repository contains implementations of both packages used and described in the paper. First `cd` into this repository. Then install both SPLIT and RESPLIT via the following. 
+```bash
+pip install resplit/ split/
+```
+**We recommend installing and running the package on Linux or WSL environments. Mac support is still limited, as the code has not been extensively tested on macOS**.
+
+To run SPLIT:
+
+```python
+from split import SPLIT
+import pandas as pd
+lookahead_depth = 2
+depth_buget = 5
+dataset = pd.read_csv('path/to/compas.csv') 
+X,y = dataset.iloc[:,:-1], dataset.iloc[:,-1]
+# y should correspond to a binary class label. 
+regularization = 0.01
+model = SPLIT(lookahead_depth_budget=lookahead_depth, reg=regularization, full_depth_budget=depth_buget, verbose=False, binarize=False,time_limit=100)
+# set binarize = True if dataset is not binarized.
+model.fit(X,y)
+y_pred = model.predict(X)
+tree = model.tree
+print(tree)
+```
+To run LicketySPLIT:
+```python
+from split import LicketySPLIT
+model = LicketySPLIT(full_depth_budget=full_depth_budget,reg=regularization)
+.... # same as above
+...
+```
+
+To run RESPLIT:
+
+```python
+from resplit import RESPLIT
+import pandas as pd
+dataset = pd.read_csv('path/to/compas.csv') 
+X,y = dataset.iloc[:,:-1], dataset.iloc[:,-1]
+config = {
+    "regularization": 0.005,
+    "rashomon_bound_multiplier": 0.01, # Sets the Rashomon set threshold as the set of all models which are within `(1+ε)L*` of the best loss `L*`.
+    "depth_budget": 5,
+    'cart_lookahead_depth': 3,
+    "verbose": False
+}
+model = RESPLIT(config, fill_tree = "treefarms")
+# Options for fill_tree: "treefarms", "optimal", "greedy".
+# "treefarms" will fill each leaf of each prefix with another TreeFARMS Rashomon set.
+# "optimal" will complete prefixes using GOSDT.
+# "greedy" will do so using greedy completions. 
+model.fit(X,y)
+i = 0
+tree = model[i] # get the ith tree
+print(tree)
+y_pred = model.predict(X,i) # predictions for the ith tree
+```
+
+### Notes on Using RESPLIT
+
+1. **Command Line Preferred**  
+   For now, we recommend running RESPLIT via a command-line script (e.g., `python3 run_resplit_on_compas.py`) or a SLURM script rather than in a Jupyter notebook.  
+   We have observed some timeout issues in Jupyter and are actively investigating these.
+
+2. **Quick Runtime Comparison**  
+   There is an example in `resplit/example/` where you can first run:
+
+   ```bash
+   pip install treefarms
+   python3 resplit_example.py
+   ```
+   This will demonstrate the difference in runtime between TreeFARMS and RESPLIT.
+
+### Common Config Options for RESPLIT
+
+- **`rashomon_bound_adder`**  
+  An alternative to `rashomon_bound_multiplier`. It sets the Rashomon set threshold as the set of all models within `L* + ε` of the best loss `L*`.
+
+- **`rashomon_bound`**  
+  Another alternative to `rashomon_bound_multiplier`. It sets the Rashomon set threshold as the set of all models within a fixed loss value. This is a hard threshold rather than a relative `ε`.
+
+For more config options, check out the README in the `resplit` directory.
