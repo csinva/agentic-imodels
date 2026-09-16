@@ -1,5 +1,5 @@
-"""Run the reference GOSDT with no time or memory cap on every pair that no exact
-solver has certified yet, until it certifies (or dies).
+"""Run the reference GOSDT with no time cap on every pair that no exact solver
+has certified yet, until it certifies or exceeds the machine's memory.
 
 Uses the certificate-fixed reference binary (``baselines/gosdt/build/gosdt_patched``,
 built from ``baselines/gosdt_patches/scope-lowerbound.patch``), because the
@@ -54,7 +54,7 @@ def _rss_bytes(pid: int) -> int:
         return 0
 
 
-def run_pair(binary: Path, name: str, lam: float, frame: pd.DataFrame) -> dict:
+def run_pair(binary: Path, name: str, lam: float, frame: pd.DataFrame, memory_cap: int = 0) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         csv_path = Path(tmp) / "data.csv"
         frame.to_csv(csv_path, index=False)
@@ -67,9 +67,13 @@ def run_pair(binary: Path, name: str, lam: float, frame: pd.DataFrame) -> dict:
             proc = subprocess.Popen([str(binary), str(cfg)], stdin=fh, stdout=out_fh,
                                     stderr=subprocess.STDOUT, text=True)
             peak = 0
+            killed = False
             while proc.poll() is None:
                 time.sleep(1.0)
                 peak = max(peak, _rss_bytes(proc.pid))
+                if memory_cap and peak > memory_cap:
+                    proc.kill()
+                    killed = True
             wall = time.perf_counter() - t0
             out_fh.seek(0)
             out = out_fh.read()
@@ -84,7 +88,9 @@ def run_pair(binary: Path, name: str, lam: float, frame: pd.DataFrame) -> dict:
         row = {"dataset": name, "lam": lam, "seconds": seconds, "wall": round(wall, 1),
                "exit_code": proc.returncode, "peak_rss_gb": round(peak / (1 << 30), 2),
                "graph_size": graph, "iterations": iters, "objective": "", "errors": "", "leaves": ""}
-        if proc.returncode < 0 or proc.returncode == 137:
+        if killed:
+            row["status"] = "memory_cap"
+        elif proc.returncode < 0 or proc.returncode == 137:
             row["status"] = "oom_killed"
         elif not model_path.exists():
             row["status"] = "no_model"
@@ -100,7 +106,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pairs", default="", help="dataset:lam,... (default: every uncertified pair)")
     ap.add_argument("--binary", default=str(BINARY))
+    ap.add_argument("--memory-cap-gb", type=float, default=12.0,
+                    help="kill a run whose resident memory exceeds this (0 = none; the reference exhausts a 16 GB "
+                         "machine within minutes on these pairs, which kills the driver too)")
     args = ap.parse_args()
+    memory_cap = int(args.memory_cap_gb * (1 << 30))
     binary = Path(args.binary)
     if not binary.exists():
         sys.exit(f"binary not found: {binary} (apply baselines/gosdt_patches/scope-lowerbound.patch and build)")
@@ -120,7 +130,7 @@ def main():
         frame = load_dataset(name)
         k_obj, k_cert = known.get((name, lam), (float("nan"), False))
         print(f"\n=== {name} λ={lam:g}  (best known {k_obj:.6f}{'*' if k_cert else ''}) ===", flush=True)
-        row = run_pair(binary, name, lam, frame)
+        row = run_pair(binary, name, lam, frame, memory_cap)
         row["known_before"] = k_obj
         accepted = False
         if row["status"] == "optimal":
