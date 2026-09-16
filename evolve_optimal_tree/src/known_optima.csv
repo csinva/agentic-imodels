@@ -42,8 +42,8 @@ fico_1k,0.005,0.284,False,gosdt_guesses_guided
 sine_1k,0.1,0.595,True,pygosdt_v1
 sine_1k,0.05,0.545,False,pygosdt_v1
 sine_1k,0.02,0.494,False,gosdt
-sine_1k,0.01,0.443,False,streed
-sine_1k,0.005,0.4,False,pygosdt_v1
+sine_1k,0.01,0.441,False,split
+sine_1k,0.005,0.361,False,split
 car_evaluation,0.1,0.399769,True,gosdt
 car_evaluation,0.05,0.294676,True,gosdt
 car_evaluation,0.02,0.204676,True,gosdt

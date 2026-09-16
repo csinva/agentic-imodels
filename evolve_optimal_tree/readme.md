@@ -121,7 +121,11 @@ baseline on the suite and `--summary` writes `baselines/benchmarks/results/repea
 three runs of the reference GOSDT (the cached benchmark row plus two repeats) it certified 46, 47 and 48
 of 70 pairs within 30 s (mean 47.0 ± 1.0), with geometric-mean time 0.473, 0.515 and 0.523 s
 (mean 0.504 ± 0.027 s) and its false tic-tac-toe certificate in every run; the pairs that flip are the
-ones whose solve time sits at the 30 s cap.
+ones whose solve time sits at the 30 s cap. SPLIT (approximate, depth budget 5) over its
+three runs: geometric-mean time 0.131, 0.170 and 0.169 s (mean 0.157 ± 0.022 s), never certified, a worse
+objective than the best known on 15–17 of the 70 suite pairs, and out of memory on the widest datasets
+(fico_1k and compas_processed at small λ, sine_1k λ=0.05); it also found better incumbents than any
+exact solver on sine_1k at λ=0.01 and 0.005.
 
 ## The starting solver (pygosdt_v1)
 
