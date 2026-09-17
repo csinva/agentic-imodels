@@ -135,6 +135,15 @@ objective than the best known on 15–17 of the 70 suite pairs, and out of memor
 (fico_1k and compas_processed at small λ, sine_1k λ=0.05); it also found better incumbents than any
 exact solver on sine_1k at λ=0.01 and 0.005.
 
+Can the reference certify the remaining pairs given unlimited time? No, not on a 16 GB machine:
+`baselines/benchmarks/certify_unsolved.py` runs the certificate-fixed reference binary
+(`baselines/gosdt/build/gosdt_patched`) with no time limit on every uncertified pair. Without a memory
+cap it exhausted the machine within minutes on the very first pair; with a cap it reached 6 GB on fico_1k
+λ=0.05 and 0.02 after about 190 s and 5 GB on fico_1k λ=0.01 after 310 s, still without a certificate
+(`baselines/benchmarks/results/certify_unsolved.csv`). The other nine uncertified pairs (fico_1k λ=0.005,
+compas_processed λ≤0.02, sine_10k) were already memory kills at 6 GB within 41–495 s in the 600 s
+benchmark. Memory, not time, is what stops the reference on these pairs.
+
 ## The starting solver (pygosdt_v1)
 
 `pygosdt_v1` re-implements GOSDT with numpy, pandas, scikit-learn and numba only: binary columns,

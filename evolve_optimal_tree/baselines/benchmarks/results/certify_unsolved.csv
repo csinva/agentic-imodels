@@ -1,0 +1,4 @@
+dataset,lam,objective,errors,leaves,seconds,wall,status,exit_code,peak_rss_gb,graph_size,iterations,known_before,accepted
+fico_1k,0.05,,,,nan,193.0,memory_cap,-9,6.03,,,0.391,False
+fico_1k,0.02,,,,nan,187.0,memory_cap,-9,6.03,,,0.331,False
+fico_1k,0.01,,,,nan,310.3,memory_cap,-9,5.02,,,0.304,False
