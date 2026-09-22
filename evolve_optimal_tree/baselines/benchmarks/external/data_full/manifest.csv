@@ -1,0 +1,15 @@
+name,source,openml_did,rows,features,binary_splits,classes,majority
+taf_chudi,blood-transfusion-service-center,46913,748,4,171,2,0.762
+taf_monk_3,seismic-bumps,46956,2584,15,4266,2,0.934
+taf_monk_1,Marketing_Campaign,46940,2240,25,4941,2,0.851
+taf_iris,maternal_health_risk,46941,1014,6,132,3,0.4
+taf_monk_2,Is-this-a-good-customer,46938,1723,13,413,2,0.886
+taf_tic-tac-toe,qsar-biodeg,46952,1054,41,8256,2,0.663
+taf_gaussian_1k,credit-g,46918,1000,20,1055,2,0.7
+taf_fico_1k,polish_companies_bankruptcy,46950,5910,64,346492,2,0.931
+taf_sine_1k,Fitness_Club,46927,1500,6,1341,2,0.697
+taf_car_evaluation,Bioresponse,46912,3751,1776,176459,2,0.542
+taf_coupon_bar,hazelnut-spread-contaminant-detection,46930,2400,30,38097,2,0.5
+taf_compas_binned,E-CommereShippingData,46924,10999,10,4336,2,0.597
+taf_fico_binary,HR_Analytics_Job_Change_of_Data_Scientists,46935,19158,12,514,2,0.751
+taf_compas_processed,credit_card_clients_default,46919,30000,23,174581,2,0.779

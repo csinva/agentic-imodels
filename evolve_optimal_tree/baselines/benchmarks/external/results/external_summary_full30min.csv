@@ -1,0 +1,7 @@
+model,repeat,pairs,n_solved,geo_mean_time,n_wrong,no_tree,load1_at_start
+autoopttree_v40,1,14,9,3.10669,0,0,3.13
+autoopttree_v46_anytime100,1,14,5,0.06868,0,0,1.83
+autoopttree_v49,1,14,9,2.44219,0,0,1.51
+gosdt,1,14,4,215.66251,0,9,1.47
+split,1,14,0,261.14756,0,10,1.53
+streed,1,14,5,148.85886,1,4,1.31
