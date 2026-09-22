@@ -2,7 +2,7 @@
 name = "pygosdt_v1"
 version = "0.1.0"
 description = "Pure-Python Generalized Optimal Sparse Decision Trees (GOSDT) with a numba-accelerated bitset engine"
-readme = "README.md"
+readme = "readme.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24.0",

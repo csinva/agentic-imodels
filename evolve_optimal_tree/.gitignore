@@ -19,3 +19,4 @@ baselines/gosdt_guesses/pyproject-build/
 baselines/gosdt_guesses/**/__pycache__/
 baselines/split/split/pyproject-build/
 baselines/split/**/*.so
+baselines/linux_deps/
