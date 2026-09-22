@@ -1,19 +1,22 @@
-"""TabArena-14 with no time limit: every solver on the 70 hidden problems until it
-certifies, stops at the 6 GB memory budget, or hits a long safety wall.
+"""TabArena-14 without the 30 s cap: every solver on the 70 hidden problems until it
+certifies, stops at the 6 GB memory budget, or reaches a wall of hours.
 
 The 30 s sweep (run_external.py) asks how much each solver proves in a fixed budget.
-This asks the other question: given as long as it wants, what stops it? Each problem
-runs in its own child process pinned to its own cores (2 for single-threaded solvers,
-8 for the multicore ones), many at once, so a sweep that would take days one problem
-at a time takes hours; timings are the solver's own clock, and since the problems are
-CPU bound and each has its cores to itself they are comparable across solvers on this
-machine, though not to the 30 s panel, which was measured on a different one.
+This asks the other question: given hours rather than seconds, what stops it? The wall
+(default 4 h a problem, 480 times the suite's cap) is handed to each solver as its time
+limit, so a run that reaches it returns the best tree it has, as at 30 s; the driver
+only kills a run that overshoots it. Each problem runs in its own child process pinned
+to its own cores (2 for single-threaded solvers, 8 for the multicore ones), many at
+once, so a sweep that would take weeks one problem at a time takes hours; timings are
+the solver's own clock, and since the problems are CPU bound and each has its cores to
+itself they are comparable across solvers on this machine, though not to the 30 s
+panel, which was measured on a different one.
 
 Rows are appended as each problem finishes, so an interrupted sweep resumes. Status is
 ``optimal``, ``memory`` (the solver or this driver stopped it at the memory budget),
-``unfinished`` (still running at the safety wall), ``crash``, or the wrapper's own
-status. ``seconds`` is the solver's reported optimisation time, or the wall time at
-the stop for a run that returned no tree.
+``time`` (the wall), ``unfinished`` (killed for overshooting the wall), ``crash``, or
+the wrapper's own status. ``seconds`` is the solver's reported optimisation time, or
+the wall time at the stop for a run that returned no tree.
 
     uv run baselines/benchmarks/external/run_external_nolimit.py            # the sweep
     uv run baselines/benchmarks/external/run_external_nolimit.py --summary  # summary only
@@ -51,7 +54,6 @@ MULTICORE = {"autoopttree_v46", "autoopttree_v46_anytime100", "autoopttree_v49"}
 LAMBDAS = [0.1, 0.05, 0.02, 0.01, 0.005]
 COLS = ["model", "repeat", "dataset", "n", "p", "lam", "objective", "errors", "leaves", "seconds",
         "wall", "status", "iterations", "binary_features", "lb", "ub", "peak_rss_gb", "cores"]
-NO_LIMIT = 1e7          # seconds handed to the solvers: 115 days, so none of them stops on time
 TOL = 1e-9
 
 
@@ -64,7 +66,7 @@ def _rx():
 
 # ----------------------------------------------------------------------------- worker
 
-def worker(model, dataset, lam, out_path):
+def worker(model, dataset, lam, out_path, wall):
     from evaluate import NoModel, evaluate_tree
     rx = _rx()
     frame = pd.read_csv(os.path.join(DATA, f"{dataset}.csv"))
@@ -72,7 +74,7 @@ def worker(model, dataset, lam, out_path):
     row = {"n": len(frame), "p": frame.shape[1] - 1}
     t0 = time.perf_counter()
     try:
-        m = rx.factories()[model](lam, NO_LIMIT)
+        m = rx.factories()[model](lam, wall)
         m.fit(X, y)
         wall = time.perf_counter() - t0
         seconds = float(getattr(m, "time_", wall))
@@ -175,7 +177,7 @@ def run(args):
         if os.path.exists(out):
             os.remove(out)
         cmd = ["taskset", "-c", ",".join(map(str, cores)), sys.executable, __file__,
-               "--worker", model, name, str(lam), out]
+               "--worker", model, name, str(lam), out, "--wall", str(args.wall)]
         log = open(os.path.join(work, f"{model}__{name}__{lam}.log"), "w")
         cache = os.path.join(work, "numba_cache", f"{model}__{name}__{lam}")
         shutil.rmtree(cache, ignore_errors=True)
@@ -218,10 +220,12 @@ def run(args):
 
     while jobs or running:
         while jobs and len(running) < args.jobs:
-            need = 8 if jobs[0][0] in MULTICORE else 2
-            if len(free) < need:
+            # the first queued job whose cores are free, so a 2-core job is not held
+            # behind an 8-core one
+            fits = [i for i, j in enumerate(jobs) if len(free) >= (8 if j[0] in MULTICORE else 2)]
+            if not fits:
                 break
-            launch(jobs.pop(0))
+            launch(jobs.pop(fits[0]))
         time.sleep(1.0)
         for pid in list(running):
             r = running[pid]
@@ -234,13 +238,13 @@ def run(args):
                 _kill_tree(pid)
                 r["proc"].wait()
                 finish(pid, "memory")
-            elif time.time() - r["t0"] > args.wall:
+            elif time.time() - r["t0"] > 1.1 * args.wall + 300:
                 _kill_tree(pid)
                 r["proc"].wait()
                 finish(pid, "unfinished")
 
 
-def summarize(tag):
+def summarize(tag, wall):
     pairs_csv = os.path.join(RESULTS, f"external_pairs_{tag}.csv")
     d = pd.read_csv(pairs_csv)
     best = d.groupby(["dataset", "lam"])["objective"].min().rename("best")
@@ -257,7 +261,8 @@ def summarize(tag):
                     "total_hours": round(float(g["wall"].sum()) / 3600, 2),
                     "n_wrong": int(g["wrong"].sum()), "no_tree": int(g["objective"].isna().sum()),
                     "memory": int((g["status"] == "memory").sum()),
-                    "unfinished": int((g["status"] == "unfinished").sum()),
+                    "at_wall": int(((g["status"] == "time") & (g["seconds"] >= 0.99 * wall)).sum()
+                                   + (g["status"] == "unfinished").sum()),
                     "peak_rss_gb": round(float(g["peak_rss_gb"].max()), 2)})
     s = pd.DataFrame(out)
     path = os.path.join(RESULTS, f"external_summary_{tag}.csv")
@@ -277,16 +282,17 @@ if __name__ == "__main__":
     ap.add_argument("--datasets", default="", help="comma-separated subset (default: all 14)")
     ap.add_argument("--summary", action="store_true")
     ap.add_argument("--tag", default="nolimit")
-    ap.add_argument("--wall", type=float, default=12 * 3600, help="safety wall per problem (s)")
+    ap.add_argument("--wall", type=float, default=4 * 3600,
+                    help="seconds a problem may take; given to the solver as its time limit")
     ap.add_argument("--memory-gb", type=float, default=6.0)
     ap.add_argument("--jobs", type=int, default=32, help="problems run at once")
     ap.add_argument("--core-lo", type=int, default=8)
     ap.add_argument("--core-hi", type=int, default=167, help="cpu ids handed to the workers")
     args = ap.parse_args()
     if args.worker:
-        worker(args.worker[0], args.worker[1], float(args.worker[2]), args.worker[3])
+        worker(args.worker[0], args.worker[1], float(args.worker[2]), args.worker[3], args.wall)
     elif args.summary:
-        summarize(args.tag)
+        summarize(args.tag, args.wall)
     else:
         run(args)
-        summarize(args.tag)
+        summarize(args.tag, args.wall)

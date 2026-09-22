@@ -78,6 +78,14 @@ brew install tbb boost gmp cmake ninja pkg-config
 baselines/gosdt_patches/apply.sh baselines/gosdt
 uv sync --group baselines        # builds baselines/pystreed, baselines/gosdt_guesses and baselines/split (pybind11, C++)
 
+# 2b. The same on Linux without root: build the C++ dependencies into baselines/linux_deps first
+uv tool install cmake && uv tool install ninja
+baselines/gosdt_patches/build_deps_linux.sh                       # oneTBB, GMP, Boost headers
+(cd baselines/gosdt && patch -p1 < ../gosdt_patches/arm64-onetbb.patch && ../gosdt_patches/build_linux.sh)
+P=$PWD/baselines/linux_deps PKG_CONFIG_PATH=$P/lib/pkgconfig \
+  CMAKE_ARGS="-DTBB_DIR=$P/lib/cmake/TBB -DCMAKE_INSTALL_RPATH=$P/lib -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON" \
+  uv sync --group baselines
+
 # 3. Seed the baseline leaderboard (instant, from the cached benchmark; --rerun to recompute)
 uv run run_baselines.py
 
@@ -134,6 +142,15 @@ three runs: geometric-mean time 0.131, 0.170 and 0.169 s (mean 0.157 ± 0.022 s)
 objective than the best known on 15–17 of the 70 suite pairs, and out of memory on the widest datasets
 (fico_1k and compas_processed at small λ, sine_1k λ=0.05); it also found better incumbents than any
 exact solver on sine_1k at λ=0.01 and 0.005.
+
+The held-out TabArena-14 problems without the 30 s cap: `baselines/benchmarks/external/run_external_nolimit.py`
+runs every solver on the 70 hidden problems with 4 hours each (handed to the solver as its time limit) and the
+6 GB budget enforced on every process, one pinned child process per problem and many at once, so it takes hours
+on a large machine rather than weeks. Results in `external/results/external_pairs_nolimit.csv` and
+`external_summary_nolimit.csv` (one run per problem, 140 hours of solver time on an 88-core Xeon server): the
+shipped v40 certifies 64 of 70 and stops on memory on the rest, v46 (8 threads) 64 and v49 63 without ever
+passing 1.1 GB on the six open problems, pygosdt 62, GOSDT 47 (with its chudi false certificate again),
+gosdt-guesses 48, STreeD 46; nobody certifies compas_processed or fico_1k at λ ≤ 0.02.
 
 Can the reference certify the remaining pairs given unlimited time? No, not on a 16 GB machine:
 `baselines/benchmarks/certify_unsolved.py` runs the certificate-fixed reference binary
