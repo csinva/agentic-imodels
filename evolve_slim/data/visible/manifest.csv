@@ -1,0 +1,15 @@
+name,source,rows,n_train,n_test,raw_columns,features,positive_rate
+adult,riskslim:adult,12500,10000,2500,36,36,0.241
+bank,riskslim:bank,12500,10000,2500,57,57,0.113
+breastcancer,riskslim:breastcancer,683,546,137,9,9,0.35
+mammo,riskslim:mammo,961,768,193,14,14,0.463
+mushroom,riskslim:mushroom,8124,6499,1625,113,113,0.482
+spambase,riskslim:spambase,4601,3680,921,57,57,0.394
+fico,openml:45023,10000,8000,2000,22,142,0.5
+compas,openml:42192,5278,4222,1056,13,32,0.47
+australian,openml:40981,690,552,138,14,79,0.445
+heart,openml:53,270,216,54,13,57,0.444
+ionosphere,openml:59,351,280,71,34,267,0.359
+ilpd,openml:1480,583,466,117,10,79,0.286
+magic,openml:1120,12500,10000,2500,10,90,0.352
+haberman,openml:43,306,244,62,3,27,0.265

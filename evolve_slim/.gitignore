@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.py[oc]
+run*.log
+.pytest_cache/
+baselines/risk-slim/
+results/work/

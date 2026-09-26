@@ -1,0 +1,31 @@
+[project]
+name = "evolve_slim"
+version = "0.1.0"
+description = "Autoresearch on sparse integer linear models (risk scores)"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scikit-learn>=1.3.0",
+    "scipy>=1.11",
+    "numba>=0.59.0",
+]
+
+[dependency-groups]
+baselines = [
+    "cplex>=22.1",
+    "prettytable",
+    "cython",
+    "setuptools",
+]
+data = [
+    "openml>=0.14",
+]
+dev = [
+    "pytest>=8.0",
+    "matplotlib>=3.8",
+]
+
+[tool.uv]
+environments = ["sys_platform == 'linux'", "sys_platform == 'darwin'"]
