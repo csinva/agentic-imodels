@@ -1,0 +1,11 @@
+commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_over_limit,integer,status,model_name,description
+,0.00448,1.494,0.8406,0.36029,0,0,0,true,baseline,fasterrisk,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.08132,49.338,0.7673,0.43714,0,0,62,true,baseline,slim_milp,"SLIM (Ustun & Rudin 2016), 0-1 loss MILP solved by HiGHS within the time limit"
+,0.05380,0.068,0.8119,0.40961,0,0,0,true,baseline,rounded_lr,"L1 logistic regression tuned to k features, refit, scaled to a largest point of 5, rounded"
+,0.07015,0.258,0.7892,0.42597,0,0,0,true,baseline,imodels_slim,"imodels 3.0.2 SLIMClassifier without a MIP solver (rounded L2 logistic), penalty searched to k"
+,0.00155,0.867,0.8444,0.35737,0,0,0,false,baseline,continuous_beam,"reference, real-valued: FasterRisk's k-sparse beam search before rounding"
+,0.09654,13.629,0.7179,0.45235,0,25,32,true,baseline,riskslim,"RiskSLIM lattice cutting planes (Ustun & Rudin 2019), CPLEX 22.1 Community Edition, time limit"
+,0.00010,0.039,0.8424,0.35592,0,0,0,true,eval,v35_scratch_rep2,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00448,1.510,0.8406,0.36029,0,0,0,true,baseline,fasterrisk_rep2,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.00010,0.036,0.8424,0.35592,0,0,0,true,eval,v35_scratch_rep3,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00448,1.518,0.8406,0.36029,0,0,0,true,baseline,fasterrisk_rep3,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"

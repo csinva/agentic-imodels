@@ -5,3 +5,4 @@ run*.log
 .pytest_cache/
 baselines/risk-slim/
 results/work/
+!results/

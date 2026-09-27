@@ -1,0 +1,34 @@
+commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_over_limit,integer,status,model_name,description
+,0.00041,3.171,0.7927,0.32720,0,0,0,true,eval,pyfasterrisk_v1_run1,runs/sep26-run1/slim_lib/pyfasterrisk_v1.py
+,0.00043,1.013,0.7924,0.32722,0,0,0,true,eval,v3_fastnewton_run1,runs/sep26-run1/slim_lib/v3_fastnewton.py
+,0.00055,0.793,0.7928,0.32735,0,0,0,true,eval,v5_tunetop_run1,runs/sep26-run1/slim_lib/v5_tunetop.py
+,0.00055,0.744,0.7928,0.32735,0,0,0,true,eval,v6_numbaray_run1,runs/sep26-run1/slim_lib/v6_numbaray.py
+,0.00017,0.578,0.7936,0.32696,0,0,0,true,eval,v9_pool10_run1,runs/sep26-run1/slim_lib/v9_pool10.py
+,0.00018,0.434,0.7937,0.32697,0,0,0,true,eval,v11_pooltune_run1,runs/sep26-run1/slim_lib/v11_pooltune.py
+,0.00016,0.400,0.7933,0.32696,0,0,0,true,eval,v24_child5_run1,runs/sep26-run1/slim_lib/v24_child5.py
+,0.00016,0.342,0.7933,0.32696,0,0,0,true,eval,v27_cheap1d_run1,runs/sep26-run1/slim_lib/v27_cheap1d.py
+,0.00024,0.300,0.7931,0.32704,0,0,0,true,eval,v28_ray5_run1,runs/sep26-run1/slim_lib/v28_ray5.py
+,0.00033,0.229,0.7934,0.32712,0,0,0,true,eval,v29_tune1_run1,runs/sep26-run1/slim_lib/v29_tune1.py
+,0.00037,0.202,0.7931,0.32716,0,0,0,true,eval,v34_2starts_run1,runs/sep26-run1/slim_lib/v34_2starts.py
+,0.00037,0.193,0.7931,0.32716,0,0,0,true,eval,v36_robust_run1,runs/sep26-run1/slim_lib/v36_robust.py
+,0.00035,1.185,0.7928,0.32715,0,0,0,true,eval,v2_numba_run2,runs/sep26-run2/slim_lib/v2_numba.py
+,0.00025,0.755,0.7931,0.32704,0,0,0,true,eval,v5_nopool_run2,runs/sep26-run2/slim_lib/v5_nopool.py
+,0.00024,0.225,0.7931,0.32704,0,0,0,true,eval,v7_groups_run2,runs/sep26-run2/slim_lib/v7_groups.py
+,0.00022,0.140,0.7932,0.32701,0,0,0,true,eval,v14_numbachild_run2,runs/sep26-run2/slim_lib/v14_numbachild.py
+,0.00018,0.129,0.7936,0.32698,0,0,0,true,eval,v16_swaplast_run2,runs/sep26-run2/slim_lib/v16_swaplast.py
+,0.00018,0.127,0.7935,0.32698,0,0,0,true,eval,v17_calround_run2,runs/sep26-run2/slim_lib/v17_calround.py
+,0.00018,0.117,0.7935,0.32698,0,0,0,true,eval,v18_roundnb_run2,runs/sep26-run2/slim_lib/v18_roundnb.py
+,0.00015,0.094,0.7937,0.32695,0,0,0,true,eval,v24_blasscreen_run2,runs/sep26-run2/slim_lib/v24_blasscreen.py
+,0.00015,0.073,0.7937,0.32695,0,0,0,true,eval,v30_lazycodes_run2,runs/sep26-run2/slim_lib/v30_lazycodes.py
+,0.00016,0.058,0.7937,0.32695,0,0,0,true,eval,v34_gemm_run2,runs/sep26-run2/slim_lib/v34_gemm.py
+,0.00016,0.058,0.7937,0.32695,0,0,0,true,eval,v35_scratch_run2,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00041,3.273,0.7927,0.32720,0,0,0,true,baseline,fasterrisk,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.07781,9.979,0.5681,0.40460,0,102,30,true,baseline,riskslim,"RiskSLIM lattice cutting planes (Ustun & Rudin 2019), CPLEX 22.1 Community Edition, time limit"
+,0.06275,60.227,0.6417,0.38954,0,0,133,true,baseline,slim_milp,"SLIM (Ustun & Rudin 2016), 0-1 loss MILP solved by HiGHS within the time limit"
+,0.02787,0.180,0.7430,0.35467,0,0,0,true,baseline,rounded_lr,"L1 logistic regression tuned to k features, refit, scaled to a largest point of 5, rounded"
+,0.03147,0.810,0.7357,0.35827,0,0,0,true,baseline,imodels_slim,"imodels 3.0.2 SLIMClassifier without a MIP solver (rounded L2 logistic), penalty searched to k"
+,-0.00031,1.557,0.7946,0.32648,0,0,0,false,baseline,continuous_beam,"reference, real-valued: FasterRisk's k-sparse beam search before rounding"
+,0.00016,0.057,0.7937,0.32695,0,0,0,true,eval,v35_scratch_run2_rep2,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00041,3.268,0.7927,0.32720,0,0,0,true,baseline,fasterrisk_rep2,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.00016,0.057,0.7937,0.32695,0,0,0,true,eval,v35_scratch_run2_rep3,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00041,3.288,0.7927,0.32720,0,0,0,true,baseline,fasterrisk_rep3,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
