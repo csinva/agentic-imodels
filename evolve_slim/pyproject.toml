@@ -18,6 +18,10 @@ baselines = [
     "prettytable",
     "cython",
     "setuptools",
+    "abess>=0.4.11",
+    "fastsparsegams>=0.2.0",
+    "sortedcontainers",
+    "psutil",
 ]
 data = [
     "openml>=0.14",

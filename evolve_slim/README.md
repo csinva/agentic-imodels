@@ -27,21 +27,36 @@ fits, and a local search over the integer points scored by the harness's own cal
 shipped solver is run 2's `v35_scratch` (the same points as its best kept `v34_gemm`, plus
 deadlines); it became `FastRiskScoreClassifier` in imodels.
 
-| | loss (visible) | AUC | time | loss (hidden, 27 TabArena) | AUC | time | loss (full size, k=5) | AUC | time |
+| solver | visible (70): loss | AUC | time | hidden (135): loss | AUC | time | full size, k=5 (27): loss | AUC | time |
 |---|---|---|---|---|---|---|---|---|---|
-| **v35_scratch (shipped)** | **0.3559** | **0.842** | **0.038 s** | **0.3270** | **0.794** | **0.057 s** | **0.3279** | **0.793** | **0.079 s** |
-| FasterRisk | 0.3603 | 0.841 | 1.51 s | 0.3272 | 0.793 | 3.28 s | 0.3282 | 0.790 | 4.82 s |
-| FasterRisk, wide search | 0.3582 | 0.841 | 18.2 s | 0.3271 | 0.793 | 47.3 s | | | |
-| rounded L1 logistic | 0.4096 | 0.812 | 0.068 s | 0.3547 | 0.743 | 0.18 s | 0.3581 | 0.744 | 0.3 s |
-| imodels SLIMClassifier | 0.4260 | 0.789 | 0.26 s | 0.3583 | 0.736 | 0.81 s | 0.3612 | 0.732 | 1.4 s |
-| SLIM (HiGHS) | 0.4371 | 0.767 | 49 s | 0.3895 | 0.642 | 60 s | 0.3835 | 0.647 | 542 s |
-| RiskSLIM (CPLEX CE) | 0.4524 | 0.718 | 14 s | 0.4046 | 0.568 | 10 s | 0.4031 | 0.560 | 16 s |
-| real-valued k-sparse (not integer) | 0.3574 | 0.844 | 0.87 s | 0.3265 | 0.795 | 1.56 s | 0.3275 | 0.794 | 2.3 s |
+| FastRiskScore (v35_scratch) | 0.3559 | 0.842 | 0.038 s | 0.3270 | 0.794 | 0.058 s | 0.3279 | 0.793 | 0.079 s |
+| FasterRisk | 0.3603 | 0.841 | 1.49 s | 0.3272 | 0.793 | 3.27 s | 0.3282 | 0.790 | 4.82 s |
+| FasterRisk, wide search | 0.3582 | 0.841 | 18.2 s | 0.3271 | 0.793 | 47.3 s |  |  |  |
+| RiskSLIM (CPLEX CE) | 0.4524 | 0.718 | 13.6 s | 0.4046 | 0.568 | 9.98 s | 0.4031 | 0.560 | 16.2 s |
+| cutting planes, HiGHS | 0.4097 | 0.776 | 57 s | 0.3739 | 0.667 | 60 s | 0.3602 | 0.695 | 600 s |
+| SLIM (HiGHS) | 0.4371 | 0.767 | 49.3 s | 0.3895 | 0.642 | 60.2 s | 0.3835 | 0.647 | 542 s |
+| abess + seq. rounding | 0.3731 | 0.842 | 0.207 s | 0.3303 | 0.789 | 0.512 s | 0.3317 | 0.788 | 0.790 s |
+| fastSparse + seq. rounding | 0.3738 | 0.836 | 0.123 s | 0.3303 | 0.791 | 0.207 s | 0.3304 | 0.790 | 0.304 s |
+| OKRidge + seq. rounding | 0.3654 | 0.841 | 20.4 s | 0.3286 | 0.790 | 26.5 s | 0.3297 | 0.786 | 214 s |
+| L1 path + seq. rounding | 0.4087 | 0.813 | 0.099 s | 0.3546 | 0.744 | 0.231 s | 0.3581 | 0.744 | 0.370 s |
+| probabilistic scoring list | 0.4185 | 0.787 | 13.8 s | 0.3623 | 0.681 | 51.2 s | 0.3366 | 0.763 | 127 s |
+| AutoScore | 0.4000 | 0.821 | 0.260 s | 0.3461 | 0.763 | 0.495 s | 0.3469 | 0.768 | 0.869 s |
+| rounded L1 logistic | 0.4096 | 0.812 | 0.068 s | 0.3547 | 0.743 | 0.180 s | 0.3580 | 0.744 | 0.292 s |
+| unit weighting | 0.4311 | 0.804 | 0.062 s | 0.3665 | 0.732 | 0.180 s | 0.3665 | 0.739 | 0.293 s |
+| imodels SLIMClassifier | 0.4260 | 0.789 | 0.258 s | 0.3583 | 0.736 | 0.810 s | 0.3612 | 0.732 | 1.42 s |
+| real-valued k-sparse (not integer) | 0.3574 | 0.844 | 0.867 s | 0.3265 | 0.795 | 1.56 s | 0.3275 | 0.794 | 2.27 s |
 
 Mean training log loss (the criterion), mean test AUC, geometric-mean fit time; one core per problem.
 Per problem against FasterRisk: lower loss on 54 / 90 / 21 problems and higher on 1 / 5 / 0 (visible
 70, hidden 135, full size 27); median speed-up 43x / 54x / 50x. RiskSLIM returns no score on 25 / 102 /
-22 problems at the CPLEX Community Edition's size limit. On 50 problems small enough to enumerate every
+22 problems at the CPLEX Community Edition's size limit. The probabilistic scoring list is
+killed at 3x the time limit (no score) on 10 / 51 / 3 problems. None of the eight baselines added after
+the first release (cutting planes with HiGHS, abess, fastSparse, OKRidge, the L1 path with rounding, PSL,
+AutoScore, unit weighting) comes within 0.001 of FasterRisk's mean loss on the held-out sets; the closest
+is OKRidge's optimal ridge support with FasterRisk's rounding (`uv run benchmarks/baseline_table.py`).
+On the 6 problems where the cutting planes certify RiskSLIM's optimum (breastcancer at every k, mammo
+at k = 3), FastRiskScore's points have a lower calibrated loss than the certified ones on all 6:
+RiskSLIM's objective fixes the score's scale, the reason FasterRisk added a multiplier. On 50 problems small enough to enumerate every
 score (`benchmarks/exhaustive_check.py`), v35 finds the optimum on 49 and FasterRisk on 28. All numbers
 in the post come from `benchmarks/post_numbers.py`; its figure from imodels'
 `docs/pages/fastriskscore_pareto.py`.
@@ -49,6 +64,37 @@ in the post come from `benchmarks/post_numbers.py`; its figure from imodels'
 The loss gain on the held-out sets is small (0.00025 on average, a third of the gap to the real-valued
 model): most of the visible-set gain came from datasets with real-valued columns, where FasterRisk's
 rounding loses a feature, and every held-out dataset is binarized.
+
+## Baselines
+
+All in `src/baselines.py`; run with `uv run run_baselines.py --models <names> [--suite hidden]`.
+Methods that fit a real-valued model are turned into points by the same published rounding
+stage, FasterRisk's star-ray search with sequential rounding (after scaling the solution into
+the point box), keeping the rounding with the lowest calibrated loss.
+
+| name | method | source / install |
+| --- | --- | --- |
+| `fasterrisk` | FasterRisk (Liu et al. 2022): beam search, diverse pool, star-ray sequential rounding | vendored `baselines/fasterrisk` (0.1.10, BSD-3; `tostring` fixed for numpy 2) |
+| `fasterrisk_wide` | FasterRisk with every search width raised; slow reference for the best known losses | same |
+| `riskslim` | RiskSLIM lattice cutting planes (Ustun & Rudin 2019) | `baselines/setup_riskslim.sh`; CPLEX Community Edition (size-limited) |
+| `cpa_highs` | RiskSLIM's problem by its cutting-plane algorithm, re-solving a HiGHS MILP each round, warm-started from rounded L1-path solutions; certifies small problems | scipy |
+| `slim_milp` | SLIM (Ustun & Rudin 2016): 0-1 loss MILP | scipy HiGHS |
+| `abess_seqround` | abess best-subset logistic regression (Zhu et al. 2022), sizes 1..k, rounded | `abess` (GPL-3), PyPI |
+| `fastsparse_seqround` | fastSparse / L0Learn L0L2 logistic path (Liu et al. 2022), boxed to [-5, 5], rounded | `fastsparsegams` (MIT), PyPI |
+| `okridge_seqround` | OKRidge (Liu et al. 2023) optimal k-sparse ridge support (squared-loss proxy), logistic refit, rounded | vendored `baselines/okridge` (0.1.1, BSD-3; a removed-method call fixed) |
+| `l1path_seqround` | every L1 logistic path support of size <= k, refit, rounded (FasterRisk's rounding without its beam search) | scikit-learn |
+| `psl` | probabilistic scoring lists (Hanselle et al. 2025), scores +-{1..5}, k greedy stages | vendored `baselines/skpsl` (scikit-psl 0.7.2, MIT; numpy 2 fix, `max_stages` added) |
+| `autoscore` | AutoScore (Xie et al. 2020) on binary features: random-forest ranking, logistic regression, coefficients / smallest, rounded | reimplemented (AutoScore is R-only) |
+| `rounded_lr` | L1 logistic regression tuned to k features, refit, scaled so the largest point is 5, rounded | scikit-learn |
+| `unit_weighting` | the L1-selected features, each worth +-1 | scikit-learn |
+| `imodels_slim` | imodels 3.0.2 `SLIMClassifier` without a MIP solver (rounded L2 logistic), penalty searched to k | reimplemented as imodels runs it |
+| `continuous_beam` | reference, not integer: FasterRisk's k-sparse beam search before rounding | vendored FasterRisk |
+
+Considered and left out (see the search notes in `LITERATURE.md`): scorepyo (abandoned, hard pins
+on 2022 packages), optbinning and scorecardpy (weight-of-evidence scorecards, not sparse integer
+points), l0learn (no Python 3.12 wheel; `fastsparsegams` is the same code base), GroupFasterRisk
+(identical to FasterRisk without feature groups), and RiskSLIM written directly as a SCIP MINLP
+(no incumbent within 60 s on a 500 x 30 test).
 
 ## Layout
 
@@ -59,7 +105,7 @@ rounding loses a feature, and every held-out dataset is binarized.
 | `setup_run.py` | creates `runs/<tag>/` with a local `slim.py`, a symlink to `src/` and the baseline leaderboard |
 | `src/suite.py` | the development suite: 14 datasets × k ∈ {3, 4, 5, 7, 10}, 60 s per problem |
 | `src/evaluate.py` | parallel runner (single-threaded workers, hard kill at 180 s), independent re-scoring, leaderboard |
-| `src/baselines.py` | FasterRisk, RiskSLIM, SLIM, rounded logistic regression, imodels' SLIMClassifier, a real-valued reference |
+| `src/baselines.py` | the 14 baselines of the table above and a real-valued reference |
 | `src/best_known.csv` | lowest criterion any integer solver has reached per problem (`baselines/update_best_known.py`) |
 | `data/build_data.py` | builds `data/visible` (14 datasets), `data/hidden` (27 TabArena datasets) and `data/hidden_full` |
 | `baselines/fasterrisk/` | FasterRisk 0.1.10, vendored (BSD 3-Clause), with a one-line numpy 2 fix |
@@ -67,7 +113,7 @@ rounding loses a feature, and every held-out dataset is binarized.
 | `LITERATURE.md` | the related work |
 | `PROMPTS.md` | the prompts that drove the search |
 | `runs/<tag>/` | one folder per loop session: the agent's leaderboard and a snapshot of every attempt |
-| `benchmarks/` | held-out evaluation (`run_hidden.sh`, `run_heldout_rest.sh`, `eval_solver.py`), the exhaustive check, `post_numbers.py` |
+| `benchmarks/` | held-out evaluation (`run_hidden.sh`, `run_heldout_rest.sh`, `run_more_baselines.sh`, `eval_solver.py`), the exhaustive check, `post_numbers.py` |
 | `results/` | leaderboards and per-problem rows: visible (`*.csv`), hidden (`hidden_*`), full size (`hidden_full_t600_*`), wide FasterRisk reference (`t1200_*`) |
 | `backfill_regret.py` | rewrites every leaderboard's regret after `src/best_known.csv` is refreshed |
 

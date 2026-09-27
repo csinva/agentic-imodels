@@ -9,3 +9,11 @@ commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_ov
 ,0.00448,1.510,0.8406,0.36029,0,0,0,true,baseline,fasterrisk_rep2,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
 ,0.00010,0.036,0.8424,0.35592,0,0,0,true,eval,v35_scratch_rep3,runs/sep26-run2/slim_lib/v35_scratch.py
 ,0.00448,1.518,0.8406,0.36029,0,0,0,true,baseline,fasterrisk_rep3,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.07525,0.062,0.8040,0.43107,0,0,0,true,baseline,unit_weighting,"unit weighting: L1-selected features (at most k), each worth +1 or -1 by its sign"
+,0.04414,0.260,0.8212,0.39995,0,0,0,true,baseline,autoscore,"AutoScore (Xie et al. 2020) on binary features: RF ranking, LR, coefficients / smallest, rounded"
+,0.05293,0.099,0.8131,0.40874,0,0,0,true,baseline,l1path_seqround,FasterRisk's star-ray sequential rounding on every L1-path support of size <= k
+,0.05384,57.012,0.7758,0.40966,0,0,57,true,baseline,cpa_highs,"RiskSLIM's cutting-plane algorithm with the open-source HiGHS MILP solver (re-solved each round), time limit"
+,0.01731,0.207,0.8415,0.37313,0,0,0,true,baseline,abess_seqround,"abess best-subset logistic (sizes 1..k), FasterRisk's star-ray sequential rounding"
+,0.01802,0.123,0.8358,0.37383,0,0,0,true,baseline,fastsparse_seqround,"fastSparse L0L2 logistic path (support <= k, box [-5,5]), star-ray sequential rounding"
+,0.00960,20.439,0.8411,0.36541,0,0,0,true,baseline,okridge_seqround,"OKRidge optimal k-sparse ridge support, logistic refit, star-ray sequential rounding"
+,0.06265,13.849,0.7869,0.41846,0,10,11,true,baseline,psl,"probabilistic scoring list (scikit-psl 0.7.2), scores in +-{1..5}, k greedy stages"

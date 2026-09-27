@@ -15,6 +15,18 @@ rounded_lr        The common practice: L1 logistic regression tuned to k feature
 imodels_slim      SLIMClassifier of imodels 3.0.2 without a MIP solver, which rounds
                   an L2 logistic regression; the penalty is searched so at most k
                   points are nonzero, and points are clipped to [-5, 5].
+unit_weighting    Unit weighting: the L1-selected features, each worth +1 or -1.
+autoscore         AutoScore (Xie et al. 2020) adapted to binary features: random-forest
+                  ranking, logistic regression, points = coefficients / smallest, rounded.
+l1path_seqround   FasterRisk's star-ray sequential rounding applied to every support on
+                  the L1 logistic path (its rounding stage without its beam search).
+cpa_highs         RiskSLIM's problem by its cutting-plane algorithm with the open-source
+                  HiGHS MILP solver (re-solved each round); proves optimality on small problems.
+abess_seqround    abess best-subset logistic regression (sizes 1..k), rounded as above.
+fastsparse_seqround  fastSparse / L0Learn L0L2 logistic path (<= k), rounded as above.
+okridge_seqround  OKRidge's optimal k-sparse ridge support (squared-loss proxy), logistic
+                  refit, rounded as above.
+psl               Probabilistic scoring lists (scikit-psl, vendored), k greedy stages.
 fasterrisk_wide   FasterRisk with every search width raised (beam 50 x 50, pool 200,
                   100 swaps, 100 multipliers); a slow reference for the best known losses.
 continuous_beam   Reference, not integer: FasterRisk's beam search before rounding,
@@ -209,8 +221,298 @@ class ImodelsSLIM(_Base):
         return self
 
 
-BASELINES = {"fasterrisk": FasterRisk, "fasterrisk_wide": FasterRiskWide, "riskslim": RiskSLIM, "slim_milp": SlimMILP, "rounded_lr": RoundedLR,
-             "imodels_slim": ImodelsSLIM, "continuous_beam": ContinuousBeam}
+def _calibrated_loss(X, y, w):
+    """The harness's criterion for points w (imported lazily to keep this module standalone)."""
+    from evaluate import calibrate
+    return calibrate(X @ w, y)[2]
+
+
+def _l1_path_supports(X, y, k, n_c=40):
+    """Distinct supports of size 1..k along the L1 logistic regularization path (liblinear)."""
+    from sklearn.linear_model import LogisticRegression
+    out, seen = [], set()
+    for C in np.logspace(-4, 2, n_c):
+        lr = LogisticRegression(penalty="l1", C=C, solver="liblinear", max_iter=2000).fit(X, y)
+        nz = np.flatnonzero(np.abs(lr.coef_[0]) > 1e-8)
+        if len(nz) > k:
+            break
+        if len(nz) and tuple(nz) not in seen:
+            seen.add(tuple(nz))
+            out.append(nz)
+    return out
+
+
+def _star_ray_round(X, y, b0, beta, ray=None):
+    """Round a real-valued solution (intercept b0, coefficients beta) to integer points with
+    FasterRisk's star-ray search and sequential rounding, after scaling it into the point box as
+    FasterRisk's own bounded fits guarantee. Returns the points (intercept dropped)."""
+    from fasterrisk.rounding import starRaySearchModel
+    if ray is None:
+        ray = starRaySearchModel(X=X, y=np.where(y > 0, 1.0, -1.0), lb=-COEF_BOUND, ub=COEF_BOUND, num_ray_search=20)
+    full = np.concatenate([[b0], beta]).astype(float)
+    top = np.max(np.abs(full[1:]))
+    if top == 0:
+        return np.zeros(len(beta))
+    if top > COEF_BOUND:
+        full *= COEF_BOUND / top
+    _, sol = ray.line_search_scale_and_round(full)
+    return np.clip(np.round(sol[1:]), -COEF_BOUND, COEF_BOUND)
+
+
+def _best_of_pool(X, y, candidates):
+    """The candidate points with the lowest calibrated loss (zeros if none has a nonzero point)."""
+    best, best_l = np.zeros(X.shape[1]), np.inf
+    for w in candidates:
+        if not np.any(w):
+            continue
+        l = _calibrated_loss(X, y, w)
+        if l < best_l:
+            best, best_l = w, l
+    return best
+
+
+def _logistic_refit(X, y, S):
+    """Unpenalized-ish logistic fit on the columns S: (intercept, full coefficient vector)."""
+    from sklearn.linear_model import LogisticRegression
+    beta = np.zeros(X.shape[1])
+    if len(S) == 0:
+        return 0.0, beta
+    lr = LogisticRegression(C=1e4, max_iter=5000).fit(X[:, S], y)
+    beta[S] = lr.coef_[0]
+    return float(lr.intercept_[0]), beta
+
+
+class UnitWeighting(_Base):
+    """Unit weighting (Burgess 1928; a baseline in the FasterRisk paper): the features of the
+    L1 path with at most k nonzero coefficients, each worth +1 or -1 point by its sign."""
+
+    def fit(self, X, y):
+        from sklearn.linear_model import LogisticRegression
+        support = _l1_support(X, y, self.k)
+        coef = np.zeros(X.shape[1])
+        if len(support):
+            w = LogisticRegression(C=1e4, max_iter=5000).fit(X[:, support], y).coef_[0]
+            coef[support] = np.sign(w)
+        self.coef_ = coef
+        return self
+
+
+class AutoScore(_Base):
+    """AutoScore (Xie et al., JMIR Med Inform 2020), adapted to binary features: rank features by
+    random-forest importance, keep the top k, fit a logistic regression, divide the coefficients by
+    the smallest in absolute value and round (AutoScore's points rule), then shrink to the point
+    bound if the largest exceeds it. AutoScore's own quantile binning is replaced by the suite's
+    binarization, and its parsimony plot by the fixed k."""
+
+    def fit(self, X, y):
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.linear_model import LogisticRegression
+        rf = RandomForestClassifier(n_estimators=100, random_state=0, n_jobs=1).fit(X, y)
+        top = np.argsort(-rf.feature_importances_, kind="stable")[:self.k]
+        top = top[rf.feature_importances_[top] > 0]
+        coef = np.zeros(X.shape[1])
+        if len(top):
+            w = LogisticRegression(C=1e4, max_iter=5000).fit(X[:, top], y).coef_[0]
+            nz = np.abs(w) > 1e-8
+            if nz.any():
+                pts = w / np.min(np.abs(w[nz]))
+                if np.max(np.abs(pts)) > COEF_BOUND:
+                    pts = pts * COEF_BOUND / np.max(np.abs(pts))
+                coef[top] = np.round(pts)
+        self.coef_ = coef
+        return self
+
+
+class L1PathSeqRound(_Base):
+    """FasterRisk's rounding stage without its beam search: every support of size <= k on the L1
+    logistic path is refit (bounded coefficients, intercept) and rounded by FasterRisk's star-ray
+    search with sequential rounding; the rounding with the lowest calibrated loss is kept. The
+    ElasticNet-pool-plus-rounding baselines of the FasterRisk paper are of this kind."""
+
+    def fit(self, X, y):
+        from fasterrisk.rounding import starRaySearchModel
+        ray = starRaySearchModel(X=X, y=np.where(y > 0, 1.0, -1.0), lb=-COEF_BOUND, ub=COEF_BOUND, num_ray_search=20)
+        pool = [_star_ray_round(X, y, *_logistic_refit(X, y, S), ray=ray) for S in _l1_path_supports(X, y, self.k)]
+        self.coef_ = _best_of_pool(X, y, pool)
+        return self
+
+class CuttingPlaneHiGHS(_Base):
+    """RiskSLIM's problem solved by its cutting-plane algorithm (CPA) with the open-source HiGHS
+    MILP solver: minimise the mean logistic loss of w0 + x.w over integer w in [-5, 5]^d with at
+    most k nonzero and an integer intercept in [-50, 50]. Each iteration solves a MILP whose
+    objective is the maximum of the linear cuts collected so far (a lower bound on the loss),
+    evaluates the true loss at its solution (an upper bound, and a new cut there), and stops when
+    the two meet or time runs out. Unlike RiskSLIM's lattice CPA the MILP is re-solved from scratch
+    each round (HiGHS has no lazy-constraint callbacks), so it proves optimality only on small
+    problems. Rows are merged into unique (x, y) with counts. As in RiskSLIM's initialization, the
+    search starts from rounded heuristic solutions (here the L1 path rounded by FasterRisk's star-ray
+    search), which give the first incumbent and cuts."""
+
+    def fit(self, X, y):
+        from scipy.optimize import Bounds, LinearConstraint, milp
+        t0 = time.perf_counter()
+        s = np.where(y > 0, 1.0, -1.0)
+        rows, cnt = np.unique(np.hstack([X, s[:, None]]), axis=0, return_counts=True)
+        Z = rows[:, -1:] * np.hstack([np.ones((len(rows), 1)), rows[:, :-1]])  # y * [1, x]
+        c = cnt / cnt.sum()
+        d = X.shape[1]
+        p = d + 1  # rho = (w0, w)
+
+        def loss_grad(rho):
+            m = Z @ rho
+            loss = float(c @ np.logaddexp(0, -m))
+            g = -(Z.T @ (c / (1 + np.exp(m))))
+            return loss, g
+
+        # variables: rho (p, integer), alpha (d, binary support), theta (1, continuous)
+        nv = p + d + 1
+        lb = np.concatenate([[-50.0], np.full(d, -COEF_BOUND), np.zeros(d), [0.0]])
+        ub = np.concatenate([[50.0], np.full(d, COEF_BOUND), np.ones(d), [np.inf]])
+        integ = np.concatenate([np.ones(p), np.ones(d), [0]])
+        cost = np.zeros(nv); cost[-1] = 1.0
+        link_rows, link_lo, link_hi = [], [], []
+        for j in range(d):  # |w_j| <= 5 alpha_j
+            r = np.zeros(nv); r[1 + j] = 1; r[p + j] = -COEF_BOUND
+            link_rows.append(r); link_lo.append(-np.inf); link_hi.append(0.0)
+            r = np.zeros(nv); r[1 + j] = 1; r[p + j] = COEF_BOUND
+            link_rows.append(r); link_lo.append(0.0); link_hi.append(np.inf)
+        r = np.zeros(nv); r[p:p + d] = 1
+        link_rows.append(r); link_lo.append(0.0); link_hi.append(float(min(self.k, d)))
+        cuts, cut_lo = [], []
+        rho = np.zeros(p)
+        pos = c @ (Z[:, 0] > 0)
+        rho[0] = float(np.clip(np.round(np.log(max(pos, 1e-9) / max(1 - pos, 1e-9))), -50, 50))
+        best_rho, ub_loss, lb_loss = rho.copy(), np.inf, 0.0
+        # warm start, as RiskSLIM's initialization does with rounding heuristics: the rounded solutions of
+        # the L1 path (FasterRisk's star-ray rounding), each with its best integer intercept, give the
+        # first incumbent and a cut each
+        from fasterrisk.rounding import starRaySearchModel
+        ray = starRaySearchModel(X=X, y=s, lb=-COEF_BOUND, ub=COEF_BOUND, num_ray_search=20)
+        ints = np.arange(-50, 51, dtype=float)
+        for S in _l1_path_supports(X, y, self.k, n_c=20):
+            w = _star_ray_round(X, y, *_logistic_refit(X, y, S), ray=ray)
+            if not np.any(w):
+                continue
+            sw = Z[:, 1:] @ w
+            losses = [float(c @ np.logaddexp(0, -(sw + Z[:, 0] * b))) for b in ints]
+            cand = np.concatenate([[ints[int(np.argmin(losses))]], w])
+            l_, g_ = loss_grad(cand)
+            r = np.zeros(nv); r[:p] = -g_; r[-1] = 1.0
+            cuts.append(r); cut_lo.append(l_ - g_ @ cand)
+            if l_ < ub_loss:
+                ub_loss, best_rho = l_, cand.copy()
+        it = 0
+        while time.perf_counter() - t0 < self.time_limit:
+            loss, g = loss_grad(rho)
+            if loss < ub_loss:
+                ub_loss, best_rho = loss, rho.copy()
+            r = np.zeros(nv); r[:p] = -g; r[-1] = 1.0   # theta >= loss + g.(rho' - rho)
+            cuts.append(r); cut_lo.append(loss - g @ rho)
+            if ub_loss - lb_loss <= 1e-6 * max(ub_loss, 1e-12):
+                break
+            A = np.vstack(link_rows + cuts)
+            lo = np.array(link_lo + cut_lo); hi = np.array(link_hi + [np.inf] * len(cuts))
+            left = self.time_limit - (time.perf_counter() - t0)
+            if left <= 0.5:
+                break
+            res = milp(cost, constraints=LinearConstraint(A, lo, hi), integrality=integ, bounds=Bounds(lb, ub),
+                       options={"time_limit": left, "disp": False, "mip_rel_gap": 1e-9})
+            if res.x is None:
+                break
+            lb_loss = max(lb_loss, float(getattr(res, "mip_dual_bound", res.fun) or res.fun)) if res.status == 0 else lb_loss
+            rho = np.round(res.x[:p])
+            it += 1
+        self.coef_ = best_rho[1:]
+        self.intercept_ = float(best_rho[0])
+        self.optimal_ = bool(ub_loss - lb_loss <= 1e-6 * max(ub_loss, 1e-12))
+        self.stop_reason_ = f"{'optimal' if self.optimal_ else 'time'} it={it} gap={ub_loss - lb_loss:.2e}"
+        return self
+
+
+class AbessSeqRound(_Base):
+    """abess (Zhu et al., JMLR 2022) best-subset logistic regression by splicing, fit at every
+    support size 1..k; each solution is rounded by FasterRisk's star-ray sequential rounding and
+    the rounding with the lowest calibrated loss is kept."""
+
+    def fit(self, X, y):
+        from abess import LogisticRegression as AbessLR
+        from fasterrisk.rounding import starRaySearchModel
+        ray = starRaySearchModel(X=X, y=np.where(y > 0, 1.0, -1.0), lb=-COEF_BOUND, ub=COEF_BOUND, num_ray_search=20)
+        pool = []
+        for s_ in range(1, min(self.k, X.shape[1]) + 1):
+            m = AbessLR(support_size=s_, thread=1).fit(X, y)
+            pool.append(_star_ray_round(X, y, float(m.intercept_), np.asarray(m.coef_, float).ravel(), ray=ray))
+        self.coef_ = _best_of_pool(X, y, pool)
+        return self
+
+
+class FastSparseSeqRound(_Base):
+    """fastSparse (Liu et al., AISTATS 2022; the L0Learn line, package fastsparsegams): the L0L2
+    logistic path with coefficients boxed to [-5, 5]; every path solution with at most k nonzero
+    coefficients is rounded by FasterRisk's star-ray sequential rounding, and the rounding with the
+    lowest calibrated loss is kept."""
+
+    def fit(self, X, y):
+        import fastsparsegams
+        from fasterrisk.rounding import starRaySearchModel
+        d = X.shape[1]
+        ray = starRaySearchModel(X=X, y=np.where(y > 0, 1.0, -1.0), lb=-COEF_BOUND, ub=COEF_BOUND, num_ray_search=20)
+        m = fastsparsegams.fit(X, np.where(y > 0, 1.0, -1.0), loss="Logistic", penalty="L0L2",
+                               max_support_size=min(self.k, d), num_gamma=1, gamma_max=1e-3, gamma_min=1e-3,
+                               lows=-COEF_BOUND * np.ones(d), highs=COEF_BOUND * np.ones(d))
+        ch = m.characteristics()
+        pool = []
+        for lam, size in zip(ch["l0"], ch["support_size"]):
+            if 0 < size <= self.k:
+                c = np.asarray(m.coeff(lambda_0=lam, gamma=1e-3).todense()).ravel()
+                pool.append(_star_ray_round(X, y, c[0], c[1:], ray=ray))
+        self.coef_ = _best_of_pool(X, y, pool)
+        return self
+
+
+class OKRidgeSeqRound(_Base):
+    """OKRidge (Liu et al., NeurIPS 2023): the certifiably optimal k-sparse support for ridge
+    regression of the +-1 labels (a squared-loss proxy for the log loss), found by branch and bound
+    within half the time limit; a logistic model is refit on that support and rounded by FasterRisk's
+    star-ray sequential rounding."""
+
+    def fit(self, X, y):
+        from okridge.tree import BNBTree
+        d = X.shape[1]
+        k = min(self.k, d)
+        Xc = X - X.mean(0)
+        ok = np.std(Xc, axis=0) > 0
+        tree = BNBTree(Xc[:, ok], np.where(y > 0, 1.0, -1.0), lambda2=1e-3)
+        _, beta, gap, _, _ = tree.solve(min(k, int(ok.sum())), gap_tol=1e-4, time_limit=0.5 * self.time_limit)
+        S = np.flatnonzero(ok)[np.flatnonzero(np.abs(np.asarray(beta).ravel()) > 1e-10)]
+        self.coef_ = _best_of_pool(X, y, [_star_ray_round(X, y, *_logistic_refit(X, y, S))])
+        self.stop_reason_ = f"okridge gap={float(gap):.2g}"
+        return self
+
+
+class PSL(_Base):
+    """Probabilistic scoring lists (Hanselle et al., Machine Learning 2025; package scikit-psl,
+    vendored): features and integer scores in {-5..5} \\ {0} are added greedily, one stage at a
+    time, choosing at each stage the (feature, score) whose calibrated list has the lowest expected
+    entropy; stopped after k stages. The harness refits its own logistic risk curve on the total
+    score (PSL itself calibrates each total by isotonic regression)."""
+
+    def fit(self, X, y):
+        from skpsl import ProbabilisticScoringList
+        m = ProbabilisticScoringList(score_set={-5, -4, -3, -2, -1, 1, 2, 3, 4, 5}, lookahead=1, n_jobs=1,
+                                     max_stages=min(self.k, X.shape[1])).fit(X, y)
+        coef = np.zeros(X.shape[1])
+        for f, s_ in zip(m.features[:self.k], m.scores[:self.k]):
+            coef[int(f)] = s_
+        self.coef_ = coef
+        return self
+
+
+BASELINES = {"fasterrisk": FasterRisk, "fasterrisk_wide": FasterRiskWide, "riskslim": RiskSLIM, "slim_milp": SlimMILP,
+             "rounded_lr": RoundedLR, "imodels_slim": ImodelsSLIM, "unit_weighting": UnitWeighting,
+             "autoscore": AutoScore, "l1path_seqround": L1PathSeqRound, "cpa_highs": CuttingPlaneHiGHS,
+             "abess_seqround": AbessSeqRound, "fastsparse_seqround": FastSparseSeqRound,
+             "okridge_seqround": OKRidgeSeqRound, "psl": PSL, "continuous_beam": ContinuousBeam}
 INTEGER = {name: name != "continuous_beam" for name in BASELINES}
 
 

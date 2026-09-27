@@ -1,2 +1,2 @@
 commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_over_limit,integer,status,model_name,description
-,0.00030,47.262,0.7927,0.32710,0,0,0,true,baseline,fasterrisk_wide,"FasterRisk with every search width raised (beam 50x50, pool 200, 100 swaps, 100 multipliers)"
+,0.00031,47.262,0.7927,0.32710,0,0,0,true,baseline,fasterrisk_wide,"FasterRisk with every search width raised (beam 50x50, pool 200, 100 swaps, 100 multipliers)"

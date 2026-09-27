@@ -67,3 +67,23 @@ RiskSLIM (JMLR 2019, Table 2) and FasterRisk (NeurIPS 2022, Table 2) use mostly 
 - FasterRisk's [example notebook](https://github.com/jiachangliu/FasterRisk/blob/main/docs/example.ipynb) downloads a fixed adult train/test split from Google Drive with `fasterrisk.utils.download_file_from_google_drive` (file ids `1nuWn0QVG8tk3AN4I4f3abWLcFEP3WPec` train, `1TyBO02LiGfHbatPWU4nzc8AndtIF-7WH` test) and a raw Pima diabetes file (`184JhmJiSEUiBCo8ySAD8adDn_S9rjmjM`) for its binarization demo. The FasterRisk repo has no `data/` folder.
 - COMPAS, FICO and Netherlands are binarized in FasterRisk with threshold dummies `1[x_j <= theta]` for every unique value theta (1,000 quantiles for two Netherlands age features), following Sec. C2 of the fastSparse paper; the processed files are not published, so they must be rebuilt from the raw sources.
 - SLIM's processed datasets are in the paper's Online Resource 1 (Springer supplementary material).
+
+## Package search for runnable baselines (2026-09-27)
+
+Tested in a Python 3.12 / numpy 2 environment on a 500 x 30 binary problem with k = 5:
+
+| package | installs? | used as |
+|---|---|---|
+| scikit-psl 0.7.2 (MIT) | pins numpy<2; `--no-deps` plus a two-line fix (`np.unique` returns a 2-D inverse on numpy 2) | `psl`, vendored |
+| abess 0.4.11 (GPL-3) | yes | `abess_seqround` |
+| fastsparsegams 0.2.0 (MIT) | yes (the fastSparse / L0Learn code base) | `fastsparse_seqround` |
+| okridge 0.1.1 (BSD-3) | pins numpy<2; `--no-deps` works, one call to a removed method fixed | `okridge_seqround`, vendored |
+| skscope 0.1.8 (MIT) | yes (needs jax) | not used: same solution as abess |
+| scorepyo 0.2.3 (MIT) | hard pins on 2022 packages; runs with workarounds | not used: abandoned |
+| optbinning 1.0.0, scorecardpy 0.1.9.7 | yes | not used: weight-of-evidence scorecards, not sparse integer points |
+| l0learn 0.4.3 | no Python 3.12 wheel, no sdist | not used: fastsparsegams covers it |
+| GFR-Experiments | research code over `fasterrisk` | not used: equals FasterRisk without feature groups |
+| RiskSLIM on SCIP (pyscipopt MINLP, written for the test) | yes | not used: no incumbent within 60 s; `cpa_highs` implements RiskSLIM's cutting planes with HiGHS instead |
+
+No open-solver port of RiskSLIM exists (ustunb/risk-slim issue #31 asks for one); AutoScore is R-only
+and is reimplemented as `autoscore`.

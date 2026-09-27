@@ -26,6 +26,14 @@ DESCRIPTIONS = {
     "slim_milp": "SLIM (Ustun & Rudin 2016), 0-1 loss MILP solved by HiGHS within the time limit",
     "rounded_lr": "L1 logistic regression tuned to k features, refit, scaled to a largest point of 5, rounded",
     "imodels_slim": "imodels 3.0.2 SLIMClassifier without a MIP solver (rounded L2 logistic), penalty searched to k",
+    "unit_weighting": "unit weighting: L1-selected features (at most k), each worth +1 or -1 by its sign",
+    "autoscore": "AutoScore (Xie et al. 2020) on binary features: RF ranking, LR, coefficients / smallest, rounded",
+    "l1path_seqround": "FasterRisk's star-ray sequential rounding on every L1-path support of size <= k",
+    "cpa_highs": "RiskSLIM's cutting-plane algorithm with the open-source HiGHS MILP solver (re-solved each round), time limit",
+    "abess_seqround": "abess best-subset logistic (sizes 1..k), FasterRisk's star-ray sequential rounding",
+    "fastsparse_seqround": "fastSparse L0L2 logistic path (support <= k, box [-5,5]), star-ray sequential rounding",
+    "okridge_seqround": "OKRidge optimal k-sparse ridge support, logistic refit, star-ray sequential rounding",
+    "psl": "probabilistic scoring list (scikit-psl 0.7.2), scores in +-{1..5}, k greedy stages",
     "continuous_beam": "reference, real-valued: FasterRisk's k-sparse beam search before rounding",
 }
 
