@@ -49,7 +49,7 @@ if __name__ == "__main__":
                             time_limit=args.time_limit, jobs=args.jobs, integer=INTEGER[name])
         print_summary(label, s, args.time_limit)
         print(f"total_seconds: {time.time() - t0:.1f}s")
-        if not args.no_record and datasets is None and ks is None:
+        if not args.no_record and datasets is None and (ks is None or args.suite != "visible"):
             prefix = "" if args.suite == "visible" else f"{args.suite}_"
             if args.time_limit != TIME_LIMIT:
                 prefix += f"t{args.time_limit:g}_"

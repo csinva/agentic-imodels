@@ -39,7 +39,7 @@ import traceback
 
 import numpy as np
 
-from suite import (COEF_BOUND, HARD_LIMIT_FACTOR, K_VALUES, RESULTS_DIR, SRC_DIR, TIME_LIMIT,
+from suite import (COEF_BOUND, DATA_DIR, HARD_LIMIT_FACTOR, K_VALUES, RESULTS_DIR, SRC_DIR, TIME_LIMIT,
                    load_problem, suite_datasets)
 
 THREAD_VARS = ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMBA_NUM_THREADS",
@@ -206,7 +206,7 @@ def run_problems(spec, problems, suite="visible", time_limit=TIME_LIMIT, jobs=14
     sizes = {}
     for name, k in problems:
         if name not in sizes:
-            z = np.load(os.path.join(os.path.dirname(SRC_DIR), "data", suite, f"{name}.npz"))
+            z = np.load(os.path.join(DATA_DIR, suite, f"{name}.npz"))
             sizes[name] = z["Xtr"].shape[0] * z["Xtr"].shape[1]
     todo = sorted(problems, key=lambda p: -sizes[p[0]] * p[1])  # largest first
     results, workers = {}, []

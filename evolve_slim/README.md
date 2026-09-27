@@ -18,6 +18,38 @@ The harness computes the inner minimum itself, so a solver is judged only by its
 starting solver `pyfasterrisk_v1` is FasterRisk flattened into one file; it reproduces the
 published package's losses exactly.
 
+## Results
+
+Two loop sessions ran in parallel for about 90 minutes each (`runs/sep26-run1`, asked to lower the
+loss; `runs/sep26-run2`, asked to go faster; prompts in [PROMPTS.md](PROMPTS.md)). Both found the same
+two main changes: FasterRisk's continuous stage rebuilt with numba on compressed rows and Newton
+fits, and a local search over the integer points scored by the harness's own calibrated loss. The
+shipped solver is run 2's `v35_scratch` (the same points as its best kept `v34_gemm`, plus
+deadlines); it became `FastRiskScoreClassifier` in imodels.
+
+| | loss (visible) | AUC | time | loss (hidden, 27 TabArena) | AUC | time | loss (full size, k=5) | AUC | time |
+|---|---|---|---|---|---|---|---|---|---|
+| **v35_scratch (shipped)** | **0.3559** | **0.842** | **0.038 s** | **0.3270** | **0.794** | **0.057 s** | **0.3279** | **0.793** | **0.079 s** |
+| FasterRisk | 0.3603 | 0.841 | 1.51 s | 0.3272 | 0.793 | 3.28 s | 0.3282 | 0.790 | 4.82 s |
+| FasterRisk, wide search | 0.3582 | 0.841 | 18.2 s | 0.3271 | 0.793 | 47.3 s | | | |
+| rounded L1 logistic | 0.4096 | 0.812 | 0.068 s | 0.3547 | 0.743 | 0.18 s | 0.3581 | 0.744 | 0.3 s |
+| imodels SLIMClassifier | 0.4260 | 0.789 | 0.26 s | 0.3583 | 0.736 | 0.81 s | 0.3612 | 0.732 | 1.4 s |
+| SLIM (HiGHS) | 0.4371 | 0.767 | 49 s | 0.3895 | 0.642 | 60 s | 0.3835 | 0.647 | 542 s |
+| RiskSLIM (CPLEX CE) | 0.4524 | 0.718 | 14 s | 0.4046 | 0.568 | 10 s | 0.4031 | 0.560 | 16 s |
+| real-valued k-sparse (not integer) | 0.3574 | 0.844 | 0.87 s | 0.3265 | 0.795 | 1.56 s | 0.3275 | 0.794 | 2.3 s |
+
+Mean training log loss (the criterion), mean test AUC, geometric-mean fit time; one core per problem.
+Per problem against FasterRisk: lower loss on 54 / 90 / 21 problems and higher on 1 / 5 / 0 (visible
+70, hidden 135, full size 27); median speed-up 43x / 54x / 50x. RiskSLIM returns no score on 25 / 102 /
+22 problems at the CPLEX Community Edition's size limit. On 50 problems small enough to enumerate every
+score (`benchmarks/exhaustive_check.py`), v35 finds the optimum on 49 and FasterRisk on 28. All numbers
+in the post come from `benchmarks/post_numbers.py`; its figure from imodels'
+`docs/pages/fastriskscore_pareto.py`.
+
+The loss gain on the held-out sets is small (0.00025 on average, a third of the gap to the real-valued
+model): most of the visible-set gain came from datasets with real-valued columns, where FasterRisk's
+rounding loses a feature, and every held-out dataset is binarized.
+
 ## Layout
 
 | path | what it is |
@@ -35,7 +67,9 @@ published package's losses exactly.
 | `LITERATURE.md` | the related work |
 | `PROMPTS.md` | the prompts that drove the search |
 | `runs/<tag>/` | one folder per loop session: the agent's leaderboard and a snapshot of every attempt |
-| `benchmarks/` | held-out evaluation of the shipped solver and the baselines |
+| `benchmarks/` | held-out evaluation (`run_hidden.sh`, `run_heldout_rest.sh`, `eval_solver.py`), the exhaustive check, `post_numbers.py` |
+| `results/` | leaderboards and per-problem rows: visible (`*.csv`), hidden (`hidden_*`), full size (`hidden_full_t600_*`), wide FasterRisk reference (`t1200_*`) |
+| `backfill_regret.py` | rewrites every leaderboard's regret after `src/best_known.csv` is refreshed |
 
 ## Metrics
 
