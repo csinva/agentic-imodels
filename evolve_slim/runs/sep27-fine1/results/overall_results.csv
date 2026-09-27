@@ -1,0 +1,35 @@
+commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_over_limit,integer,status,model_name,description
+,0.00181,2.156,0.8483,0.34282,0,0,0,true,baseline,fasterrisk,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.07385,0.164,0.7945,0.41485,0,0,0,true,baseline,rounded_lr,"L1 logistic regression tuned to k features, refit, scaled to a largest point of 5, rounded"
+,0.01669,0.344,0.8400,0.35769,0,0,0,true,baseline,abess_seqround,"abess best-subset logistic (sizes 1..k), FasterRisk's star-ray sequential rounding"
+,0.01403,0.183,0.8444,0.35504,0,0,0,true,baseline,fastsparse_seqround,"fastSparse L0L2 logistic path (support <= k, box [-5,5]), star-ray sequential rounding"
+,0.06261,0.382,0.8234,0.40362,0,0,0,true,baseline,autoscore,"AutoScore (Xie et al. 2020) on binary features: RF ranking, LR, coefficients / smallest, rounded"
+,0.00141,1.203,0.8497,0.34241,0,0,0,false,baseline,continuous_beam,"reference, real-valued: FasterRisk's k-sparse beam search before rounding"
+,0.00019,0.068,0.8496,0.34119,0,0,0,true,eval,v35_scratch,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00019,0.067,0.8496,0.34119,0,0,0,true,keep,fine_v1,v35_scratch unchanged (the shipped FastRiskScore solver) on the fine suite: every numeric column split at its 99 percentiles
+,-0.00143,0.253,0.8476,0.33958,0,0,0,true,keep,f2_chainils,"chain ILS: nested columns detected from data; w_j += delta moves, all swaps and a per-chain DP over step functions scored by cumulative chain passes; then kicks (drop 1-2 support columns, re-descend, patience 10)"
+,-0.00149,0.149,0.8483,0.33951,0,0,0,true,keep,f3_lazyswap,f2 + exact Newton-point loss only for the 64 best moves by the quadratic model; swaps evaluated only when no value change / addition / chain DP move improves
+,-0.00175,0.203,0.8469,0.33926,0,0,0,true,keep,f4_pat25,f3 with kick patience 25 (max 200 kicks)
+,-0.00160,0.212,0.8480,0.33941,0,0,0,true,discard,f5_walk,f4 + kicks walk over local optima within 0.2% of the current one (back to the best after every 5 fails)
+,-0.00157,0.193,0.8469,0.33944,0,0,0,true,discard,f6_seed1,f4 with kick seed 1 (noise check)
+,-0.00105,0.229,0.8464,0.33995,0,0,0,true,discard,f7_exact64,"f4 + the 64 best moves by the quadratic model are scored by their exact calibrated loss (Newton in (a, b) on the score histogram) instead of the loss at one trust-region Newton point"
+,-0.00186,0.252,0.8473,0.33915,0,0,0,true,discard,f8_elite,f4 + kicks rotate over an elite of the 4 best distinct local optima (replace the worst when a new distinct one beats it)
+,-0.00175,0.233,0.8469,0.33925,0,0,0,true,discard,f9_swapdp,f4 + swap+DP moves at local optima: remove one support column and re-optimise the step function (budget +1) of the 2 chains holding the best swap-ins
+,-0.00152,0.234,0.8472,0.33948,0,0,0,true,discard,f11_enumkick,"f4 but kicks enumerate every single and pair of support columns of the incumbent once (random order), restarting on improvement; stop when exhausted"
+,-0.00137,0.201,0.8464,0.33964,0,0,0,true,keep,f12_tr2,"f4 (ILS refactored, same moves) + the 64 Newton-point evaluations are split between the best moves by the quadratic model in the large trust region and in a 4x smaller one (fewer false positives among large moves)"
+,-0.00094,0.133,0.8490,0.34007,0,0,0,true,discard,f15_adapat,"f12 + float32 BLAS in the move estimates; adaptive kick patience: 8 failed kicks, +8 per improving kick (cap 60)"
+,-0.00156,0.218,0.8464,0.33944,0,0,0,true,discard,f17_adapat2,"f12 + float32 BLAS in the estimates; kick patience 25, +25 per improving kick (cap 100)"
+,-0.00137,0.180,0.8465,0.33964,0,0,0,true,keep,f19_speed,"f12 + float32 BLAS in the move estimates, scores from the CSC nonzeros of the support, blocked transpose, no row reordering when rows are unique (same search)"
+,-0.00149,0.173,0.8465,0.33952,0,0,0,true,discard,f20_dpmargin,"f19 + DP moves within 1% above the current loss at fixed (a, b) are also checked exactly (best 4 by the fixed-(a, b) loss, own quota), since re-calibration can make them improve"
+,-0.00173,0.214,0.8464,0.33927,0,0,0,true,keep,f21_errphase,"f19 + error phase: when the kicks stall, a local search on the number of training errors of the best score threshold (ties by the exact calibrated loss), then a loss polish; if it improves, kick again (up to 4 rounds)"
+,-0.00153,0.189,0.8479,0.33948,0,0,0,true,discard,f23_dptop,f21 + chain DP only on the chains in the support and the 3 empty chains with the best single additions (was: every chain); DP budget up to the chain's current steps + 1 (was capped at 4)
+,-0.00153,0.202,0.8479,0.33948,0,0,0,true,discard,f24_pat35,f23 with kick patience 35 (max 300 kicks per round)
+,-0.00172,0.198,0.8464,0.33929,0,0,0,true,discard,f25_dp2,"f21 + DP on empty chains looks for exactly 2 steps (1 step = single addition, already scored; was up to 4), and on support chains up to current steps + 1 (was capped at 4)"
+,-0.00218,0.383,0.8465,0.33882,0,0,0,true,keep,f26_errkick,"f21 + the error phase is an iterated search on the error landscape (own incumbent, plateau moves accepted, 1-2 column drops + error descent, every point polished on the loss; stop after 10 steps without a loss or error improvement)"
+,-0.00218,0.254,0.8465,0.33882,0,0,0,true,keep,f27_errgate,f26 with the error phase only when the incumbent misclassifies < 5% of the training rows (nearly separable)
+,-0.00218,0.272,0.8465,0.33882,0,0,0,true,discard,f28_ep20,f27 with error-phase patience 20 (was 10)
+,-0.00216,0.249,0.8464,0.33885,0,0,0,true,discard,f29_rm4,f27 + swaps only from the 4 support columns whose removal costs least (exact calibrated loss after removal)
+,-0.00215,0.248,0.8465,0.33885,0,0,0,true,discard,f30_errfast,"f27 + shared bins / level tables for the DP of all empty chains; error counts by difference arrays (one scan per move, no histogram copies); error-descent swaps only when no single change lowers the error count"
+,-0.00218,0.259,0.8465,0.33882,0,0,0,true,keep,f31_fastsame,"f27 + shared bins / level tables for the DP of all empty chains and error counts by difference arrays (identical points, less time)"
+,-0.00218,0.236,0.8465,0.33882,0,0,0,true,discard,f34_gate10,f31 with the error phase gate at 10% training errors (was 5%)
+,-0.00216,0.293,0.8471,0.33885,0,0,0,true,discard,f35_elite,"f31 + loss kicks rotate over an elite of the 4 best distinct local optima (from the starts and the kicks), not only the incumbent"

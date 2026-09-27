@@ -1,0 +1,7 @@
+commit,n_certified,n_certified_tiny,n_wrong,geo_mean_time,mean_regret,mean_test_auc,status,model_name,description
+,11,60,0,0.270,0.00010,0.8424,keep,exact_v1,"v35 incumbent; certificate by enumerating every support of size k (k <= 4), pruned by the saturated-entropy bound, with every integer point vector enumerated on the survivors"
+,34,60,0,6.763,0.00009,0.8423,keep,x2_lrtree,"lex support tree pruned by the Fenchel-dual LR bound of T u C (family), leaves by saturated + dual LR bounds on cells, survivors by integer B&B with LR relaxations (fixed combo column + free reals)"
+,41,60,0,3.693,0.00009,0.8423,keep,x3_dynenum,x2 + per-node dynamic candidate order (|v|^2 var) + cost model: subtrees with few leaves are enumerated leaf by leaf in numba (pair_scan) instead of family bounds; trivial certificate when UB meets the saturated loss
+,43,60,0,3.241,0.00009,0.8423,keep,x4_fastleaf,"x3 + O(nnz_j) leaf cells for two-valued columns, leaf LR warm start from the LR of T, own Cholesky, deterministic work-count cost model, pair_scan compiled at import"
+,45,60,0,2.391,0.00009,0.8423,keep,x5_pairgram,"x4 + pair enumeration from per-cell pair counts (one O(sum nnz^2) pass per T, rarer value listed), entropy from an x log x table of integer counts"
+,45,60,0,2.726,0.00009,0.8423,,x6_wald,"x5 + Wald-statistic candidate order at internal nodes, no recomputation of a node's own family bound for its first child, family LR gives up after 2 Newton steps when the Newton model predicts an optimum below UB"

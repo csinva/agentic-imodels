@@ -41,3 +41,29 @@ instructions (`program.md`) and one extra paragraph of focus.
 > (geo_mean_time) without raising the training loss (mean_regret), and then use the saved time
 > to lower the loss. Profile where the starting solver spends its time before optimizing. [...]
 > Do at least 40 iterations.
+
+## Second round (September 27): new baselines, then loops aimed at a breakthrough
+
+> Search, implement, and test more baselines
+
+(Eight baselines were added: `src/baselines.py`, `LITERATURE.md`.)
+
+> Think harder and do more autoresearch loops. Try to get through a real breakthrough
+
+The orchestrating agent first measured where headroom was left. On the decile suite the shipped
+solver is within 0.0005 of the real-valued model's loss on the hidden set and optimal on 49 of 50
+enumerable problems, so more loops there could gain little. Two new tracks were built instead
+(`tracks/fine`, `tracks/exact`), each run by two loop sessions with the track's `program.md` and
+one paragraph of focus:
+
+- `runs/sep27-exact1`: "think hard about the mathematics of VALID lower bounds that prune whole
+  FAMILIES of supports [...] so certification reaches k = 5, 7, 10 on real datasets. Before coding a
+  bound, write its proof in notes.md; if you cannot prove it, do not use it."
+- `runs/sep27-exact2`: "replace the 11^k enumeration on each surviving support with an exact branch
+  and bound over the integer points [...] make the whole certification fast [...] then any valid
+  pruning of support families you can prove."
+- `runs/sep27-fine1`: "a clearly lower training loss by exploiting the threshold structure: detect
+  nested chains of columns from the data, add threshold moves [...] Think about radical alternatives
+  too, not only tweaks."
+- `runs/sep27-fine2`: "first profile where time goes at this width and make the solver scale [...]
+  then spend the saved time on a much stronger search [...] to lower the training loss clearly."

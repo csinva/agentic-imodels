@@ -93,7 +93,8 @@ HIDDEN = {
 
 def load_openml(did):
     import openml
-    openml.config.cache_directory = os.path.join(os.path.expanduser("~"), ".cache", "imodels-evolve", "openml")
+    # downloads stay next to the project, not in the (slow, full) home directory
+    openml.config.cache_directory = os.environ.get("OPENML_CACHE_DIR", os.path.join(os.path.dirname(HERE), ".cache", "openml"))
     ds = openml.datasets.get_dataset(did, download_data=True, download_qualities=False,
                                      download_features_meta_data=False)
     X, y, cat_mask, names = ds.get_data(target=ds.default_target_attribute, dataset_format="dataframe")

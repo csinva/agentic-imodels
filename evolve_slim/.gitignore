@@ -6,3 +6,4 @@ run*.log
 baselines/risk-slim/
 results/work/
 !results/
+.cache/
