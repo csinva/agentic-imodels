@@ -47,7 +47,7 @@ THREAD_VARS = ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NU
 OVERALL_CSV_COLS = ["commit", "mean_regret", "geo_mean_time", "mean_test_auc", "mean_loss", "n_invalid",
                     "n_killed", "n_over_limit", "integer", "status", "model_name", "description"]
 PROBLEM_CSV_COLS = ["model", "suite", "dataset", "k", "n_train", "d", "status", "seconds", "nnz", "loss",
-                    "best_known", "regret", "auc_train", "auc_test", "loss_test", "a", "b", "points", "note"]
+                    "best_known", "regret", "auc_train", "auc_test", "loss_test", "a", "b", "points", "lower_bound", "note"]
 BEST_KNOWN = os.path.join(SRC_DIR, "best_known.csv")
 
 
@@ -191,7 +191,9 @@ def _worker(conn, spec, suite):
                 conn.send(("no_model", (sec, None, str(getattr(model, "stop_reason_", "") or ""))))
                 continue
             coef = np.asarray(model.coef_, dtype=float).ravel().tolist()
-            conn.send(("ok", (sec, coef, str(getattr(model, "stop_reason_", "") or ""))))
+            lb = getattr(model, "lower_bound_", None)  # optional: a proven lower bound on the best achievable criterion
+            conn.send(("ok", (sec, coef, str(getattr(model, "stop_reason_", "") or ""),
+                              float("nan") if lb is None else float(lb))))
         except Exception:  # noqa: BLE001 - a crashing solver must not abort the suite
             err = [ln.strip() for ln in traceback.format_exc().strip().splitlines() if ln.strip() and set(ln.strip()) != {"^"}]
             conn.send(("crash", (time.perf_counter() - t0, None, " | ".join(err[-3:])[-300:])))
@@ -231,18 +233,18 @@ def run_problems(spec, problems, suite="visible", time_limit=TIME_LIMIT, jobs=14
                 elif kind == "dead":
                     raise RuntimeError(f"solver failed to load:\n{payload}")
                 elif kind in ("ok", "crash", "no_model"):
-                    sec, coef, note = payload
-                    results[w["task"]] = (kind, sec, coef, note)
+                    sec, coef, note, *rest = payload
+                    results[w["task"]] = (kind, sec, coef, note, rest[0] if rest else float("nan"))
                     if verbose:
                         _print_raw(w["task"], results[w["task"]])
                     w["task"] = None
                 elif kind == "died":
                     if w["task"]:
-                        results[w["task"]] = ("crash", time.perf_counter() - w["t0"], None, "worker died")
+                        results[w["task"]] = ("crash", time.perf_counter() - w["t0"], None, "worker died", float("nan"))
                     w["proc"].kill(); workers.remove(w); spawn()
                     continue
             if w["task"] and time.perf_counter() - w["t0"] > hard:
-                results[w["task"]] = ("killed", hard, None, f"killed at {hard:g}s")
+                results[w["task"]] = ("killed", hard, None, f"killed at {hard:g}s", float("nan"))
                 if verbose:
                     _print_raw(w["task"], results[w["task"]])
                 w["proc"].kill(); workers.remove(w); spawn()
@@ -260,7 +262,7 @@ def run_problems(spec, problems, suite="visible", time_limit=TIME_LIMIT, jobs=14
 
 
 def _print_raw(task, res):
-    kind, sec, coef, note = res
+    kind, sec, coef, note, _ = res
     nnz = int(np.count_nonzero(np.round(coef))) if coef is not None else 0
     print(f"  {task[0]:14s} k={task[1]:<3d} {kind:7s} t={sec:7.2f}s nnz={nnz} {note[-120:]}",
           flush=True)
@@ -280,7 +282,7 @@ def evaluate_solver(spec, model_name, suite="visible", datasets=None, ks=None, t
         if name not in cache:
             cache[name] = load_problem(name, suite)
         Xtr, ytr, Xte, yte, feats = cache[name]
-        kind, sec, coef, note = raw[(name, k)]
+        kind, sec, coef, note, lb = raw[(name, k)]
         status = kind
         points = None
         if kind == "ok":
@@ -305,7 +307,7 @@ def evaluate_solver(spec, model_name, suite="visible", datasets=None, ks=None, t
                      "a": sc["a"], "b": sc["b"],
                      "points": json.dumps({feats[j]: (int(points[j]) if integer else round(float(points[j]), 4))
                                            for j in nz}),
-                     "note": note if status != "ok" else ""})
+                     "lower_bound": lb, "note": note if status != "ok" else ""})
     return summarize(rows)
 
 

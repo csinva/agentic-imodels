@@ -15,8 +15,9 @@ hidden    27 binary classification datasets of TabArena (OpenML suite
           tabarena-v0.1), those not already in the visible suite (bank-marketing,
           heloc and diabetes are dropped). Same binarization and row cap. Never
           used during development.
-hidden_full  the same 27 at full size (no row cap). Not committed; rebuild with
-          this script.
+hidden_full  the same 27 at full size (no row cap).
+visible_fine, hidden_fine  the visible datasets (from raw OpenML sources) and the hidden ones
+          with every numeric column split at its 99 percentiles instead of its 9 deciles.
 
 Binarization (for the OpenML datasets)
 --------------------------------------
@@ -70,6 +71,12 @@ VISIBLE = {
     "haberman": ("openml", 43),
 }
 
+# the visible datasets from their raw OpenML sources, for the fine suites (the RiskSLIM files come
+# pre-binarized, so their thresholds cannot be refined)
+VISIBLE_RAW = dict(VISIBLE) | {"adult": ("openml", 1590), "bank": ("openml", 1461), "breastcancer": ("openml", 15),
+                               "mammo": ("openml", 45557), "mushroom": ("openml", 24), "spambase": ("openml", 44)}
+FINE_THRESHOLDS = 99  # percentiles 1..99 in the fine suites, deciles otherwise
+
 # TabArena v0.1 binary classification datasets, minus those in VISIBLE
 HIDDEN = {
     "Amazon_employee_access": 46905, "APSFailure": 46908, "Bank_Customer_Churn": 46911,
@@ -113,7 +120,7 @@ def subsample(X, y, max_rows):
     return X.iloc[idx].reset_index(drop=True), y[idx]
 
 
-def binarize(Xtr, Xte, ytr, cats):
+def binarize(Xtr, Xte, ytr, cats, n_thresholds=9):
     """Indicator features fitted on the train split; returns (Btr, Bte, names)."""
     if Xtr.shape[1] > MAX_COLUMNS:
         enc = pd.DataFrame({c: (Xtr[c].astype(str).astype("category").cat.codes if c in cats
@@ -149,14 +156,15 @@ def binarize(Xtr, Xte, ytr, cats):
         if len(vals) == 2:
             add(f"{c}={vals[1]:g}", a == vals[1], b == vals[1])
             continue
-        thresholds = np.unique(np.quantile(a[~miss_a], np.arange(1, 10) / 10, method="lower"))
+        thresholds = np.unique(np.quantile(a[~miss_a], np.arange(1, n_thresholds + 1) / (n_thresholds + 1),
+                                            method="lower"))
         for t in thresholds:
             if t < vals[-1]:
                 add(f"{c}<={t:g}", (a <= t) & ~miss_a, (b <= t) & ~miss_b)
     return np.stack(cols_tr, 1), np.stack(cols_te, 1), names
 
 
-def build(name, source, out_dir, max_rows):
+def build(name, source, out_dir, max_rows, n_thresholds=9):
     kind, key = source
     if kind == "riskslim":
         X, y = load_riskslim(key)
@@ -171,7 +179,7 @@ def build(name, source, out_dir, max_rows):
         keep = [c for c in X.columns if Xtr[c].min() != Xtr[c].max()]
         Btr, Bte, names = Xtr[keep].to_numpy(np.float32), Xte[keep].to_numpy(np.float32), keep
     else:
-        Btr, Bte, names = binarize(Xtr, Xte, ytr, cats)
+        Btr, Bte, names = binarize(Xtr, Xte, ytr, cats, n_thresholds)
     os.makedirs(out_dir, exist_ok=True)
     np.savez_compressed(os.path.join(out_dir, f"{name}.npz"), Xtr=Btr, ytr=ytr, Xte=Bte, yte=yte,
                         feature_names=np.array(names))
@@ -189,10 +197,13 @@ if __name__ == "__main__":
     only = {s for s in args.only.split(",") if s}
     plan = {"visible": ({k: v for k, v in VISIBLE.items()}, MAX_ROWS),
             "hidden": ({k: ("openml", v) for k, v in HIDDEN.items()}, MAX_ROWS),
-            "hidden_full": ({k: ("openml", v) for k, v in HIDDEN.items()}, None)}
+            "hidden_full": ({k: ("openml", v) for k, v in HIDDEN.items()}, None),
+            "visible_fine": (VISIBLE_RAW, MAX_ROWS),
+            "hidden_fine": ({k: ("openml", v) for k, v in HIDDEN.items()}, MAX_ROWS)}
     for suite in args.suites.split(","):
         datasets, max_rows = plan[suite]
-        rows = [build(n, s, os.path.join(HERE, suite), max_rows) for n, s in datasets.items()
+        nt = FINE_THRESHOLDS if suite.endswith("_fine") else 9
+        rows = [build(n, s, os.path.join(HERE, suite), max_rows, nt) for n, s in datasets.items()
                 if not only or n in only]
         if not only:
             pd.DataFrame(rows).to_csv(os.path.join(HERE, suite, "manifest.csv"), index=False)

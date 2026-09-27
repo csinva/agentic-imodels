@@ -1,0 +1,8 @@
+commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_over_limit,integer,status,model_name,description
+,0.00181,2.156,0.8483,0.34282,0,0,0,true,baseline,fasterrisk,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.07385,0.164,0.7945,0.41485,0,0,0,true,baseline,rounded_lr,"L1 logistic regression tuned to k features, refit, scaled to a largest point of 5, rounded"
+,0.01669,0.344,0.8400,0.35769,0,0,0,true,baseline,abess_seqround,"abess best-subset logistic (sizes 1..k), FasterRisk's star-ray sequential rounding"
+,0.01403,0.183,0.8444,0.35504,0,0,0,true,baseline,fastsparse_seqround,"fastSparse L0L2 logistic path (support <= k, box [-5,5]), star-ray sequential rounding"
+,0.06261,0.382,0.8234,0.40362,0,0,0,true,baseline,autoscore,"AutoScore (Xie et al. 2020) on binary features: RF ranking, LR, coefficients / smallest, rounded"
+,0.00141,1.203,0.8497,0.34241,0,0,0,false,baseline,continuous_beam,"reference, real-valued: FasterRisk's k-sparse beam search before rounding"
+,0.00019,0.068,0.8496,0.34119,0,0,0,true,eval,v35_scratch,runs/sep26-run2/slim_lib/v35_scratch.py

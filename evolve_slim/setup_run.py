@@ -28,7 +28,7 @@ SYMLINK_NAMES = ["src"]
 COPY_NAMES = ["slim.py", "results", "program.md"]
 
 
-def setup_run(tag: str) -> str:
+def setup_run(tag: str, track: str = "") -> str:
     evolve_dir = os.path.dirname(os.path.abspath(__file__))
     run_dir = os.path.join(evolve_dir, "runs", tag)
     if os.path.exists(run_dir):
@@ -41,8 +41,9 @@ def setup_run(tag: str) -> str:
             raise FileNotFoundError(f"Missing source path: {src_path}")
         os.symlink(os.path.relpath(src_path, run_dir), os.path.join(run_dir, name))
 
+    base = os.path.join(evolve_dir, "tracks", track) if track else evolve_dir
     for name in COPY_NAMES:
-        src_path = os.path.join(evolve_dir, name)
+        src_path = os.path.join(base, name)
         if not os.path.exists(src_path):
             raise FileNotFoundError(f"Missing source path: {src_path} (run `uv run run_baselines.py` first)")
         if os.path.isdir(src_path):
@@ -58,9 +59,11 @@ def setup_run(tag: str) -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("tag", help="Run tag, e.g. 'sep26-run1'.")
+    parser.add_argument("--track", default="", help="take slim.py, program.md and results/ from tracks/<track>/ "
+                                                    "(e.g. 'exact' or 'fine') instead of the top level")
     args = parser.parse_args()
     try:
-        run_dir = setup_run(args.tag)
+        run_dir = setup_run(args.tag, args.track)
     except (FileExistsError, FileNotFoundError) as e:
         print(f"ERROR: {e}")
         sys.exit(1)
