@@ -1,0 +1,68 @@
+commit,n_certified,n_certified_tiny,n_wrong,geo_mean_time,mean_regret,mean_test_auc,status,model_name,description
+,11,60,0,0.287,0.00010,0.8424,keep,exact_v1,"v35 incumbent; certificate by enumerating every support of size k (k <= 4), pruned by the saturated-entropy bound, with every integer point vector enumerated on the survivors"
+,42,60,0,4.419,0.00005,0.8417,keep,x2_bnb,"v35 incumbent; certificate: numba DFS over all supports of size k with incremental cells, saturated bound, rigorous continuous-LR gap bound, then exact integer B&B per support (prefix fixed, rest relaxed; sign/gcd symmetry); separation + exact column reduction"
+,45,60,0,3.127,0.00005,0.8417,keep,x4_family,"v35 incumbent; certificate: numba DFS over all supports of size k with incremental cells, saturated bound, rigorous continuous-LR gap bound, then exact integer B&B per support (prefix fixed, rest relaxed; sign/gcd symmetry); separation + exact column reduction"
+,48,60,0,2.044,0.00005,0.8417,keep,x5_bits,"v35 incumbent; certificate: numba DFS over all supports of size k with incremental cells, saturated bound, rigorous continuous-LR gap bound, then exact integer B&B per support (prefix fixed, rest relaxed; sign/gcd symmetry); separation + exact column reduction"
+,49,60,0,1.962,0.00005,0.8417,keep,x6_adapt,"v35 incumbent; certificate: numba DFS over all supports of size k with incremental cells, saturated bound, rigorous continuous-LR gap bound, then exact integer B&B per support (prefix fixed, rest relaxed; sign/gcd symmetry); separation + exact column reduction"
+,48,60,0,0.743,0.00009,0.8424,discard,x7_giveup,"v35 incumbent; certificate: numba DFS over all supports of size k with incremental cells, saturated bound, rigorous continuous-LR gap bound, then exact integer B&B per support (prefix fixed, rest relaxed; sign/gcd symmetry); separation + exact column reduction"
+,49,60,0,0.743,0.00009,0.8423,discard,x8_merge,"v35 incumbent; certificate: numba DFS over all supports of size k with incremental cells, saturated bound, rigorous continuous-LR gap bound, then exact integer B&B per support (prefix fixed, rest relaxed; sign/gcd symmetry); separation + exact column reduction"
+,49,60,0,0.745,0.00009,0.8423,keep,x7b_giveup,"v35 incumbent; certificate: numba DFS over all supports of size k with incremental cells, saturated bound, rigorous continuous-LR gap bound, then exact integer B&B per support (prefix fixed, rest relaxed; sign/gcd symmetry); separation + exact column reduction"
+,49,60,0,0.702,0.00009,0.8423,discard,y2_bbskip,"x7b_giveup + B&B: no re-solve at the first nonzero of a prefix (same relaxation), bound reuse for non-primitive prefixes; Cholesky-verified lambda_min in the gap bound"
+,50,60,0,0.624,0.00005,0.8417,keep,y3_lrorder,y2 + per-node candidate lists re-sorted by |coef| x sd after each failed family solve; paired child cells at the leaf level of the bits DFS (one popcount per parent cell)
+,51,60,0,0.666,0.00005,0.8417,keep,y4_famfast,"y3 + family solve on rows merged by the family columns, global exact column dependencies dropped before the family solve"
+,52,60,0,0.654,0.00005,0.8417,keep,y5_packed,"y4 + leaf level of the bits DFS on rows packed per depth s-2 cell (PEXT), cell-major pass over all candidates of a node"
+,52,60,0,0.614,0.00005,0.8417,discard,y6_onerep,"y5 + gap bound from one Hessian (exp(-R umax) scaling of the ball), float32 Gram matrices for the Newton directions of the family solve"
+,51,60,0,0.598,0.00005,0.8417,discard,y7_own,y6 + each smaller support owned by one s-subset (zeros in the B&B only below the first column outside the support); bits DFS for all-binary data up to s = 12
+,52,60,0,0.603,0.00005,0.8417,discard,y8_floor,y7 + family-call success estimate floored at 0.1 (no lock-in after early failures)
+,52,60,0,0.617,0.00005,0.8417,discard,y9_famopt,"y8 + family Newton loop: transposed float32 Gram, incremental scores (recomputed before the bound)"
+,53,60,0,0.604,0.00005,0.8417,keep,y10_screen,"y9 + B&B children screened by the parent's quadratic lower model on a scaled ball (P20), P18 fix, one exp/log1p per cell in the LR solves"
+,53,60,0,0.551,0.00005,0.8417,discard,y11_kj,"y10 + shared-shift relaxation K_j (per T cell intercept + one shift for the new column, arrow Newton + P3) before the leaf LR; success floor only after a family success"
+,53,60,0,0.573,0.00005,0.8417,discard,y12_packed_dual,"y11 + K_j by an exact-feasible entropy dual (no Hessian bound), every DFS depth packed by PEXT, less per-node overhead"
+,53,60,0,0.566,0.00005,0.8417,discard,y13_famskip,"y12 + no repeated family solve on a child whose column set equals the parent's failed one, row merging only when it pays"
+,54,60,0,0.547,0.00005,0.8417,keep,y14_f32fam,"y13 + single-precision first phase in the family Newton solves, reused exp, certificate deadline 0.95 of the limit"
+,55,60,0,0.534,0.00005,0.8417,keep,y15_dups,y14 + duplicate/complementary binary columns enumerated through a representative (supports with a duplicate must hold its representative; ownership of smaller supports on representatives)
+,55,60,0,0.535,0.00005,0.8417,discard,y16_k2,"y15 + two-shift relaxation K2 (free intercept per T' cell, shared shifts for the last two columns, exact-feasible entropy dual) before the leaf LR"
+,55,60,0,0.531,0.00005,0.8417,discard,y17_k2only,y16 + K_j skipped where the stronger K2 applies
+,55,60,0,0.527,0.00005,0.8417,discard,y18_f32T,y17 + float32 family design built in one transposed pass
+,55,60,0,0.458,0.00005,0.8417,keep,y19_giveup2,y18 + earlier give-up (1 s) when the projected finish exceeds 1000 x the budget
+,55,60,0,0.454,0.00005,0.8417,discard,y20_bbcap,"y19 + per-support solve capped by the give-up rule, certificate deadline 0.97 of the limit"
+,55,60,0,0.428,0.00005,0.8417,discard,y21_giveup30,y20 + early give-up at 1 s for projections beyond 30 x the budget; binary warm-up at import
+,55,60,0,0.381,0.00005,0.8417,keep,y22_setup,"y21 + Gram-matrix dependency detection (exactly verified), fast unique rows for two-valued data"
+,55,60,0,0.332,0.00005,0.8417,keep,y23_giveup3,y22 + give-up after 0.4 s when the projection exceeds 300 x the budget
+,55,60,0,0.340,0.00005,0.8417,discard,y24_rerun,y23 unchanged: rerun to measure run-to-run variance (magic 7 margin)
+,55,60,0,0.323,0.00005,0.8417,discard,y25_giveup4,y23 + give-up after 0.2 s when the projection exceeds 1000 x the budget
+,55,60,0,0.339,0.00005,0.8417,discard,y26_codes,y23 + per-column codes of two-valued data without a sort
+,55,60,0,0.365,0.00005,0.8417,discard,y27_keydep,y26 + candidate order by |coef| (no sd factor) when the columns have exact dependencies
+,55,60,0,0.358,0.00005,0.8417,discard,y28_k2early,"y27 + K2 dual tried after Newton steps 0, 2, 5"
+,55,60,0,0.341,0.00005,0.8417,discard,y29_final,"y23 + per-column codes without a sort + K2 dual after Newton steps 0, 2, 5 (no order change)"
+,55,60,0,0.332,0.00005,0.8417,discard,y30_confirm,y23_giveup3 unchanged: confirmation rerun of the best kept solver
+,55,60,0,0.338,0.00005,0.8417,keep,z1_base,y23_giveup3 unchanged (re-recorded in oct02-exact4)
+,55,60,0,0.337,0.00005,0.8417,discard,z2_kr4,"y23 + P26 r-shift relaxation K_4 (free intercept per cell of the first s-4 columns, 4 shared shifts, exact-feasible entropy dual) between K2 and the leaf LR; K2 warm-started from the node one-shift solution"
+,53,60,0,0.341,0.00005,0.8417,discard,z3_famstop,z2 + family calls stopped at a depth after 30 calls with no success at that or any deeper depth; K2 skipped while it discards < 40% (K_4 follows)
+,55,60,0,0.368,0.00005,0.8417,discard,z4_kos,y23 + P26 K_4 relaxation + P27 one-step duals of K_2 and K_4 from node expansion points (no exp/log per leaf) before the full K solves; K2 gate; give-up relaxed to 150x at 1 s and 80x after 3 s
+,56,60,0,0.371,0.00005,0.8417,keep,z5_keydep,"z4 (P26 K_4, P27 one-step K duals, K2 gate, relaxed give-up) + P13 order key |theta| without the sd factor when the data has exact column dependencies"
+,56,60,0,0.373,0.00005,0.8417,discard,z6_krs,"z5 + P26/P27 width r = max(4, s - 3) (K_7 at k = 10)"
+,56,60,0,0.371,0.00005,0.8417,discard,z7_floorfix,"z6 + family success floor only after a real family success (P23 skips no longer count), gate on the r = 2 one-step dual, one-pass ancestor repair in P27"
+,56,60,0,0.379,0.00005,0.8417,discard,z8_kosd,"z7 + P27 generic one-step dual accumulated per depth-t cell from its set bits (no loops over all codes), value bound with precomputed per-cell constants"
+,56,60,0,0.347,0.00005,0.8417,discard,z9_giveback,"z8 (P26 K_r r = max(4, s - 3), P27 one-step K duals, KEYDEP order, family floor fix) with the original give-up rule (12x after 3 s, 30x after 1 s): australian 7 now projects 1-2x"
+,56,60,0,0.359,0.00005,0.8417,discard,z10_nofam,z9 + give up after 3 s when >= 50 family solves have all failed and the projection exceeds 4x the budget
+,56,60,0,0.333,0.00005,0.8417,keep,z11_setup,"z10 + vectorised per-column setup for two-valued data (same arrays), no lexsort of the rows when every DFS depth is packed"
+,56,60,0,0.317,0.00005,0.8417,discard,z12_gu02,z11 + give-up after 0.2 s when the projection exceeds 1000x the budget
+,56,60,0,0.313,0.00005,0.8417,discard,z13_krs2,"z12 + P26/P27 width r = max(4, s - 2)"
+,56,60,0,0.315,0.00005,0.8417,discard,z14_gate25,z12 + K2 / one-step K2 gate at 25% (was 40%)
+,56,60,0,0.296,0.00009,0.8421,keep,z15_starts3,z12 + integer local search from the 3 best rounded solutions (was 5)
+,56,60,0,0.303,0.00009,0.8421,discard,z16_cert975,"z15 + certificate deadline 0.975 of the limit (58.5 s, was 58.2 s)"
+,55,60,0,0.298,0.00009,0.8421,discard,z17_floor02,z16 + family success floor 0.2 (was 0.1)
+,56,60,0,0.299,0.00009,0.8421,discard,z18_floor007,z16 + family success floor 0.07 (was 0.1)
+,56,60,0,0.302,0.00009,0.8421,discard,z19_warm1d,"z16 + leaf LR warm start by a 2-D Newton on (theta_new, intercept) for non-binary leaves (search only)"
+,56,60,0,0.290,0.00009,0.8421,discard,z20_gu03,z19 + 300x give-up level from 0.3 s (was 0.4 s)
+,55,60,0,0.279,0.00009,0.8421,discard,z21_gu2s,z20 + 12x give-up level (and the no-family level) from 2 s (was 3 s)
+,56,60,0,0.286,0.00009,0.8421,discard,z22_gu16,z20 + projection give-up after 3 s at 16x the budget (was 12x): more margin for magic 7
+,52,60,0,0.420,0.00011,0.8420,discard,z23_starts2,"z22 (z15 + warm 2-D leaf LR start, give-up 0.3 s / 16x) + integer local search from the 2 best rounded solutions"
+,56,60,0,0.292,0.00009,0.8421,discard,z24_base,"z22 re-run (z15 + 2-D leaf LR warm start + give-up 0.3 s/300x, 3 s/16x, deadline 0.975)"
+,56,60,0,0.291,0.00009,0.8421,discard,z25_nofam30,"z24 + no-family give-up after 30 failed family solves (was 50), K2 dual not tried after the first Newton step"
+,56,60,0,0.294,0.00009,0.8421,discard,z26_famstop,z25 + give-up / deadline check also before family solves after 1 s (spambase 5/10 were stuck in root family solves)
+,56,60,0,0.292,0.00009,0.8421,discard,z27_gufloor,z26 + per-support LR / B and B time cap from the give-up projection floored at 1 s (was 3 s)
+,55,60,0,0.293,0.00005,0.8417,discard,z28_extrails,z27 + 2 extra integer local-search starts when the certificate is not reached (incumbent only)
+,56,60,0,0.288,0.00005,0.8417,discard,z29_extrails2,"z28 re-run (z28 overlapped heavy load from other users): z15 + 2-D leaf LR warm start, give-up 0.3 s / 3 s 16x / no-family 30 calls, per-support cap floor 1 s, extra local-search starts when not certified"
+,56,60,0,0.282,0.00005,0.8417,discard,z30_cert98,z29 + certificate deadline 0.98 of the limit (58.8 s)
