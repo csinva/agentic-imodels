@@ -3,3 +3,5 @@ commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_ov
 ,nan,0.041,0.7930,0.32416,0,0,0,true,eval,h9_noband,runs/oct02-fine3/slim_lib/h9_noband.py
 ,nan,0.153,0.7924,0.32416,0,0,0,true,eval,v35_scratch,runs/sep26-run2/slim_lib/v35_scratch.py
 ,nan,4.624,0.7917,0.32448,0,0,0,true,baseline,fasterrisk,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,nan,0.024,0.7931,0.32411,0,0,0,true,eval,i21_spat2,runs/oct02-fine4/slim_lib/i21_spat2.py
+,nan,0.021,0.7932,0.32414,0,0,0,true,eval,i30_final,runs/oct02-fine4/slim_lib/i30_final.py
