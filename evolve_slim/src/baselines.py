@@ -27,6 +27,12 @@ fastsparse_seqround  fastSparse / L0Learn L0L2 logistic path (<= k), rounded as 
 okridge_seqround  OKRidge's optimal k-sparse ridge support (squared-loss proxy), logistic
                   refit, rounded as above.
 psl               Probabilistic scoring lists (scikit-psl, vendored), k greedy stages.
+riskscores        riskscores (R, CRAN) risk_mod, annealscore, integer points in [-5, 5], lambda0
+                  path and bisection to <= k points; riskscores_cd the same with riskcd.
+skscope_seqround  skscope ScopeSolver k-sparse logistic regression (sizes 1..k), rounded as above.
+l0learn_seqround  L0Learn (R, CRAN) logistic L0L2 path with CDPSI swaps (<= k), rounded as above.
+okglm_seqround    OKGLM (vendored) branch and bound for box-constrained k-sparse logistic regression,
+                  rounded as above.
 fasterrisk_wide   FasterRisk with every search width raised (beam 50 x 50, pool 200,
                   100 swaps, 100 multipliers); a slow reference for the best known losses.
 continuous_beam   Reference, not integer: FasterRisk's beam search before rounding,
@@ -508,11 +514,169 @@ class PSL(_Base):
         return self
 
 
+R_ENV = os.environ.get("EVOLVE_SLIM_R_ENV", "/data15/chandan/tabular/.r-env")
+SCRATCH = os.environ.get("EVOLVE_SLIM_SCRATCH", "/data15/chandan/tabular/scratch/baselines")
+_R_SERVER = None
+
+
+def _die_with_parent():
+    """Linux: the R worker gets SIGKILL when its harness worker dies (e.g. killed at 3x the time limit),
+    instead of finishing a long fit as an orphan."""
+    try:
+        import ctypes
+        import signal
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG
+    except OSError:
+        pass
+
+
+def _r_fit(X, y, method, k, time_limit, seed=0):
+    """Candidate models from the persistent R worker (baselines/rpkgs/server.R), one per worker process,
+    so R's start-up and package loading happen in the harness's untimed warm-up. Data go through temporary
+    binary files. Returns an array with one row per candidate: (b0, beta_1..beta_d)."""
+    import shutil
+    import subprocess
+    import tempfile
+    global _R_SERVER
+    if _R_SERVER is None or _R_SERVER.poll() is not None:
+        os.makedirs(SCRATCH, exist_ok=True)
+        env = dict(os.environ, R_HOME=os.path.join(R_ENV, "lib", "R"), TMPDIR=SCRATCH)
+        _R_SERVER = subprocess.Popen([os.path.join(R_ENV, "bin", "Rscript"), "--vanilla",
+                                      os.path.join(BASELINES_DIR, "rpkgs", "server.R")],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env,
+                                     preexec_fn=_die_with_parent)
+    tmp = tempfile.mkdtemp(dir=SCRATCH)
+    try:
+        pre = os.path.join(tmp, "p")
+        np.ascontiguousarray(X.T, dtype=np.float64).tofile(pre + ".X")   # column-major for R
+        np.asarray(y, np.float64).tofile(pre + ".y")
+        with open(pre + ".dims", "w") as f:
+            f.write(f"{X.shape[0]} {X.shape[1]}")
+        _R_SERVER.stdin.write(f"{pre} {method} {k} {float(time_limit)} {seed}\n")
+        _R_SERVER.stdin.flush()
+        if _R_SERVER.stdout.readline().strip() != "DONE":
+            raise RuntimeError("R worker stopped")
+        with open(pre + ".out") as f:
+            rows = [np.array(r.split(), float) for r in f.read().splitlines() if r and r != "OK"]
+        return np.array(rows).reshape(-1, X.shape[1] + 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class RiskScores(_Base):
+    """riskscores 1.3.0 (R, CRAN; Eglinton, Tang, Paul et al.): risk_mod with integer points in [-5, 5]
+    and an L0 penalty lambda0, fit along cv_risk_mod's default lambda0 grid (25 values from lambda_max
+    down to 1e-4 lambda_max, sparsest first) on the training set, stopping after two models with more
+    than k points, then bisection on lambda0 toward exactly k points; of the models with 1..k points the
+    one with the lowest calibrated loss is kept. Method annealscore (the package default; simulated
+    annealing) or riskcd (coordinate descent). Run through a persistent Rscript worker (R start-up untimed);
+    the path stops at 90% of the time limit."""
+
+    method = "annealscore"
+
+    def fit(self, X, y):
+        rows = _r_fit(X, y, self.method, self.k, self.time_limit)
+        self.coef_ = _best_of_pool(X, y, [np.round(r[1:]) for r in rows])
+        self.stop_reason_ = f"{len(rows)} models <= k"
+        return self
+
+
+class RiskScoresCD(RiskScores):
+    method = "riskcd"
+
+
+class L0LearnSeqRound(_Base):
+    """L0Learn 2.1.0 (Hazimeh & Mazumder, OR 2020; Dedieu et al., JMLR 2021), the R package from CRAN (the
+    PyPI build, l0learn 0.4.3, has no Python 3.12 wheel): the logistic L0L2 path with coordinate descent and
+    partial swap inescapable local search (CDPSI), 5 values of gamma in [1e-4, 10], support at most k
+    (unbounded: L0Learn has no box constraints for CDPSI; the rounding scales into the box); the last path
+    solution of each support per gamma is rounded by FasterRisk's star-ray sequential rounding and the
+    rounding with the lowest calibrated loss is kept. Run through the persistent Rscript worker."""
+
+    def fit(self, X, y):
+        from fasterrisk.rounding import starRaySearchModel
+        rows = _r_fit(X, y, "l0learn", self.k, self.time_limit)
+        ray = starRaySearchModel(X=X, y=np.where(y > 0, 1.0, -1.0), lb=-COEF_BOUND, ub=COEF_BOUND, num_ray_search=20)
+        seen, pool = set(), []
+        for r in rows:
+            key = tuple(np.round(r, 8))
+            if key not in seen:
+                seen.add(key)
+                pool.append(_star_ray_round(X, y, r[0], r[1:], ray=ray))
+        self.coef_ = _best_of_pool(X, y, pool)
+        self.stop_reason_ = f"{len(pool)} path models"
+        return self
+
+
+class SkscopeSeqRound(_Base):
+    """skscope 0.1.8 (Wang et al., JMLR 2024): k-sparse logistic regression (mean log loss with an
+    intercept, preselected) by its ScopeSolver (splicing), at every support size 1..k, with the objective
+    and its gradient given in numpy; each solution is rounded by FasterRisk's star-ray sequential rounding
+    and the rounding with the lowest calibrated loss is kept."""
+
+    def fit(self, X, y):
+        from scipy.special import expit
+        from skscope import ScopeSolver
+        from fasterrisk.rounding import starRaySearchModel
+        n, d = X.shape
+        s = np.where(y > 0, 1.0, -1.0)
+
+        def objective(p):
+            return float(np.mean(np.logaddexp(0, -s * (p[0] + X @ p[1:]))))
+
+        def gradient(p):
+            r = -s * expit(-s * (p[0] + X @ p[1:])) / n
+            return np.concatenate([[r.sum()], X.T @ r])
+
+        ray = starRaySearchModel(X=X, y=s, lb=-COEF_BOUND, ub=COEF_BOUND, num_ray_search=20)
+        pool = []
+        for size in range(1, min(self.k, d) + 1):
+            p = np.asarray(ScopeSolver(d + 1, size + 1, sample_size=n, preselect=[0]).solve(objective, gradient=gradient))
+            pool.append(_star_ray_round(X, y, float(p[0]), p[1:], ray=ray))
+        self.coef_ = _best_of_pool(X, y, pool)
+        return self
+
+
+class OKGLMSeqRound(_Base):
+    """OKGLM (Liu, Shafiee, Lodi, ICML 2025; vendored in baselines/okglm, CPU): branch and bound with
+    first-order perspective-relaxation lower bounds and a beam-search upper bound for k-sparse logistic
+    regression with box |beta_j| <= 5 and lambda2 = 1e-3, within half the time limit. OKGLM has no
+    intercept, so a constant column (value 10) is added and k + 1 nonzeros allowed; if the solution has
+    more than k features the smallest are dropped. OKGLM's own coefficients and a logistic refit on its
+    support are rounded by FasterRisk's star-ray sequential rounding; the lower calibrated loss is kept."""
+
+    def fit(self, X, y):
+        import contextlib
+        from okglm.BnBTree.tree import BNBTree
+        n, d = X.shape
+        k = min(self.k, d)
+        cols = np.flatnonzero(np.std(X, axis=0) > 0)
+        Xa = np.hstack([np.full((n, 1), 10.0), X[:, cols]])
+        with open(os.devnull, "w") as dn, contextlib.redirect_stdout(dn), np.errstate(all="ignore"):
+            tree = BNBTree(Xa, np.where(y > 0, 1.0, -1.0), k=min(k + 1, Xa.shape[1]), lambda2=1e-3,
+                           M=float(COEF_BOUND), GLMLossType="logistic", max_memory_GB=20)
+            _, beta, gap, _, _, _ = tree.solve(gap_tol=1e-4, time_limit=0.5 * self.time_limit)
+        beta = np.asarray(beta, float).ravel()
+        b = np.zeros(d)
+        b[cols] = beta[1:]
+        S = np.flatnonzero(np.abs(b) > 1e-10)
+        if len(S) > k:
+            S = np.sort(S[np.argsort(-np.abs(b[S]), kind="stable")[:k]])
+            b[np.setdiff1d(np.arange(d), S)] = 0.0
+        self.coef_ = _best_of_pool(X, y, [_star_ray_round(X, y, 10.0 * beta[0], b),
+                                          _star_ray_round(X, y, *_logistic_refit(X, y, S))])
+        self.stop_reason_ = f"okglm gap={float(gap):.2g}"
+        return self
+
+
 BASELINES = {"fasterrisk": FasterRisk, "fasterrisk_wide": FasterRiskWide, "riskslim": RiskSLIM, "slim_milp": SlimMILP,
              "rounded_lr": RoundedLR, "imodels_slim": ImodelsSLIM, "unit_weighting": UnitWeighting,
              "autoscore": AutoScore, "l1path_seqround": L1PathSeqRound, "cpa_highs": CuttingPlaneHiGHS,
              "abess_seqround": AbessSeqRound, "fastsparse_seqround": FastSparseSeqRound,
-             "okridge_seqround": OKRidgeSeqRound, "psl": PSL, "continuous_beam": ContinuousBeam}
+             "okridge_seqround": OKRidgeSeqRound, "psl": PSL, "riskscores": RiskScores,
+             "riskscores_cd": RiskScoresCD, "skscope_seqround": SkscopeSeqRound,
+             "l0learn_seqround": L0LearnSeqRound, "okglm_seqround": OKGLMSeqRound,
+             "continuous_beam": ContinuousBeam}
 INTEGER = {name: name != "continuous_beam" for name in BASELINES}
 
 

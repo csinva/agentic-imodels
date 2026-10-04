@@ -14,3 +14,8 @@ commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_ov
 ,0.00255,0.304,0.7901,0.33043,0,0,0,true,baseline,fastsparse_seqround,"fastSparse L0L2 logistic path (support <= k, box [-5,5]), star-ray sequential rounding"
 ,0.00176,214.214,0.7865,0.32965,0,0,0,true,baseline,okridge_seqround,"OKRidge optimal k-sparse ridge support, logistic refit, star-ray sequential rounding"
 ,0.00871,126.555,0.7626,0.33660,0,3,4,true,baseline,psl,"probabilistic scoring list (scikit-psl 0.7.2), scores in +-{1..5}, k greedy stages"
+,0.00463,1.121,0.7917,0.33251,0,0,0,true,baseline,skscope_seqround,"skscope 0.1.8 ScopeSolver k-sparse logistic (sizes 1..k), star-ray sequential rounding"
+,0.00145,4.207,0.7903,0.32934,0,0,0,true,baseline,l0learn_seqround,"L0Learn 2.1.0 (R) logistic L0L2 path with CDPSI swaps, support <= k, star-ray sequential rounding"
+,0.00174,174.606,0.7933,0.32963,0,0,0,true,baseline,okglm_seqround,"OKGLM (ICML 2025) BnB for box k-sparse logistic (CPU, half the limit), star-ray sequential rounding"
+,0.04344,111.432,0.6995,0.37133,0,0,2,true,baseline,riskscores_cd,"riskscores 1.3.0 (R) risk_mod, riskcd coordinate descent, points in [-5,5], lambda0 path + bisection"
+,0.05422,282.615,0.6654,0.38210,0,1,5,true,baseline,riskscores,"riskscores 1.3.0 (R) risk_mod, annealscore, points in [-5,5], lambda0 path + bisection to <= k points"

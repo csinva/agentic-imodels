@@ -22,6 +22,7 @@ baselines = [
     "fastsparsegams>=0.2.0",
     "sortedcontainers",
     "psutil",
+    "skscope>=0.1.8",
 ]
 data = [
     "openml>=0.14",

@@ -34,6 +34,11 @@ DESCRIPTIONS = {
     "fastsparse_seqround": "fastSparse L0L2 logistic path (support <= k, box [-5,5]), star-ray sequential rounding",
     "okridge_seqround": "OKRidge optimal k-sparse ridge support, logistic refit, star-ray sequential rounding",
     "psl": "probabilistic scoring list (scikit-psl 0.7.2), scores in +-{1..5}, k greedy stages",
+    "riskscores": "riskscores 1.3.0 (R) risk_mod, annealscore, points in [-5,5], lambda0 path + bisection to <= k points",
+    "riskscores_cd": "riskscores 1.3.0 (R) risk_mod, riskcd coordinate descent, points in [-5,5], lambda0 path + bisection",
+    "skscope_seqround": "skscope 0.1.8 ScopeSolver k-sparse logistic (sizes 1..k), star-ray sequential rounding",
+    "l0learn_seqround": "L0Learn 2.1.0 (R) logistic L0L2 path with CDPSI swaps, support <= k, star-ray sequential rounding",
+    "okglm_seqround": "OKGLM (ICML 2025) BnB for box k-sparse logistic (CPU, half the limit), star-ray sequential rounding",
     "continuous_beam": "reference, real-valued: FasterRisk's k-sparse beam search before rounding",
 }
 

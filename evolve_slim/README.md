@@ -38,6 +38,11 @@ deadlines); it became `FastRiskScoreClassifier` in imodels.
 | abess + seq. rounding | 0.3731 | 0.842 | 0.207 s | 0.3303 | 0.789 | 0.512 s | 0.3317 | 0.788 | 0.790 s |
 | fastSparse + seq. rounding | 0.3738 | 0.836 | 0.123 s | 0.3303 | 0.791 | 0.207 s | 0.3304 | 0.790 | 0.304 s |
 | OKRidge + seq. rounding | 0.3654 | 0.841 | 20.4 s | 0.3286 | 0.790 | 26.5 s | 0.3297 | 0.786 | 214 s |
+| OKGLM + seq. rounding | 0.3609 | 0.842 | 25.3 s | 0.3293 | 0.792 | 31.4 s | 0.3296 | 0.793 | 175 s |
+| L0Learn + seq. rounding | 0.3633 | 0.843 | 0.880 s | 0.3290 | 0.792 | 2.84 s | 0.3293 | 0.790 | 4.21 s |
+| skscope + seq. rounding | 0.3751 | 0.837 | 0.222 s | 0.3318 | 0.791 | 0.720 s | 0.3325 | 0.792 | 1.12 s |
+| riskscores (annealscore) | 0.4876 | 0.701 | 38.3 s | 0.4097 | 0.585 | 70.1 s | 0.3821 | 0.665 | 283 s |
+| riskscores (riskcd) | 0.4476 | 0.757 | 12.7 s | 0.3817 | 0.666 | 36.6 s | 0.3713 | 0.699 | 111 s |
 | L1 path + seq. rounding | 0.4087 | 0.813 | 0.099 s | 0.3546 | 0.744 | 0.231 s | 0.3581 | 0.744 | 0.370 s |
 | probabilistic scoring list | 0.4185 | 0.787 | 13.8 s | 0.3623 | 0.681 | 51.2 s | 0.3366 | 0.763 | 127 s |
 | AutoScore | 0.4000 | 0.821 | 0.260 s | 0.3461 | 0.763 | 0.495 s | 0.3469 | 0.768 | 0.869 s |
@@ -54,6 +59,12 @@ killed at 3x the time limit (no score) on 10 / 51 / 3 problems. None of the eigh
 the first release (cutting planes with HiGHS, abess, fastSparse, OKRidge, the L1 path with rounding, PSL,
 AutoScore, unit weighting) comes within 0.001 of FasterRisk's mean loss on the held-out sets; the closest
 is OKRidge's optimal ridge support with FasterRisk's rounding (`uv run benchmarks/baseline_table.py`).
+The five baselines added on 2026-10-03 (`benchmarks/run_new_baselines.sh`) do not change this: the closest
+are L0Learn's CDPSI path and OKGLM's k-sparse logistic branch and bound, each followed by FasterRisk's rounding
+(0.3290 and 0.3293 on hidden, against FasterRisk's 0.3272). riskscores' own integer search is far behind
+(0.3817 with riskcd, 0.4097 with annealscore, which returns no score on 20 hidden problems within 3x the
+limit); its fits often end past the limit (annealscore 23 / 66 / 5 problems, riskcd 12 / 45 / 2), because
+the lambda0 path checks the clock only between fits.
 On the 6 problems where the cutting planes certify RiskSLIM's optimum (breastcancer at every k, mammo
 at k = 3), FastRiskScore's points have a lower calibrated loss than the certified ones on all 6:
 RiskSLIM's objective fixes the score's scale, the reason FasterRisk added a multiplier. On 50 problems small enough to enumerate every
@@ -83,6 +94,11 @@ the point box), keeping the rounding with the lowest calibrated loss.
 | `fastsparse_seqround` | fastSparse / L0Learn L0L2 logistic path (Liu et al. 2022), boxed to [-5, 5], rounded | `fastsparsegams` (MIT), PyPI |
 | `okridge_seqround` | OKRidge (Liu et al. 2023) optimal k-sparse ridge support (squared-loss proxy), logistic refit, rounded | vendored `baselines/okridge` (0.1.1, BSD-3; a removed-method call fixed) |
 | `l1path_seqround` | every L1 logistic path support of size <= k, refit, rounded (FasterRisk's rounding without its beam search) | scikit-learn |
+| `okglm_seqround` | OKGLM (Liu, Shafiee & Lodi 2025) branch and bound for k-sparse logistic regression with box [-5, 5] (CPU, half the limit; constant column for the intercept), its coefficients and a refit on its support rounded | vendored `baselines/okglm` (commit 461e78a, BSD-3; commercial-solver imports made optional) |
+| `l0learn_seqround` | L0Learn logistic L0L2 path with CDPSI swaps (5 gammas, support <= k, unbounded), rounded | R package L0Learn 2.1.0 (MIT) via `baselines/rpkgs` |
+| `skscope_seqround` | skscope ScopeSolver k-sparse logistic regression (sizes 1..k, numpy objective and gradient), rounded | `skscope` 0.1.8 (MIT), PyPI |
+| `riskscores` | riskscores `risk_mod` (annealscore, the default), points in [-5, 5]; L0 penalty lambda0 walked along `cv_risk_mod`'s grid and bisected to <= k points, best of those | R package riskscores 1.3.0 (GPL-3) via `baselines/rpkgs` |
+| `riskscores_cd` | the same with riskscores' `riskcd` coordinate descent | same |
 | `psl` | probabilistic scoring lists (Hanselle et al. 2025), scores +-{1..5}, k greedy stages | vendored `baselines/skpsl` (scikit-psl 0.7.2, MIT; numpy 2 fix, `max_stages` added) |
 | `autoscore` | AutoScore (Xie et al. 2020) on binary features: random-forest ranking, logistic regression, coefficients / smallest, rounded | reimplemented (AutoScore is R-only) |
 | `rounded_lr` | L1 logistic regression tuned to k features, refit, scaled so the largest point is 5, rounded | scikit-learn |
@@ -92,9 +108,12 @@ the point box), keeping the rounding with the lowest calibrated loss.
 
 Considered and left out (see the search notes in `LITERATURE.md`): scorepyo (abandoned, hard pins
 on 2022 packages), optbinning and scorecardpy (weight-of-evidence scorecards, not sparse integer
-points), l0learn (no Python 3.12 wheel; `fastsparsegams` is the same code base), GroupFasterRisk
+points), the PyPI l0learn (no Python 3.12 wheel; its R package is used instead), GroupFasterRisk
 (identical to FasterRisk without feature groups), and RiskSLIM written directly as a SCIP MINLP
-(no incumbent within 60 s on a 500 x 30 test).
+(no incumbent within 60 s on a 500 x 30 test). The R baselines need `baselines/rpkgs/setup_r.sh` (R 4.4 via
+micromamba, then CRAN); `src/baselines.py` starts one `Rscript` worker per harness process
+(`baselines/rpkgs/server.R`), so R's start-up falls in the untimed warm-up, and passes data through temporary
+files under `$EVOLVE_SLIM_SCRATCH`.
 
 ## Layout
 
@@ -105,15 +124,17 @@ points), l0learn (no Python 3.12 wheel; `fastsparsegams` is the same code base),
 | `setup_run.py` | creates `runs/<tag>/` with a local `slim.py`, a symlink to `src/` and the baseline leaderboard |
 | `src/suite.py` | the development suite: 14 datasets × k ∈ {3, 4, 5, 7, 10}, 60 s per problem |
 | `src/evaluate.py` | parallel runner (single-threaded workers, hard kill at 180 s), independent re-scoring, leaderboard |
-| `src/baselines.py` | the 14 baselines of the table above and a real-valued reference |
+| `src/baselines.py` | the 19 baselines of the table above and a real-valued reference |
 | `src/best_known.csv` | lowest criterion any integer solver has reached per problem (`baselines/update_best_known.py`) |
 | `data/build_data.py` | builds `data/visible` (14 datasets), `data/hidden` (27 TabArena datasets) and `data/hidden_full` |
 | `baselines/fasterrisk/` | FasterRisk 0.1.10, vendored (BSD 3-Clause), with a one-line numpy 2 fix |
+| `baselines/okglm/` | OKGLM (src/okglm at commit 461e78a), vendored (BSD 3-Clause), patched to import without gurobipy / mosek / cvxpy |
+| `baselines/rpkgs/` | the R-package baselines: `setup_r.sh` (R environment), `server.R` (persistent worker for riskscores and L0Learn) |
 | `baselines/setup_riskslim.sh` | fetches RiskSLIM into `baselines/risk-slim/` (untracked) and compiles its loss functions |
 | `LITERATURE.md` | the related work |
 | `PROMPTS.md` | the prompts that drove the search |
 | `runs/<tag>/` | one folder per loop session: the agent's leaderboard and a snapshot of every attempt |
-| `benchmarks/` | held-out evaluation (`run_hidden.sh`, `run_heldout_rest.sh`, `run_more_baselines.sh`, `eval_solver.py`), the exhaustive check, `post_numbers.py` |
+| `benchmarks/` | held-out evaluation (`run_hidden.sh`, `run_heldout_rest.sh`, `run_more_baselines.sh`, `run_new_baselines.sh`, `eval_solver.py`), the exhaustive check, `post_numbers.py` |
 | `results/` | leaderboards and per-problem rows: visible (`*.csv`), hidden (`hidden_*`), full size (`hidden_full_t600_*`), wide FasterRisk reference (`t1200_*`) |
 | `backfill_regret.py` | rewrites every leaderboard's regret after `src/best_known.csv` is refreshed |
 
