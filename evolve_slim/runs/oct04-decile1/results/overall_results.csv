@@ -1,0 +1,56 @@
+commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_over_limit,integer,status,model_name,description
+,0.00448,1.494,0.8406,0.36029,0,0,0,true,baseline,fasterrisk,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.08132,49.338,0.7673,0.43714,0,0,62,true,baseline,slim_milp,"SLIM (Ustun & Rudin 2016), 0-1 loss MILP solved by HiGHS within the time limit"
+,0.05380,0.068,0.8119,0.40961,0,0,0,true,baseline,rounded_lr,"L1 logistic regression tuned to k features, refit, scaled to a largest point of 5, rounded"
+,0.07015,0.258,0.7892,0.42597,0,0,0,true,baseline,imodels_slim,"imodels 3.0.2 SLIMClassifier without a MIP solver (rounded L2 logistic), penalty searched to k"
+,0.00155,0.867,0.8444,0.35737,0,0,0,false,baseline,continuous_beam,"reference, real-valued: FasterRisk's k-sparse beam search before rounding"
+,0.09654,13.629,0.7179,0.45235,0,25,32,true,baseline,riskslim,"RiskSLIM lattice cutting planes (Ustun & Rudin 2019), CPLEX 22.1 Community Edition, time limit"
+,0.00010,0.039,0.8424,0.35592,0,0,0,true,eval,v35_scratch_rep2,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00448,1.510,0.8406,0.36029,0,0,0,true,baseline,fasterrisk_rep2,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.00010,0.036,0.8424,0.35592,0,0,0,true,eval,v35_scratch_rep3,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00448,1.518,0.8406,0.36029,0,0,0,true,baseline,fasterrisk_rep3,"FasterRisk 0.1.10 (Liu et al. 2022), default settings: beam search, diverse pool, star-ray rounding"
+,0.07525,0.062,0.8040,0.43107,0,0,0,true,baseline,unit_weighting,"unit weighting: L1-selected features (at most k), each worth +1 or -1 by its sign"
+,0.04414,0.260,0.8212,0.39995,0,0,0,true,baseline,autoscore,"AutoScore (Xie et al. 2020) on binary features: RF ranking, LR, coefficients / smallest, rounded"
+,0.05293,0.099,0.8131,0.40874,0,0,0,true,baseline,l1path_seqround,FasterRisk's star-ray sequential rounding on every L1-path support of size <= k
+,0.05384,57.012,0.7758,0.40966,0,0,57,true,baseline,cpa_highs,"RiskSLIM's cutting-plane algorithm with the open-source HiGHS MILP solver (re-solved each round), time limit"
+,0.01731,0.207,0.8415,0.37313,0,0,0,true,baseline,abess_seqround,"abess best-subset logistic (sizes 1..k), FasterRisk's star-ray sequential rounding"
+,0.01802,0.123,0.8358,0.37383,0,0,0,true,baseline,fastsparse_seqround,"fastSparse L0L2 logistic path (support <= k, box [-5,5]), star-ray sequential rounding"
+,0.00960,20.439,0.8411,0.36541,0,0,0,true,baseline,okridge_seqround,"OKRidge optimal k-sparse ridge support, logistic refit, star-ray sequential rounding"
+,0.06265,13.849,0.7869,0.41846,0,10,11,true,baseline,psl,"probabilistic scoring list (scikit-psl 0.7.2), scores in +-{1..5}, k greedy stages"
+,0.00153,0.010,0.8422,0.35735,0,0,0,true,eval,i30_final_cmp,runs/oct02-fine4/slim_lib/i30_final.py
+,0.00145,0.012,0.8422,0.35726,0,0,0,true,eval,j18_poliso_cmp,runs/oct03-fine5/slim_lib/j18_poliso.py
+,0.00026,0.030,0.8421,0.35607,0,0,0,true,eval,g24_fastcol_cmp,runs/sep27-fine2/slim_lib/g24_fastcol.py
+,0.00004,0.093,0.8425,0.35586,0,0,0,true,eval,f31_fastsame_cmp,runs/sep27-fine1/slim_lib/f31_fastsame.py
+,0.00010,0.035,0.8424,0.35592,0,0,0,true,eval,v35_scratch_cmp,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00065,0.010,0.8423,0.35646,0,0,0,true,eval,i30_final_nosup,runs/oct02-fine4/slim_lib/i30_final.py
+,0.00063,0.013,0.8423,0.35644,0,0,0,true,eval,j18_poliso_nosup,runs/oct03-fine5/slim_lib/j18_poliso.py
+,0.01925,0.222,0.8372,0.37506,0,0,0,true,baseline,skscope_seqround,"skscope 0.1.8 ScopeSolver k-sparse logistic (sizes 1..k), star-ray sequential rounding"
+,0.00751,0.880,0.8432,0.36332,0,0,0,true,baseline,l0learn_seqround,"L0Learn 2.1.0 (R) logistic L0L2 path with CDPSI swaps, support <= k, star-ray sequential rounding"
+,0.00509,25.338,0.8417,0.36091,0,0,0,true,baseline,okglm_seqround,"OKGLM (ICML 2025) BnB for box k-sparse logistic (CPU, half the limit), star-ray sequential rounding"
+,0.09178,12.716,0.7567,0.44760,0,0,12,true,baseline,riskscores_cd,"riskscores 1.3.0 (R) risk_mod, riskcd coordinate descent, points in [-5,5], lambda0 path + bisection"
+,0.13177,38.275,0.7007,0.48759,0,0,23,true,baseline,riskscores,"riskscores 1.3.0 (R) risk_mod, annealscore, points in [-5,5], lambda0 path + bisection to <= k points"
+,0.00063,0.013,0.8423,0.35644,0,0,0,true,keep,m1_base,"j30_final (fine lineage, j18_poliso points) with MS_SQRT=0 (no minimum support); start of oct04-decile1"
+,0.00043,0.013,0.8423,0.35624,0,0,0,true,keep,m2_repr,m1 + beam: children with a coefficient below 0.0911 x the largest (rounds to 0 at every scale of the grid) ranked last
+,0.00033,0.014,0.8425,0.35615,0,0,0,true,discard,m3_swng,m2 + ILS swap phases screen swap-ins by the continuous Newton gain G^2/H (SWNG on everywhere) instead of the integer-step quadratic
+,0.00043,0.011,0.8423,0.35624,0,0,0,true,keep,m4_jitwarm,"m2 + import warm-up also compiles swap_phase for every code layout with recal omitted / True (it compiled inside the first rswap/polish fit per worker: ~4 s on breastcancer k10, mushroom k7/k10); same points"
+,0.00041,0.010,0.8421,0.35623,0,0,0,true,discard,m5_upscale,"m4 + upscale restarts: local search from f*w (largest point at bound-1 and at bound) after the starts and at the end, while it improves"
+,0.00039,0.010,0.8421,0.35620,0,0,0,true,discard,m6_reprnb,m4 with the beam representability penalty only for non-binary columns (REPRNB)
+,0.00028,0.011,0.8421,0.35610,0,0,0,true,discard,m7_combo,m4 + REPRNB + Newton-gain swap screen (SWNG) + upscale restarts (UPS 2) + polish only below 0.35 x base entropy (POLH)
+,0.00005,0.012,0.8421,0.35587,0,0,0,true,keep,m8_beamdiv,"m7 + beam without the diversity limits of the fine track (several thresholds of one variable per parent, several children per variable multiset), 30 exact fits per level, final pool 10"
+,0.00002,0.012,0.8421,0.35584,0,0,0,true,discard,m9_rclip,m8 + 4 extra calibrated-rounding scales with the largest point clipped at the bound (largest continuous point up to 3x the bound): finer ratios of the other points when one point saturates (mammo)
+,0.00002,0.012,0.8420,0.35584,0,0,0,true,discard,m10_cdup,"m9 + complement pairs of binary columns (x + x' = 1, found by bitset hashes) share one beam hash, so mirrored supports are proposed once"
+,0.00004,0.012,0.8421,0.35585,0,0,0,true,discard,m11_lean,"m10 with a leaner beam: 8 parents, 20 exact fits per level, final pool 8; upscale restarts off"
+,0.00004,0.010,0.8421,0.35585,0,0,0,true,keep,m12_lean_rerun,rerun of m11_lean (same file) to check the recorded time
+,0.00016,0.010,0.8425,0.35598,0,0,0,true,discard,m13_spat1,m12 with start patience 1 (stop the starts after the first that does not improve)
+,0.00002,0.011,0.8422,0.35584,0,0,0,true,discard,m14_rclip8,m12 with 8 clipped rounding scales up to 4x the bound (instead of 4 up to 3x)
+,0.00004,0.010,0.8421,0.35585,0,0,0,true,discard,m15_trim,"m12 with trimmed local-search widths that leave every visible point unchanged: RSWAP 2, NSTARTS 4, SLIDER 4, ADDSCREEN 4, NSCREEN 3, POLNS 16"
+,0.00001,0.011,0.8422,0.35583,0,0,0,true,discard,m16_pool10trim,"m12 + final pool 10 + 8 clipped rounding scales up to 4x, paid for by the same-point trims of m15"
+,0.00001,0.011,0.8422,0.35583,0,0,0,true,discard,m17_s2l3trim,"m12 with 16 exact fits per inner beam level and 24 at the last (SCREEN 2, LASTSCREEN 3), 8 clipped rounding scales up to 4x, and m15's same-point trims"
+,0.00004,0.011,0.8421,0.35585,0,0,0,true,discard,m18_m12rerun,rerun of the m12 file (timing reference for the harness noise)
+,0.00001,0.011,0.8422,0.35583,0,0,0,true,discard,m19_s2l3rc8,"m12 + SCREEN 2 / LASTSCREEN 3 (16 fits per inner beam level, 24 at the last) + 8 clipped rounding scales up to 4x; no trims"
+,0.00003,0.012,0.8420,0.35584,0,0,0,true,discard,m20_ppv3,m12 with at most 3 thresholds of one variable per parent in the beam proposals (a cap that keeps the beam diverse on data with many thresholds per variable)
+,0.00004,0.011,0.8420,0.35585,0,0,0,true,discard,m21_cells,"m12 with the beam's diversity rule on threshold cells: at most one column per (variable, decile of row fraction) per parent (CELLB 10, PPV 1); same as m12 on decile data, recovers most of the fine-suite loss"
+,0.00003,0.012,0.8424,0.35584,0,0,0,true,discard,m22_cells_s2l3,m21 (threshold cells) + SCREEN 2 / LASTSCREEN 3 + 8 clipped rounding scales up to 4x (= m19 with cells)
+,0.00001,0.012,0.8421,0.35583,0,0,0,true,discard,m23_cells_p10rc8,m21 (threshold cells) + final pool 10 + 8 clipped rounding scales up to 4x
+,0.00004,0.011,0.8420,0.35585,0,0,0,true,discard,m24_noswng,m21 without the Newton-gain swap screen (SWNG 0): checks whether it is still needed after the beam changes
+,0.00004,0.011,0.8420,0.35585,0,0,0,true,discard,m25_final,"cleaned final: m12 (best kept) + threshold-cell diversity rule (m21); upscale code removed, docstring rewritten for the decile pipeline"
