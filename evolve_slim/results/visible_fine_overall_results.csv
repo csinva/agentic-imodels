@@ -6,3 +6,7 @@ commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_ov
 ,0.06261,0.382,0.8234,0.40362,0,0,0,true,baseline,autoscore,"AutoScore (Xie et al. 2020) on binary features: RF ranking, LR, coefficients / smallest, rounded"
 ,0.00141,1.203,0.8497,0.34241,0,0,0,false,baseline,continuous_beam,"reference, real-valued: FasterRisk's k-sparse beam search before rounding"
 ,0.00019,0.068,0.8496,0.34119,0,0,0,true,eval,v35_scratch,runs/sep26-run2/slim_lib/v35_scratch.py
+,-0.00078,0.011,0.8479,0.34022,0,0,0,true,eval,n17_lean_dflt,runs/oct05-decile2/slim_lib/n17_lean.py
+,-0.00027,0.011,0.8503,0.34074,0,0,0,true,eval,n17_lean_ms,runs/oct05-decile2/slim_lib/n17_lean.py
+,-0.00022,0.011,0.8518,0.34079,0,0,0,true,eval,n17_lean_fine,runs/oct05-decile2/slim_lib/n17_lean.py
+,-0.00022,0.011,0.8518,0.34079,0,0,0,true,eval,imodels_solver_pkg,benchmarks/imodels_solver.py

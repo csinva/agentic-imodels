@@ -8,3 +8,7 @@ commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_ov
 ,nan,0.021,0.7932,0.32414,0,0,0,true,eval,i30_final,runs/oct02-fine4/slim_lib/i30_final.py
 ,nan,0.322,0.7927,0.32393,0,0,0,true,eval,f31_fastsame,runs/sep27-fine1/slim_lib/f31_fastsame.py
 ,nan,0.050,0.7927,0.32400,0,0,0,true,eval,g24_fastcol,runs/sep27-fine2/slim_lib/g24_fastcol.py
+,nan,0.021,0.7922,0.32393,0,0,0,true,eval,n17_lean_dflt,runs/oct05-decile2/slim_lib/n17_lean.py
+,nan,0.022,0.7928,0.32405,0,0,0,true,eval,n17_lean_ms,runs/oct05-decile2/slim_lib/n17_lean.py
+,nan,0.021,0.7937,0.32414,0,0,0,true,eval,n17_lean_fine,runs/oct05-decile2/slim_lib/n17_lean.py
+,nan,0.021,0.7937,0.32414,0,0,0,true,eval,imodels_solver_pkg,benchmarks/imodels_solver.py

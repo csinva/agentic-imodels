@@ -1,12 +1,14 @@
 """Every number quoted in the text of the FastRiskScore post, computed from the result files.
 
     uv run benchmarks/post_numbers.py
+    uv run benchmarks/post_numbers.py --ship imodels_solver_pkg   # the packaged solver, from results/
 
 The shipped solver is run 2's v35_scratch; FasterRisk is the default baseline. Per-problem
 comparisons use the first run of each (the repeats only enter the figure's means).
 """
 
 import os
+import sys
 
 import numpy as np
 import pandas as pd
@@ -38,14 +40,16 @@ def compare(ship, fr, name):
           f"FasterRisk {fr['auc_test'].mean():.4f}")
 
 
-vis_ship = rows("runs/sep26-run2/results/problem_results.csv", "v35_scratch")
+SHIP = sys.argv[sys.argv.index("--ship") + 1] if "--ship" in sys.argv else None
+vis_ship = (rows("results/problem_results.csv", SHIP) if SHIP else
+            rows("runs/sep26-run2/results/problem_results.csv", "v35_scratch"))
 vis_fr = rows("results/problem_results.csv", "fasterrisk")
 compare(vis_ship, vis_fr, "visible")
 wide = rows("results/t1200_problem_results.csv", "fasterrisk_wide")
 print(f"[visible] wide FasterRisk geo time {geo(wide['seconds']):.1f} s ({geo(wide['seconds']) / geo(vis_fr['seconds']):.0f}x "
       f"default), mean loss {wide['loss'].mean():.5f}; ship lower than wide on "
       f"{int((vis_ship['loss'] < wide['loss'] - 1e-6).sum())}, higher on {int((vis_ship['loss'] > wide['loss'] + 1e-6).sum())}")
-hid_ship = rows("results/hidden_problem_results.csv", "v35_scratch_run2")
+hid_ship = rows("results/hidden_problem_results.csv", SHIP or "v35_scratch_run2")
 hid_fr = rows("results/hidden_problem_results.csv", "fasterrisk")
 compare(hid_ship, hid_fr, "hidden")
 cont = rows("results/hidden_problem_results.csv", "continuous_beam")
@@ -56,7 +60,7 @@ for suite, path in (("visible", "results/problem_results.csv"), ("hidden", "resu
     print(f"[{suite}] RiskSLIM no model on {int((rs['status'] == 'no_model').sum())} of {len(rs)}")
 full_path = "results/hidden_full_t600_problem_results.csv"
 if os.path.exists(os.path.join(ROOT, full_path)):
-    fs, ff = rows(full_path, "v35_scratch"), rows(full_path, "fasterrisk")
+    fs, ff = rows(full_path, SHIP or "v35_scratch"), rows(full_path, "fasterrisk")
     compare(fs, ff, "full")
     for m in ("riskslim", "slim_milp", "rounded_lr", "imodels_slim", "continuous_beam"):
         r = rows(full_path, m)

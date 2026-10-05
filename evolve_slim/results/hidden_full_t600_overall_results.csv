@@ -21,3 +21,4 @@ commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_ov
 ,0.05422,282.615,0.6654,0.38210,0,1,5,true,baseline,riskscores,"riskscores 1.3.0 (R) risk_mod, annealscore, points in [-5,5], lambda0 path + bisection to <= k points"
 ,0.00001,0.019,0.7920,0.32789,0,0,0,true,eval,m25_final,runs/oct04-decile1/slim_lib/m25_final.py
 ,0.00001,0.020,0.7920,0.32789,0,0,0,true,eval,m23_cells_p10rc8,runs/oct04-decile1/slim_lib/m23_cells_p10rc8.py
+,0.00001,0.020,0.7920,0.32789,0,0,0,true,eval,imodels_solver_pkg,benchmarks/imodels_solver.py
