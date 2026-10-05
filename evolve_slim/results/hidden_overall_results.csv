@@ -55,3 +55,4 @@ commit,mean_regret,geo_mean_time,mean_test_auc,mean_loss,n_invalid,n_killed,n_ov
 ,0.00009,0.014,0.7939,0.32688,0,0,0,true,eval,m25_final_ho,runs/oct04-decile1/slim_lib/m25_final.py
 ,0.00009,0.015,0.7940,0.32688,0,0,0,true,eval,m23_cells_p10rc8_ho,runs/oct04-decile1/slim_lib/m23_cells_p10rc8.py
 ,0.00016,0.057,0.7937,0.32695,0,0,0,true,eval,v35_scratch_ho,runs/sep26-run2/slim_lib/v35_scratch.py
+,0.00009,0.015,0.7939,0.32688,0,0,0,true,eval,n17_lean_ho,runs/oct05-decile2/slim_lib/n17_lean.py
